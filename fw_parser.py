@@ -87,11 +87,11 @@ def _parse_structured(record: dict, category: str, time: str) -> FirewallDataRow
             rowid=_next_id(),
             time=time,
             category="DnsQuery",
-            protocol=_s(props, "Protocol"),
+            protocol=_s(props, "QueryType"),        # A/AAAA/MX/… → Proto column
             sourceip=_s(props, "SourceIp"),
             srcport=_s(props, "SourcePort"),
-            targetip=_s(props, "QueryName"),       # queried hostname → Dest/FQDN column
-            targetport=_s(props, "QueryType"),     # A/AAAA/MX/… → Port column
+            targetip=_s(props, "QueryName"),        # queried hostname → Dest/FQDN column
+            targetport="53",                        # DNS is always port 53
             action=_s(props, "ResponseCode") or "Request",  # NOERROR/NXDOMAIN/… → Action column
             moreinfo=_s(props, "ErrorMessage"),
         )

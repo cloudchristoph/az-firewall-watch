@@ -62,7 +62,7 @@ def _to_local(ts: str) -> str:
     """Convert a UTC ISO-8601 timestamp to the local system timezone."""
     try:
         dt = datetime.fromisoformat(ts.replace("Z", "+00:00"))
-        return dt.astimezone().strftime("%Y-%m-%dT%H:%M:%S")
+        return dt.astimezone().strftime("%Y-%m-%d %H:%M:%S")
     except (ValueError, TypeError):
         return ts[:19]
 
@@ -70,6 +70,26 @@ def _to_local(ts: str) -> str:
 def _highlight(text: str, term: str) -> Text:
     """Return a Rich Text with *term* highlighted (case-insensitive)."""
     t = Text(text)
+    if term:
+        t.highlight_regex(f"(?i){re.escape(term)}", style="bold reverse")
+    return t
+
+
+_CATEGORY_STYLES: dict[str, str] = {
+    "networkrule": "cyan",
+    "apprule":     "bright_blue",
+    "natrule":     "yellow",
+    "dnsquery":    "green",
+    "dnsproxy":    "green",
+    "idps":        "bold red",
+    "threatintel": "bold magenta",
+}
+
+
+def _category_text(category: str, term: str = "") -> Text:
+    """Return a colour-coded Rich Text for a category, with optional search highlight."""
+    style = _CATEGORY_STYLES.get(category.lower(), "")
+    t = Text(category, style=style)
     if term:
         t.highlight_regex(f"(?i){re.escape(term)}", style="bold reverse")
     return t
@@ -296,7 +316,7 @@ class FirewallLogApp(App[None]):
     def on_mount(self) -> None:
         tbl = self.query_one("#log-table", DataTable)
         tbl.add_columns(
-            "Time (UTC)", "Category", "Proto",
+            "Time (Local)", "Category", "Proto",
             "Source", "Dest / FQDN", "Port",
             "Action", "Policy / Info",
         )
@@ -475,7 +495,7 @@ class FirewallLogApp(App[None]):
                 )
             tbl.add_row(
                 _to_local(row.time),
-                _highlight(row.category, f["cat"]),
+                _category_text(row.category, f["cat"]),
                 _highlight(row.protocol, f["proto"]),
                 _highlight(src_str, f["src"]),
                 _highlight(row.targetip, f["dst"]),

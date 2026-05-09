@@ -22,7 +22,7 @@ jobs:
             binary: az-firewall-watch
           - os: windows-latest
             artifact: az-firewall-watch-windows
-            binary: az-firewall-watch.exe
+            binary: az-firewall-watch
 
     runs-on: ${{ matrix.os }}
 
@@ -64,12 +64,17 @@ jobs:
             "--add-data" "setup_wizard.py;." `
             main.py
 
-      - name: Rename artifact
+      - name: Package artifact
         shell: bash
         run: |
           SRC="dist/${{ matrix.binary }}"
           DST="dist/${{ matrix.artifact }}"
-          [ -f "${SRC}.exe" ] && mv "${SRC}.exe" "${DST}.exe" || mv "$SRC" "$DST"
+          if [ "${{ runner.os }}" == "Windows" ]; then
+            mv "${SRC}.exe" "${DST}.exe"
+          else
+            mv "$SRC" "$DST"
+            cd dist && tar -czf "${{ matrix.artifact }}.tar.gz" "${{ matrix.artifact }}" && rm "${{ matrix.artifact }}"
+          fi
 
       - name: Upload binary
         uses: actions/upload-artifact@v4
@@ -97,13 +102,13 @@ jobs:
 
             | Platform | File |
             |----------|------|
-            | Linux (x86_64) | `az-firewall-watch-linux` |
-            | macOS Apple Silicon | `az-firewall-watch-macos` |
+            | Linux (x86_64) | `az-firewall-watch-linux.tar.gz` |
+            | macOS Apple Silicon | `az-firewall-watch-macos.tar.gz` |
             | Windows | `az-firewall-watch-windows.exe` |
 
             ### First run on macOS
             ```bash
-            chmod +x az-firewall-watch-macos
+            tar -xzf az-firewall-watch-macos.tar.gz
             xattr -d com.apple.quarantine az-firewall-watch-macos   # remove Gatekeeper flag
             ./az-firewall-watch-macos
             ```

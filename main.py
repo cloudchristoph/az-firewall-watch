@@ -472,8 +472,8 @@ class FirewallLogApp(App[None]):
                         await asyncio.sleep(2)
                         self.pop_screen()
                         _splash_shown = False
-                    status.status = "Connected — waiting for events"
-                    self.sub_title = "Live Log Monitor  |  waiting for events"
+                    status.status = "Connected"
+                    self.sub_title = "Live Log Monitor  |  connected"
 
                     async def on_event(partition_ctx, event) -> None:  # type: ignore[misc]
                         if event is None or self._paused:

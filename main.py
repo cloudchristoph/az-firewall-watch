@@ -29,7 +29,8 @@ from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal
 from textual.reactive import reactive
-from textual.widgets import DataTable, Footer, Header, Input, Label, Static
+from textual.screen import ModalScreen
+from textual.widgets import Button, DataTable, Footer, Header, Input, Label, LoadingIndicator, Static
 
 # ── base directory (works both from source and as a PyInstaller binary) ───────
 if getattr(sys, "frozen", False):
@@ -74,7 +75,134 @@ def _highlight(text: str, term: str) -> Text:
     return t
 
 
+def _parse_eventhub_endpoint(conn_str: str) -> tuple[str, str]:
+    """Extract (namespace, hub_name) from a connection string — key is never returned."""
+    namespace = hub = ""
+    for part in conn_str.split(";"):
+        low = part.lower()
+        if low.startswith("endpoint=sb://"):
+            namespace = part[len("Endpoint=sb://"):].rstrip("/")
+        elif low.startswith("entitypath="):
+            hub = part[part.index("=") + 1:]
+    return namespace or "unknown", hub or "unknown"
+
+
 # ── widgets ───────────────────────────────────────────────────────────────────
+
+class ConnectingDialog(ModalScreen[None]):
+    """Splash shown while the initial connection probe is in progress."""
+
+    DEFAULT_CSS = """
+    ConnectingDialog {
+        align: center middle;
+    }
+    ConnectingDialog > #dialog {
+        width: 60;
+        height: auto;
+        background: $surface;
+        border: thick $primary;
+        padding: 1 2;
+    }
+    ConnectingDialog > #dialog > #title {
+        text-style: bold;
+        margin-bottom: 1;
+    }
+    ConnectingDialog > #dialog > #title.success {
+        color: $success;
+    }
+    ConnectingDialog > #dialog > #info {
+        color: $text-muted;
+        margin-bottom: 1;
+    }
+    ConnectingDialog > #dialog > LoadingIndicator {
+        height: 1;
+        margin-bottom: 1;
+    }
+    ConnectingDialog > #dialog > Button {
+        width: 100%;
+        margin-top: 1;
+    }
+    """
+
+    def __init__(self, namespace: str, hub: str) -> None:
+        super().__init__()
+        self._namespace = namespace
+        self._hub = hub
+
+    def compose(self) -> ComposeResult:
+        with Static(id="dialog"):
+            yield Static("Connecting to Event Hub…", id="title")
+            yield Static(
+                f"Namespace:  {self._namespace}\nHub:        {self._hub}",
+                id="info",
+            )
+            yield LoadingIndicator()
+            yield Button("Cancel  (q)", variant="default", id="btn-cancel")
+
+    def show_success(self) -> None:
+        """Switch the dialog to a success state (called before auto-dismiss)."""
+        title = self.query_one("#title", Static)
+        title.update("✓  Connected to Event Hub!")
+        title.add_class("success")
+        self.query_one(LoadingIndicator).display = False
+        self.query_one(Button).display = False
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        self.app.exit()
+
+    def on_key(self, event) -> None:  # type: ignore[override]
+        if event.key in ("q", "escape"):
+            self.app.exit()
+
+
+class ErrorDialog(ModalScreen[None]):
+    """Modal shown after repeated connection failures."""
+
+    DEFAULT_CSS = """
+    ErrorDialog {
+        align: center middle;
+    }
+    ErrorDialog > #dialog {
+        width: 70;
+        height: auto;
+        background: $surface;
+        border: thick $error;
+        padding: 1 2;
+    }
+    ErrorDialog > #dialog > #title {
+        text-style: bold;
+        color: $error;
+        margin-bottom: 1;
+    }
+    ErrorDialog > #dialog > #hint {
+        margin-bottom: 1;
+        color: $text-muted;
+    }
+    ErrorDialog > #dialog > Button {
+        width: 100%;
+        margin-top: 1;
+    }
+    """
+
+    def __init__(self, error: str, hint: str) -> None:
+        super().__init__()
+        self._error = error
+        self._hint = hint
+
+    def compose(self) -> ComposeResult:
+        with Static(id="dialog"):
+            yield Static(" Connection failed", id="title")
+            yield Static(self._error)
+            yield Static(self._hint, id="hint")
+            yield Button("Quit  (q)", variant="error", id="btn-quit")
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        self.app.exit()
+
+    def on_key(self, event) -> None:  # type: ignore[override]
+        if event.key in ("q", "escape"):
+            self.app.exit()
+
 
 class StatusBar(Static):
     """Single-line status bar at the bottom."""
@@ -178,12 +306,13 @@ class FirewallLogApp(App[None]):
     # ── Event Hub worker ────────────────────────────────────────────────────────
     @work(exclusive=True)
     async def _start_stream(self) -> None:
-        """Connect to Event Hub and stream events (runs as a Textual async worker)."""
+        """Connect to Event Hub and stream events; reconnects automatically on error."""
         from azure.eventhub.aio import EventHubConsumerClient  # type: ignore[import]
 
         conn_str = os.environ.get("EVENT_HUB_CONNECTION_STRING", "")
         consumer_group = os.environ.get("EVENT_HUB_CONSUMER_GROUP", "$Default")
         start_pos = os.environ.get("EVENT_HUB_START_POSITION", "latest")
+        position = "@latest" if start_pos == "latest" else "@earliest"
 
         status = self.query_one("#status", StatusBar)
 
@@ -194,48 +323,121 @@ class FirewallLogApp(App[None]):
             )
             return
 
-        status.status = "Connecting to Event Hub…"
+        namespace, hub = _parse_eventhub_endpoint(conn_str)
 
-        try:
-            async with EventHubConsumerClient.from_connection_string(
-                conn_str,
-                consumer_group=consumer_group,
-                load_balancing_interval=1,  # claim partitions after 1s instead of default ~30s
-            ) as client:
-                status.status = "Connected — waiting for events"
-                self.sub_title = "Live Log Monitor  |  waiting for events"
+        # Keywords that indicate a configuration error rather than a transient fault.
+        _AUTH_KEYWORDS = (
+            "unauthorized", "authentication", "forbidden",
+            "401", "403", "invalid signature", "saskey",
+        )
+        # Exponential backoff delays in seconds between the three attempts.
+        _BACKOFF = [2, 5, 10]
+        _MAX_ATTEMPTS = 3
+        attempt = 0
+        last_exc: Exception | None = None
 
-                async def on_event(partition_ctx, event) -> None:  # type: ignore[misc]
-                    if event is None or self._paused:
-                        return
+        # Show the connecting splash and keep a flag so we know when to dismiss it.
+        _dialog = ConnectingDialog(namespace, hub)
+        await self.push_screen(_dialog)
+        _splash_shown = True
+
+        while attempt < _MAX_ATTEMPTS:
+            self.sub_title = "Live Log Monitor  |  connecting..."
+            status.status = "Connecting to Event Hub…"
+
+            try:
+                async with EventHubConsumerClient.from_connection_string(
+                    conn_str,
+                    consumer_group=consumer_group,
+                    load_balancing_interval=1,  # claim partitions after 1s instead of default ~30s
+                    retry_total=0,              # no SDK-internal retries — our loop handles that
+                ) as client:
+                    # Probe the connection before starting the long-running receive().
+                    # get_partition_ids() is a one-shot call without an internal reconnect
+                    # loop, so it fails fast and visibly when the string is wrong or the
+                    # namespace is unreachable.
                     try:
-                        body = json.loads(event.body_as_str())
-                    except (ValueError, TypeError):
-                        return
-                    for rec in body.get("records", []):
-                        if not self._fw_name_set:
-                            rid: str = rec.get("resourceId", "")
-                            if "/AZUREFIREWALLS/" in rid.upper():
-                                self.sub_title = rid.split("/")[-1]
-                                self._fw_name_set = True
-                        row = parse_record(rec)
-                        if row is None:
-                            continue
-                        if "SKIP:" in row.category:
-                            self._skip_pending += 1
-                        else:
-                            self._pending.append(row)
+                        await asyncio.wait_for(client.get_partition_ids(), timeout=15)
+                    except asyncio.TimeoutError:
+                        raise TimeoutError(
+                            "Event Hub did not respond within 15 s — "
+                            "check connection string and network"
+                        )
 
-                position = "@latest" if start_pos == "latest" else "@earliest"
-                await client.receive(
-                    on_event=on_event,
-                    starting_position=position,
+                    attempt = 0  # reset backoff counter after a successful connect
+                    if _splash_shown:
+                        _dialog.show_success()
+                        await asyncio.sleep(2)
+                        self.pop_screen()
+                        _splash_shown = False
+                    status.status = "Connected — waiting for events"
+                    self.sub_title = "Live Log Monitor  |  waiting for events"
+
+                    async def on_event(partition_ctx, event) -> None:  # type: ignore[misc]
+                        if event is None or self._paused:
+                            return
+                        try:
+                            body = json.loads(event.body_as_str())
+                        except (ValueError, TypeError):
+                            return
+                        for rec in body.get("records", []):
+                            if not self._fw_name_set:
+                                rid: str = rec.get("resourceId", "")
+                                if "/AZUREFIREWALLS/" in rid.upper():
+                                    self.sub_title = rid.split("/")[-1]
+                                    self._fw_name_set = True
+                            row = parse_record(rec)
+                            if row is None:
+                                continue
+                            if "SKIP:" in row.category:
+                                self._skip_pending += 1
+                            else:
+                                self._pending.append(row)
+
+                    await client.receive(on_event=on_event, starting_position=position)
+
+            except asyncio.CancelledError:
+                if _splash_shown:
+                    self.pop_screen()
+                status.status = "Streaming stopped"
+                return
+
+            except Exception as exc:
+                last_exc = exc
+                self._fw_name_set = False  # allow subtitle refresh on next connect
+                attempt += 1
+
+                if attempt >= _MAX_ATTEMPTS:
+                    break
+
+                delay = _BACKOFF[attempt - 1]
+                for remaining in range(delay, 0, -1):
+                    status.status = (
+                        f"Connection error: {exc}"
+                        f"  — attempt {attempt}/{_MAX_ATTEMPTS},"
+                        f" retrying in {remaining}s…"
+                    )
+                    await asyncio.sleep(1)
+
+        # ── all attempts exhausted ────────────────────────────────────────────
+        if last_exc is not None:
+            err_lower = str(last_exc).lower()
+            is_cfg_error = any(kw in err_lower for kw in _AUTH_KEYWORDS)
+            if is_cfg_error:
+                hint = (
+                    "The credentials in your connection string were rejected.\n"
+                    "Restart the app with  --reconfigure  to update the settings."
                 )
-
-        except asyncio.CancelledError:
-            self.query_one("#status", StatusBar).status = "Streaming stopped"
-        except Exception as exc:
-            self.query_one("#status", StatusBar).status = f"Connection error: {exc}"
+            else:
+                hint = (
+                    "The Event Hub namespace could not be reached.\n"
+                    "Check your network connection and the connection string,\n"
+                    "then restart the app (optionally with  --reconfigure)."
+                )
+            status.status = f"Failed after {_MAX_ATTEMPTS} attempts — see dialog"
+            if _splash_shown:
+                self.pop_screen()
+            await self.push_screen(ErrorDialog(str(last_exc), hint))
 
     # ── periodic flush ──────────────────────────────────────────────────────────
     async def _flush(self) -> None:

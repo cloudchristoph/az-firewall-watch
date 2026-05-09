@@ -55,7 +55,7 @@ jobs:
         run: |
           pyinstaller `
             --onefile `
-            --name az-firewall-watch `\
+            --name az-firewall-watch `
             --collect-all textual `
             --hidden-import azure.eventhub `
             --hidden-import azure.eventhub.aio `

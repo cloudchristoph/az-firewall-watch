@@ -99,7 +99,7 @@ def _parse_structured(record: dict, category: str, time: str) -> FirewallDataRow
     if category == "AZFWApplicationRule":
         rcg = _s(props, "RuleCollectionGroup")
         rule_path = "»".join(filter(None, [rcg, _s(props, "RuleCollection"), _s(props, "Rule")]))
-        full_policy = " ".join(filter(None, [_s(props, "Policy"), rule_path]))
+        full_policy = "»".join(filter(None, [_s(props, "Policy"), rule_path]))
         return FirewallDataRow(
             rowid=_next_id(),
             time=time,

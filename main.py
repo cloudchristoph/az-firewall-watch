@@ -203,6 +203,7 @@ class FirewallLogApp(App[None]):
                 load_balancing_interval=1,  # claim partitions after 1s instead of default ~30s
             ) as client:
                 status.status = "Connected — waiting for events"
+                self.sub_title = "Live Log Monitor  |  waiting for events"
 
                 async def on_event(partition_ctx, event) -> None:  # type: ignore[misc]
                     if event is None or self._paused:

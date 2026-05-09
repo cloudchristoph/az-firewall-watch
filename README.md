@@ -15,11 +15,11 @@ Built by [CloudChristoph](https://github.com/cloudchristoph).
 
 Download the binary for your platform from the [latest release](../../releases/latest):
 
-| Platform            | File                                  |
-| ------------------- | ------------------------------------- |
-| Linux x86_64        | `az-firewall-watch-linux.tar.gz`      |
-| macOS Apple Silicon | `az-firewall-watch-macos.tar.gz`      |
-| Windows             | `az-firewall-watch.exe`               |
+| Platform            | File                             |
+| ------------------- | -------------------------------- |
+| Linux x86_64        | `az-firewall-watch-linux.tar.gz` |
+| macOS Apple Silicon | `az-firewall-watch-macos.tar.gz` |
+| Windows             | `az-firewall-watch.exe`          |
 
 ### macOS / Linux
 
@@ -51,12 +51,13 @@ Double-click `az-firewall-watch.exe` or run from PowerShell:
 
 ### First-run setup wizard
 
-On first launch the wizard automatically:
+On first launch the wizard asks how you want to connect and then writes `.env` automatically. Three options are available:
 
-1. Checks that the **Azure CLI** is installed and guides you to install it if not.
-2. Verifies you are **logged in** (`az login` if needed).
-3. Lets you **pick an existing Event Hub** or **discover your firewall and deploy a new one** (~2–3 min, including diagnostic settings).
-4. Writes `.env` next to the binary with your connection string.
+| Option | Description | Azure CLI required |
+| ------ | ----------- | :----------------: |
+| **1 — Pick existing** | Choose an existing Event Hub from your subscriptions | ✅ |
+| **2 — Deploy new** | Discover your firewall and deploy a new Event Hub incl. diagnostic settings (~2–3 min) | ✅ |
+| **3 — Paste string** | Paste a connection string directly — no Azure CLI needed | — |
 
 Run with `--reconfigure` to redo setup at any time:
 

@@ -34,6 +34,12 @@ class FirewallDataRow:
     action: str = "-"
     policy: str = ""
     moreinfo: str = ""
+    # detail fields
+    resource_id: str = ""
+    fw_policy: str = ""
+    rule_collection_group: str = ""
+    rule_collection: str = ""
+    rule_name: str = ""
 
 
 def parse_record(record: dict) -> Optional[FirewallDataRow]:
@@ -60,7 +66,7 @@ def parse_record(record: dict) -> Optional[FirewallDataRow]:
         "AZFWDnsQuery", "AZFWIdpsSignature", "AZFWThreatIntel",
     }
     if category in structured:
-        return _parse_structured(record, category, time)
+        return _parse_structured(record, category, time, resource_id)
 
     # ── Legacy format ────────────────────────────────────────────────────────
     legacy = {
@@ -79,7 +85,7 @@ def _s(props: dict, key: str) -> str:
     return str(v) if v is not None else ""
 
 
-def _parse_structured(record: dict, category: str, time: str) -> FirewallDataRow:
+def _parse_structured(record: dict, category: str, time: str, resource_id: str = "") -> FirewallDataRow:
     props: dict = record.get("properties", {})
 
     if category == "AZFWDnsQuery":
@@ -94,12 +100,16 @@ def _parse_structured(record: dict, category: str, time: str) -> FirewallDataRow
             targetport="53",                        # DNS is always port 53
             action=_s(props, "ResponseCode") or "Request",  # NOERROR/NXDOMAIN/… → Action column
             moreinfo=_s(props, "ErrorMessage"),
+            resource_id=resource_id,
         )
 
     if category == "AZFWApplicationRule":
+        fw_policy = _s(props, "Policy")
         rcg = _s(props, "RuleCollectionGroup")
-        rule_path = "»".join(filter(None, [rcg, _s(props, "RuleCollection"), _s(props, "Rule")]))
-        full_policy = "»".join(filter(None, [_s(props, "Policy"), rule_path]))
+        rc = _s(props, "RuleCollection")
+        rule = _s(props, "Rule")
+        rule_path = "»".join(filter(None, [rcg, rc, rule]))
+        full_policy = "»".join(filter(None, [fw_policy, rule_path]))
         return FirewallDataRow(
             rowid=_next_id(),
             time=time,
@@ -112,15 +122,20 @@ def _parse_structured(record: dict, category: str, time: str) -> FirewallDataRow
             action=_s(props, "Action"),
             policy=full_policy,
             moreinfo=_s(props, "TargetUrl"),
+            resource_id=resource_id,
+            fw_policy=fw_policy,
+            rule_collection_group=rcg,
+            rule_collection=rc,
+            rule_name=rule,
         )
 
     if category == "AZFWNetworkRule":
+        fw_policy = _s(props, "Policy")
         rcg = _s(props, "RuleCollectionGroup")
+        rc = _s(props, "RuleCollection")
+        rule = _s(props, "Rule")
         if rcg:
-            full_policy = "»".join(filter(None, [
-                _s(props, "Policy"), rcg,
-                _s(props, "RuleCollection"), _s(props, "Rule"),
-            ]))
+            full_policy = "»".join(filter(None, [fw_policy, rcg, rc, rule]))
         else:
             full_policy = _s(props, "ActionReason")
         return FirewallDataRow(
@@ -134,15 +149,20 @@ def _parse_structured(record: dict, category: str, time: str) -> FirewallDataRow
             targetport=_s(props, "DestinationPort"),
             action=_s(props, "Action"),
             policy=full_policy,
+            resource_id=resource_id,
+            fw_policy=fw_policy,
+            rule_collection_group=rcg,
+            rule_collection=rc,
+            rule_name=rule,
         )
 
     if category == "AZFWNatRule":
+        fw_policy = _s(props, "Policy")
         rcg = _s(props, "RuleCollectionGroup")
+        rc = _s(props, "RuleCollection")
+        rule = _s(props, "Rule")
         if rcg:
-            full_policy = "»".join(filter(None, [
-                _s(props, "Policy"), rcg,
-                _s(props, "RuleCollection"), _s(props, "Rule"),
-            ]))
+            full_policy = "»".join(filter(None, [fw_policy, rcg, rc, rule]))
         else:
             full_policy = _s(props, "ActionReason")
         return FirewallDataRow(
@@ -156,6 +176,11 @@ def _parse_structured(record: dict, category: str, time: str) -> FirewallDataRow
             targetport=_s(props, "TranslatedPort"),
             action="DNAT",
             policy=full_policy,
+            resource_id=resource_id,
+            fw_policy=fw_policy,
+            rule_collection_group=rcg,
+            rule_collection=rc,
+            rule_name=rule,
         )
 
     if category == "AZFWIdpsSignature":
@@ -175,6 +200,7 @@ def _parse_structured(record: dict, category: str, time: str) -> FirewallDataRow
                 f"{_s(props, 'Category')} "
                 f"{_s(props, 'Description')}"
             ).strip(),
+            resource_id=resource_id,
         )
 
     if category == "AZFWThreatIntel":
@@ -189,6 +215,7 @@ def _parse_structured(record: dict, category: str, time: str) -> FirewallDataRow
             targetport=_s(props, "DestinationPort"),
             action=_s(props, "Action"),
             moreinfo=_s(props, "ThreatDescription"),
+            resource_id=resource_id,
         )
 
     return FirewallDataRow(rowid=_next_id(), time=time, category=f"SKIP:{category}")

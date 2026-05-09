@@ -224,6 +224,78 @@ class ErrorDialog(ModalScreen[None]):
             self.app.exit()
 
 
+class DetailDialog(ModalScreen[None]):
+    """Full details for a single log row, opened with Enter or double-click."""
+
+    DEFAULT_CSS = """
+    DetailDialog {
+        align: center middle;
+    }
+    DetailDialog > #dialog {
+        width: 84;
+        height: auto;
+        background: $surface;
+        border: thick $primary;
+        padding: 1 2;
+    }
+    DetailDialog > #dialog > #title {
+        text-style: bold;
+        margin-bottom: 1;
+    }
+    DetailDialog > #dialog > .detail-row {
+        height: auto;
+    }
+    DetailDialog > #dialog > Button {
+        width: 100%;
+        margin-top: 1;
+    }
+    """
+
+    def __init__(self, row: FirewallDataRow) -> None:
+        super().__init__()
+        self._row = row
+
+    @staticmethod
+    def _field(label: str, value: str) -> Static:
+        safe = value.replace("[", "\\[")
+        return Static(f"[dim]{label}[/]  {safe}", markup=True, classes="detail-row")
+
+    def compose(self) -> ComposeResult:
+        row = self._row
+        with Static(id="dialog"):
+            yield Static(f"Log Entry — {row.category}", id="title")
+
+            yield self._field("Time (UTC)   ", row.time)
+            yield self._field("Time (Local) ", _to_local(row.time))
+            yield self._field("Category     ", row.category)
+            yield self._field("Protocol     ", row.protocol)
+            yield self._field("Source       ", f"{row.sourceip}:{row.srcport}")
+            yield self._field("Destination  ", f"{row.targetip}:{row.targetport}")
+            yield self._field("Action       ", row.action)
+
+            if row.fw_policy:
+                yield self._field("Policy       ", row.fw_policy)
+            if row.rule_collection_group:
+                yield self._field("RCG          ", row.rule_collection_group)
+            if row.rule_collection:
+                yield self._field("Rule Coll.   ", row.rule_collection)
+            if row.rule_name:
+                yield self._field("Rule         ", row.rule_name)
+            if not any([row.fw_policy, row.rule_collection_group, row.rule_collection, row.rule_name]) and row.policy:
+                yield self._field("Policy / Info", row.policy)
+            if row.moreinfo:
+                yield self._field("More Info    ", row.moreinfo)
+
+            yield Button("Close  (Esc)", variant="primary", id="btn-close")
+
+    def on_button_pressed(self, _event: Button.Pressed) -> None:
+        self.dismiss()
+
+    def on_key(self, event) -> None:  # type: ignore[override]
+        if event.key in ("q", "escape"):
+            self.dismiss()
+
+
 class StatusBar(Static):
     """Single-line status bar at the bottom."""
 
@@ -557,6 +629,16 @@ class FirewallLogApp(App[None]):
     @on(Input.Changed, ".filter-input")
     def on_filter_changed(self, _event: Input.Changed) -> None:
         self._refresh_table()
+
+    @on(DataTable.RowSelected)
+    def on_row_selected(self, event: DataTable.RowSelected) -> None:
+        rowid = event.row_key.value
+        if rowid is None:
+            return
+        for row in self._all_rows:
+            if row.rowid == rowid:
+                self.push_screen(DetailDialog(row))
+                return
 
     # ── actions (key bindings) ──────────────────────────────────────────────────
     def action_toggle_pause(self) -> None:

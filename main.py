@@ -97,8 +97,8 @@ class StatusBar(Static):
 class FirewallLogApp(App[None]):
     """Azure Firewall Log streaming TUI."""
 
-    TITLE = "Azure Firewall Live Log Monitor"
-    SUB_TITLE = "connecting..."
+    TITLE = "Azure Firewall Watch"
+    SUB_TITLE = "Live Log Monitor  |  connecting..."
 
     CSS = """
     Screen {

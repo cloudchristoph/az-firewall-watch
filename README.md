@@ -1,13 +1,13 @@
-# az-firewall-watch
+# Azure Firewall Watch
 
-**Azure Firewall Live Log Monitor** — a terminal UI that streams Azure Firewall logs from an Event Hub and lets you filter them in real time.
+Azure Firewall Watch is a terminal UI for live log monitoring of Azure Firewall. It streams logs from an Event Hub in real time and lets you filter and inspect them directly in your terminal.
 
 Built by [CloudChristoph](https://github.com/cloudchristoph).
 
 > This project is based on the excellent work by [Nicola Delfino](https://github.com/nicolgit) and his
 > [azure-firewall-mon](https://github.com/nicolgit/azure-firewall-mon) project.
 
-![Azure Firewall TUI screenshot](https://raw.githubusercontent.com/cloudchristoph/az-firewall-watch/main/docs/screenshot.png)
+![Azure Firewall Watch screenshot](https://raw.githubusercontent.com/cloudchristoph/az-firewall-watch/main/docs/screenshot.png)
 
 ---
 
@@ -15,8 +15,8 @@ Built by [CloudChristoph](https://github.com/cloudchristoph).
 
 Download the binary for your platform from the [latest release](../../releases/latest):
 
-| Platform            | File                          |
-| ------------------- | ----------------------------- |
+| Platform            | File                            |
+| ------------------- | ------------------------------- |
 | Linux x86_64        | `az-firewall-watch-linux`       |
 | macOS Apple Silicon | `az-firewall-watch-macos`       |
 | Windows             | `az-firewall-watch-windows.exe` |

@@ -60,7 +60,7 @@ def bold(text: str) -> str: return _c("1", text)
 def print_header() -> None:
     print()
     print(_c("1;36", "╔═══════════════════════════════════════════════════════════════╗"))
-    print(_c("1;36", "║       Azure Firewall Live Log Monitor  —  Setup Wizard        ║"))
+    print(_c("1;36", "║             Azure Firewall Watch  —  Setup Wizard             ║"))
     print(_c("1;36", "╚═══════════════════════════════════════════════════════════════╝"))
     print()
 

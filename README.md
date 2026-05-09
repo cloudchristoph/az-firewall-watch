@@ -86,14 +86,14 @@ The scripts create a virtual environment, install dependencies, and launch the a
 
 ## Key bindings
 
-| Key      | Action                          |
-| -------- | ------------------------------- |
-| `q`      | Quit                            |
-| `p`      | Pause / resume streaming        |
-| `c`      | Clear all rows from the table   |
-| `Escape` | Clear all filter inputs         |
-| `f`      | Jump focus to the Source filter |
-| `Tab`    | Move between filter inputs      |
+| Key                 | Action                        |
+| ------------------- | ----------------------------- |
+| `q` or `Ctrl` + `q` | Quit                          |
+| `Ctrl` + `p`        | Pause / resume streaming      |
+| `c`                 | Clear all rows from the table |
+| `Escape`            | Clear all filter inputs       |
+| `f`                 | Jump focus to the filters     |
+| `Tab`               | Move between filter inputs    |
 
 ## Filters
 

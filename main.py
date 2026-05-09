@@ -7,7 +7,7 @@ filterable TUI table. Connection string is read from .env in this folder.
 
 Key bindings
   q        Quit
-  p        Pause / resume streaming
+  ctrl+p   Pause / resume streaming  (or click the status bar)
   c        Clear all rows
   Escape   Clear all filter inputs
   f        Focus the Source-IP filter
@@ -239,6 +239,12 @@ class StatusBar(Static):
             f"Events: {self.total}   Skipped: {self.skipped} "
         )
 
+    def watch_paused(self, paused: bool) -> None:
+        self.set_class(paused, "paused")
+
+    def on_click(self) -> None:
+        self.app.action_toggle_pause()  # type: ignore[attr-defined]
+
 
 # ── main app ──────────────────────────────────────────────────────────────────
 
@@ -280,11 +286,15 @@ class FirewallLogApp(App[None]):
         color: $text;
         padding: 0 0;
     }
+    StatusBar.paused {
+        background: $warning-darken-2;
+        color: $text;
+    }
     """
 
     BINDINGS = [
         Binding("q", "quit", "Quit"),
-        Binding("p", "toggle_pause", "Pause/Resume"),
+        Binding("ctrl+p", "toggle_pause", "Pause/Resume", priority=True, show=True),
         Binding("c", "clear_logs", "Clear"),
         Binding("escape", "clear_filters", "Clear Filters", priority=True),
         Binding("f", "focus_filter", "Filter"),

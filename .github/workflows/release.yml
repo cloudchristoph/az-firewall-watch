@@ -45,6 +45,7 @@ jobs:
             --hidden-import azure.eventhub._transport._pyamqp_transport \
             --add-data "fw_parser.py:." \
             --add-data "setup_wizard.py:." \
+            --add-data "version.txt:." \
             main.py
 
       - name: Build binary (Windows)
@@ -59,6 +60,7 @@ jobs:
             "--hidden-import" "azure.eventhub._transport._pyamqp_transport" `
             "--add-data" "fw_parser.py;." `
             "--add-data" "setup_wizard.py;." `
+            "--add-data" "version.txt;." `
             main.py
 
       - name: Package artifact

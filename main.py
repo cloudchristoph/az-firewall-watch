@@ -36,8 +36,16 @@ from textual.widgets import Button, DataTable, Footer, Header, Input, Label, Loa
 if getattr(sys, "frozen", False):
     # Running as a compiled binary — place .env next to the executable
     _BASE_DIR = Path(sys.executable).parent
+    _SRC_DIR = Path(sys._MEIPASS)  # type: ignore[attr-defined]
 else:
     _BASE_DIR = Path(__file__).parent
+    _SRC_DIR = _BASE_DIR
+
+# ── version ───────────────────────────────────────────────────────────────────
+try:
+    VERSION = (_SRC_DIR / "version.txt").read_text(encoding="utf-8").strip()
+except Exception:
+    VERSION = "unknown"
 
 # ── local ─────────────────────────────────────────────────────────────────────
 sys.path.insert(0, str(_BASE_DIR))
@@ -330,7 +338,7 @@ class StatusBar(Static):
 class FirewallLogApp(App[None]):
     """Azure Firewall Log streaming TUI."""
 
-    TITLE = "Azure Firewall Watch"
+    TITLE = f"Azure Firewall Watch v{VERSION}"
     SUB_TITLE = "Live Log Monitor  |  connecting..."
 
     CSS = """

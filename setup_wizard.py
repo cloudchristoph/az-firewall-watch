@@ -141,7 +141,7 @@ def check_login() -> None:
 def get_existing_conn_str(env_file: Path) -> Optional[str]:
     if not env_file.exists():
         return None
-    for line in env_file.read_text().splitlines():
+    for line in env_file.read_text(encoding="utf-8").splitlines():
         if line.startswith("EVENT_HUB_CONNECTION_STRING="):
             value = line[len("EVENT_HUB_CONNECTION_STRING="):].strip()
             return value if value else None
@@ -152,11 +152,12 @@ def write_env(env_file: Path, conn_str: str) -> None:
     from datetime import datetime, timezone
     ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     env_file.write_text(
-        f"# Written by setup_wizard.py — {ts}\n"
-        "# Do NOT commit this file — it contains a shared access key.\n"
+        f"# Written by setup_wizard.py - {ts}\n"
+        "# Do NOT commit this file - it contains a shared access key.\n"
         f"EVENT_HUB_CONNECTION_STRING={conn_str}\n"
         "EVENT_HUB_CONSUMER_GROUP=$Default\n"
-        "EVENT_HUB_START_POSITION=latest\n"
+        "EVENT_HUB_START_POSITION=latest\n",
+        encoding="utf-8",
     )
     ok(f".env written to {env_file}")
 

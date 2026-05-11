@@ -44,14 +44,22 @@ sys.path.insert(0, str(_BASE_DIR))
 from fw_parser import FirewallDataRow, parse_record  # noqa: E402
 
 # ── config ────────────────────────────────────────────────────────────────────
-load_dotenv(_BASE_DIR / ".env")
+def _load_env(path: Path, override: bool = False) -> None:
+    """Load a .env file, falling back to latin-1 if the file is not valid UTF-8."""
+    try:
+        load_dotenv(path, encoding="utf-8", override=override)
+    except UnicodeDecodeError:
+        load_dotenv(path, encoding="latin-1", override=override)
+
+
+_load_env(_BASE_DIR / ".env")
 
 # Run the setup wizard automatically if no connection string is configured.
 # Pass --reconfigure to redo setup even when .env already exists.
 if not os.environ.get("EVENT_HUB_CONNECTION_STRING") or "--reconfigure" in sys.argv:
     from setup_wizard import run_wizard  # noqa: E402
     run_wizard(_BASE_DIR, reconfigure="--reconfigure" in sys.argv)
-    load_dotenv(_BASE_DIR / ".env", override=True)
+    _load_env(_BASE_DIR / ".env", override=True)
 
 MAX_ROWS = 5000  # maximum rows kept in memory
 

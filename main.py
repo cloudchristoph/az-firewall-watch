@@ -159,7 +159,7 @@ class FirewallLogApp(App[None]):
             "Action", "Policy / Info",
         )
         self._start_stream()
-        self.set_interval(1.0, self._flush)
+        self.set_interval(1.0, self._flush_rows)
         self._check_update()
 
     # ── Update check ────────────────────────────────────────────────────────────
@@ -355,7 +355,7 @@ class FirewallLogApp(App[None]):
             await self.push_screen(ErrorDialog(str(last_exc), hint))
 
     # ── periodic flush ──────────────────────────────────────────────────────────
-    async def _flush(self) -> None:
+    async def _flush_rows(self) -> None:
         """Drain pending rows into _all_rows and refresh the table (every 1 s)."""
         has_new = bool(self._pending) or self._skip_pending > 0
         if not has_new:

@@ -19,7 +19,7 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
-from typing import Optional
+from typing import TYPE_CHECKING, Optional, cast
 
 from textual import work
 from textual.app import App, ComposeResult
@@ -34,6 +34,8 @@ from textual.widgets import (
     ListItem,
     ListView,
     LoadingIndicator,
+    RadioButton,
+    RadioSet,
     RichLog,
     Static,
 )
@@ -138,6 +140,14 @@ def location_short(loc: str) -> str:
 
 # ── Textual screens ────────────────────────────────────────────────────────────
 
+class _WizardScreen(Screen):
+    """Base screen that exposes a typed accessor for :class:`WizardApp`."""
+
+    @property
+    def _wizard_app(self) -> "WizardApp":  # forward ref resolved at type-check time
+        return self.app  # type: ignore[return-value]
+
+
 class WelcomeScreen(Screen):
     """Main wizard menu."""
 
@@ -151,44 +161,48 @@ class WelcomeScreen(Screen):
                 "How do you want to connect to Azure Event Hub?",
                 classes="wiz-info",
             )
-            yield Button(
-                "1  Choose from existing Event Hubs in my subscriptions",
-                id="btn-pick",
-                variant="primary",
-            )
-            yield Button(
-                "2  Discover firewall & deploy new Event Hub  (~2–3 min)",
-                id="btn-deploy",
-                variant="primary",
-            )
-            yield Button(
-                "3  Paste a connection string directly",
-                id="btn-paste",
-                variant="primary",
-            )
-            yield Button(
-                "4  Use Entra ID (passwordless) — enter namespace + hub name",
-                id="btn-entra",
-                variant="primary",
-            )
+            with RadioSet(id="welcome-radio"):
+                yield RadioButton(
+                    "Choose from existing Event Hubs in my subscriptions",
+                    id="opt-pick",
+                    value=True,
+                )
+                yield RadioButton(
+                    "Discover firewall & deploy new Event Hub  (~2–3 min)",
+                    id="opt-deploy",
+                )
+                yield RadioButton(
+                    "Paste a connection string directly",
+                    id="opt-paste",
+                )
+                yield RadioButton(
+                    "Use Entra ID (passwordless) — enter namespace + hub name",
+                    id="opt-entra",
+                )
             with Horizontal(classes="wiz-buttons"):
                 yield Button("Quit", id="btn-quit", variant="error")
+                yield Button("Next →", id="btn-next", variant="primary")
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
-        match event.button.id:
-            case "btn-pick":
-                self.app.push_screen(PickExistingScreen())
-            case "btn-deploy":
-                self.app.push_screen(DeployNewScreen())
-            case "btn-paste":
-                self.app.push_screen(PasteConnectionScreen())
-            case "btn-entra":
-                self.app.push_screen(EntraIdScreen())
-            case "btn-quit":
-                self.app.exit()
+        if event.button.id == "btn-quit":
+            self.app.exit()
+            return
+        if event.button.id == "btn-next":
+            radio = self.query_one("#welcome-radio", RadioSet)
+            if radio.pressed_button is None:
+                return
+            match radio.pressed_button.id:
+                case "opt-pick":
+                    self.app.push_screen(PickExistingScreen())
+                case "opt-deploy":
+                    self.app.push_screen(DeployNewScreen())
+                case "opt-paste":
+                    self.app.push_screen(PasteConnectionScreen())
+                case "opt-entra":
+                    self.app.push_screen(EntraIdScreen())
 
 
-class PasteConnectionScreen(Screen):
+class PasteConnectionScreen(_WizardScreen):
     """Option 3 — paste a SAS connection string."""
 
     def compose(self) -> ComposeResult:
@@ -243,11 +257,11 @@ class PasteConnectionScreen(Screen):
             err_label.display = True
             return
 
-        write_env(self.app.env_file, raw)
+        write_env(self._wizard_app.env_file, raw)
         self.app.exit()
 
 
-class EntraIdScreen(Screen):
+class EntraIdScreen(_WizardScreen):
     """Option 4 — Entra ID (passwordless) setup."""
 
     def compose(self) -> ComposeResult:
@@ -302,11 +316,11 @@ class EntraIdScreen(Screen):
             err_label.display = True
             return
 
-        write_env_entra(self.app.env_file, ns, hub)
+        write_env_entra(self._wizard_app.env_file, ns, hub)
         self.app.exit()
 
 
-class PickExistingScreen(Screen):
+class PickExistingScreen(_WizardScreen):
     """Option 1 — pick an existing Event Hub from subscriptions."""
 
     _items: list
@@ -365,7 +379,7 @@ class PickExistingScreen(Screen):
         acc = await _az_async("account", "show", "--query", "user.name", "-o", "tsv")
         if acc.returncode != 0:
             log.write("[yellow]![/] Not logged in — starting az login…")
-            async with self.app.suspend():
+            with self.app.suspend():
                 subprocess.run([az, "login"], check=True)
             acc = await _az_async("account", "show", "--query", "user.name", "-o", "tsv")
         user = acc.stdout.strip()
@@ -482,23 +496,26 @@ class PickExistingScreen(Screen):
             log.write("[green]✓[/] Auth rule created")
 
         log.write("[green]✓[/] Writing .env…")
-        write_env(self.app.env_file, conn_str)
+        write_env(self._wizard_app.env_file, conn_str)
         log.write("[green]✓[/] Done!")
         self.app.exit()
 
 
-class DeployNewScreen(Screen):
+class DeployNewScreen(_WizardScreen):
     """Option 2 — discover firewall, deploy new Event Hub + diagnostics."""
 
     _subs: list
     _target_sub: str
     _target_sub_name: str
     _firewalls: list
-    _selected_fw: Optional[dict]
+    _selected_fw: dict
     _location: str
-    _env_tag: str
     _rg: str
     _ns: str
+    _eh_name: str
+    _listen_rule: str
+    _send_rule: str
+    _diag_name: str
 
     def compose(self) -> ComposeResult:
         with Vertical(classes="wiz-box"):
@@ -524,7 +541,7 @@ class DeployNewScreen(Screen):
 
                 # Panel 2 — firewall selection
                 with Vertical(id="step-firewall"):
-                    yield Static("Select a firewall (or skip):", classes="wiz-info")
+                    yield Static("Select a firewall:", classes="wiz-info")
                     yield RichLog(id="fw-scan-log", highlight=True, markup=True)
                     yield LoadingIndicator(id="fw-spinner")
                     yield ListView(id="fw-list")
@@ -536,12 +553,18 @@ class DeployNewScreen(Screen):
                 # Panel 3 — naming
                 with Vertical(id="step-naming"):
                     yield Static("Resource naming:", classes="wiz-info")
-                    yield Label("Environment tag (dev/staging/prod):")
-                    yield Input(value="dev", id="inp-env-tag")
                     yield Label("Resource group name:")
                     yield Input(id="inp-rg")
                     yield Label("Event Hub namespace name:")
                     yield Input(id="inp-ns-deploy")
+                    yield Label("Event Hub name:")
+                    yield Input(value="firewall-logs", id="inp-eh-name")
+                    yield Label("Listen auth rule name:")
+                    yield Input(value="firewall-mon-listen", id="inp-listen-rule")
+                    yield Label("Send auth rule name:")
+                    yield Input(value="fw-diag-send", id="inp-send-rule")
+                    yield Label("Diagnostic setting name:")
+                    yield Input(value="fw-logs-to-eventhub", id="inp-diag-name")
                     yield Label("", id="lbl-naming-error", classes="wiz-error")
                     with Horizontal(classes="wiz-buttons"):
                         yield Button("Back", id="btn-back-naming", variant="default")
@@ -566,7 +589,6 @@ class DeployNewScreen(Screen):
     def on_mount(self) -> None:
         self._subs = []
         self._firewalls = []
-        self._selected_fw = None
         self.query_one("#lbl-deploy-error", Label).display = False
         self.query_one("#lbl-fw-error", Label).display = False
         self.query_one("#lbl-naming-error", Label).display = False
@@ -592,7 +614,7 @@ class DeployNewScreen(Screen):
         acc = await _az_async("account", "show", "--query", "user.name", "-o", "tsv")
         if acc.returncode != 0:
             log.write("[yellow]![/] Not logged in — starting az login…")
-            async with self.app.suspend():
+            with self.app.suspend():
                 subprocess.run([az, "login"], check=True)
             acc = await _az_async("account", "show", "--query", "user.name", "-o", "tsv")
         user = acc.stdout.strip()
@@ -666,6 +688,15 @@ class DeployNewScreen(Screen):
             "-o", "json",
         )
         fws = json.loads(fw_result.stdout) if fw_result.returncode == 0 else []
+        if not fws:
+            err = self.query_one("#lbl-fw-error", Label)
+            err.update(
+                "No Azure Firewalls found in this subscription.\n"
+                "Deployment requires an existing firewall to determine the region."
+            )
+            err.display = True
+            self.query_one("#fw-spinner", LoadingIndicator).display = False
+            return
         self._firewalls = fws
         self._populate_firewall_list(fws)
 
@@ -676,7 +707,6 @@ class DeployNewScreen(Screen):
             lv.append(ListItem(Static(
                 f"{fw['name']}  (rg: {fw['rg']}, location: {fw['location']})"
             )))
-        lv.append(ListItem(Static("Skip — deploy Event Hub only, configure diagnostics later")))
         lv.display = True
 
     def _go_firewall(self) -> None:
@@ -684,56 +714,50 @@ class DeployNewScreen(Screen):
         if lv.index is None:
             return
         idx = lv.index
-        skip_idx = len(self._firewalls)
-        if idx < skip_idx:
-            self._selected_fw = self._firewalls[idx]
-            self._location = self._selected_fw["location"]
-        else:
-            self._selected_fw = None
-            self._location = "westeurope"
+        self._selected_fw = self._firewalls[idx]
+        self._location = self._selected_fw["location"]
 
         loc_abbr = location_short(self._location)
-        env_tag = "dev"
-        rg_default = (
-            self._selected_fw["rg"]
-            if self._selected_fw
-            else f"rg-fwlogs-{env_tag}-{loc_abbr}-001"
-        )
-        ns_default = f"ehns-fwlogs-{env_tag}-{loc_abbr}-001"
+        rg_default = self._selected_fw["rg"]
+        ns_default = f"ehns-fwlogs-{loc_abbr}-001"
 
-        self.query_one("#inp-env-tag", Input).value = env_tag
         self.query_one("#inp-rg", Input).value = rg_default
         self.query_one("#inp-ns-deploy", Input).value = ns_default
         self.query_one(ContentSwitcher).current = "step-naming"
 
     def _go_naming(self) -> None:
-        env_tag = self.query_one("#inp-env-tag", Input).value.strip()
         rg = self.query_one("#inp-rg", Input).value.strip()
         ns = self.query_one("#inp-ns-deploy", Input).value.strip()
+        eh_name = self.query_one("#inp-eh-name", Input).value.strip()
+        listen_rule = self.query_one("#inp-listen-rule", Input).value.strip()
+        send_rule = self.query_one("#inp-send-rule", Input).value.strip()
+        diag_name = self.query_one("#inp-diag-name", Input).value.strip()
         err = self.query_one("#lbl-naming-error", Label)
         err.display = False
 
-        if not env_tag or not rg or not ns:
+        if not rg or not ns or not eh_name or not listen_rule or not send_rule or not diag_name:
             err.update("All fields are required.")
             err.display = True
             return
 
-        self._env_tag = env_tag
         self._rg = rg
         self._ns = ns
+        self._eh_name = eh_name
+        self._listen_rule = listen_rule
+        self._send_rule = send_rule
+        self._diag_name = diag_name
 
         rows = [
             f"Subscription : {self._target_sub_name}",
+            f"Firewall     : {self._selected_fw['name']} → diagnostics will be configured",
             f"Location     : {self._location}",
             f"Resource group: {rg}",
             f"EH Namespace : {ns}",
-            f"Event Hub    : firewall-logs",
-            f"Listen rule  : firewall-mon-listen",
+            f"Event Hub    : {eh_name}",
+            f"Listen rule  : {listen_rule}",
+            f"Send rule    : {send_rule}",
+            f"Diag setting : {diag_name}",
         ]
-        if self._selected_fw:
-            rows.insert(2, f"Firewall     : {self._selected_fw['name']} → diagnostics will be configured")
-            rows.append("Send rule    : fw-diag-send")
-            rows.append("Diag setting : fw-logs-to-eventhub")
         self.query_one("#summary-text", Static).update("\n".join(rows))
         self.query_one(ContentSwitcher).current = "step-summary"
 
@@ -749,12 +773,11 @@ class DeployNewScreen(Screen):
         rg = self._rg
         ns = self._ns
         location = self._location
-        env_tag = self._env_tag
-        eh_name = "firewall-logs"
-        listen_rule = "firewall-mon-listen"
-        send_rule = "fw-diag-send"
-        diag_name = "fw-logs-to-eventhub"
-        tags = [f"environment={env_tag}", "project=az-firewall-watch", "managed-by=az-cli"]
+        eh_name = self._eh_name
+        listen_rule = self._listen_rule
+        send_rule = self._send_rule
+        diag_name = self._diag_name
+        tags = ["project=az-firewall-watch", "managed-by=az-cli"]
 
         try:
             # Resource group
@@ -819,71 +842,70 @@ class DeployNewScreen(Screen):
             )
             conn_str = keys_result.stdout.strip()
 
-            # Optional: Send rule + diagnostic settings
-            if self._selected_fw:
-                log.write(f"[cyan]i[/] Creating Send rule '{send_rule}'…")
-                await _az_async(
-                    "eventhubs", "namespace", "authorization-rule", "create",
-                    "--subscription", sub_id,
-                    "--resource-group", rg, "--namespace-name", ns,
-                    "--name", send_rule, "--rights", "Send",
-                    "--output", "none",
-                    check=True,
-                )
-                log.write("[green]✓[/] Send rule created")
+            # Send rule + diagnostic settings
+            log.write(f"[cyan]i[/] Creating Send rule '{send_rule}'…")
+            await _az_async(
+                "eventhubs", "namespace", "authorization-rule", "create",
+                "--subscription", sub_id,
+                "--resource-group", rg, "--namespace-name", ns,
+                "--name", send_rule, "--rights", "Send",
+                "--output", "none",
+                check=True,
+            )
+            log.write("[green]✓[/] Send rule created")
 
-                send_rule_result = await _az_async(
-                    "eventhubs", "namespace", "authorization-rule", "show",
-                    "--subscription", sub_id,
-                    "--resource-group", rg, "--namespace-name", ns,
-                    "--name", send_rule, "--query", "id", "-o", "tsv",
-                    check=True,
-                )
-                send_rule_id = send_rule_result.stdout.strip()
+            send_rule_result = await _az_async(
+                "eventhubs", "namespace", "authorization-rule", "show",
+                "--subscription", sub_id,
+                "--resource-group", rg, "--namespace-name", ns,
+                "--name", send_rule, "--query", "id", "-o", "tsv",
+                check=True,
+            )
+            send_rule_id = send_rule_result.stdout.strip()
 
-                log.write("[cyan]i[/] Discovering diagnostic log categories…")
-                cats_result = await _az_async(
-                    "monitor", "diagnostic-settings", "categories", "list",
-                    "--resource", self._selected_fw["id"],
-                    "--query", "value[?categoryType=='Logs'].name",
-                    "-o", "json",
+            log.write("[cyan]i[/] Discovering diagnostic log categories…")
+            cats_result = await _az_async(
+                "monitor", "diagnostic-settings", "categories", "list",
+                "--resource", self._selected_fw["id"],
+                "--query", "value[?categoryType=='Logs'].name",
+                "-o", "json",
+            )
+            available_cats: list[str] = []
+            if cats_result.returncode == 0 and cats_result.stdout.strip():
+                all_cats = json.loads(cats_result.stdout) or []
+                available_cats = [c for c in all_cats if c.startswith("AZFW")]
+            if not available_cats:
+                available_cats = [
+                    "AZFWNetworkRule", "AZFWApplicationRule", "AZFWNatRule",
+                    "AZFWThreatIntel", "AZFWIdpsSignature", "AZFWDnsQuery", "AZFWDnsProxy",
+                ]
+            diag_logs = json.dumps(
+                [{"category": c, "enabled": True} for c in available_cats]
+            )
+
+            log.write(f"[cyan]i[/] Configuring diagnostic settings '{diag_name}'…")
+            diag_result = await _az_async(
+                "monitor", "diagnostic-settings", "create",
+                "--name", diag_name,
+                "--resource", self._selected_fw["id"],
+                "--event-hub", eh_name,
+                "--event-hub-rule", send_rule_id,
+                "--logs", diag_logs,
+                "--output", "none",
+            )
+            if diag_result.returncode == 0:
+                log.write(
+                    "[green]✓[/] Diagnostic settings configured — logs will start flowing shortly"
                 )
-                available_cats: list[str] = []
-                if cats_result.returncode == 0 and cats_result.stdout.strip():
-                    all_cats = json.loads(cats_result.stdout) or []
-                    available_cats = [c for c in all_cats if c.startswith("AZFW")]
-                if not available_cats:
-                    available_cats = [
-                        "AZFWNetworkRule", "AZFWApplicationRule", "AZFWNatRule",
-                        "AZFWThreatIntel", "AZFWIdpsSignature", "AZFWDnsQuery", "AZFWDnsProxy",
-                    ]
-                diag_logs = json.dumps(
-                    [{"category": c, "enabled": True} for c in available_cats]
+            else:
+                log.write(
+                    f"[yellow]![/] Could not configure diagnostics automatically.\n"
+                    f"    Configure manually in Azure Portal:\n"
+                    f"    Firewall '{self._selected_fw['name']}' → Diagnostic settings → Add\n"
+                    f"    → Stream to Event Hub → ns: {ns}, hub: {eh_name}",
                 )
 
-                log.write(f"[cyan]i[/] Configuring diagnostic settings '{diag_name}'…")
-                diag_result = await _az_async(
-                    "monitor", "diagnostic-settings", "create",
-                    "--name", diag_name,
-                    "--resource", self._selected_fw["id"],
-                    "--event-hub", eh_name,
-                    "--event-hub-rule", send_rule_id,
-                    "--logs", diag_logs,
-                    "--output", "none",
-                )
-                if diag_result.returncode == 0:
-                    log.write(
-                        "[green]✓[/] Diagnostic settings configured — logs will start flowing shortly"
-                    )
-                else:
-                    log.write(
-                        f"[yellow]![/] Could not configure diagnostics automatically.\n"
-                        f"    Configure manually in Azure Portal:\n"
-                        f"    Firewall '{self._selected_fw['name']}' → Diagnostic settings → Add\n"
-                        f"    → Stream to Event Hub → ns: {ns}, hub: {eh_name}",
-                    )
-
-            write_env(self.app.env_file, conn_str)
+            write_env(self._wizard_app.env_file, conn_str)
             log.write("[green]✓[/] .env written — setup complete!")
             self.app.exit()
 
@@ -936,13 +958,26 @@ class WizardApp(App[None]):
     .wiz-buttons Button {
         margin-left: 1;
     }
+    ContentSwitcher {
+        height: auto;
+    }
+    ContentSwitcher > Vertical {
+        height: auto;
+    }
     RichLog {
-        height: 12;
+        height: 8;
         border: solid $primary-darken-2;
         margin-bottom: 1;
     }
+    #scan-log {
+        height: 5;
+    }
+    LoadingIndicator {
+        height: 1;
+        margin-bottom: 1;
+    }
     ListView {
-        height: 10;
+        height: 7;
         border: solid $primary-darken-2;
         margin-bottom: 1;
     }

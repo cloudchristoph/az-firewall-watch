@@ -262,8 +262,12 @@ class PickExistingScreen(_WizardScreen):
         acc = await az_async("account", "show", "--query", "user.name", "-o", "tsv")
         if acc.returncode != 0:
             log.write("[yellow]![/] Not logged in — starting az login…")
-            with self.app.suspend():
-                subprocess.run([az, "login"], check=True)
+            try:
+                with self.app.suspend():
+                    subprocess.run([az, "login"], check=True)
+            except subprocess.CalledProcessError as exc:
+                self._show_error(f"az login failed: {exc}")
+                return
             acc = await az_async("account", "show", "--query", "user.name", "-o", "tsv")
         user = acc.stdout.strip()
         log.write(f"[green]✓[/] Logged in as [bold]{user}[/]")
@@ -348,38 +352,46 @@ class PickExistingScreen(_WizardScreen):
         self.query_one(ContentSwitcher).current = "phase-loading"
         log.write(f"[cyan]i[/] Looking up auth rule '{rule_name}'…")
 
-        keys_result = await az_async(
-            "eventhubs", "eventhub", "authorization-rule", "keys", "list",
-            "--subscription", sub_id, "--resource-group", rg,
-            "--namespace-name", ns, "--eventhub-name", eh,
-            "--name", rule_name, "--query", "primaryConnectionString", "-o", "tsv",
-        )
-        if keys_result.returncode == 0 and keys_result.stdout.strip():
-            conn_str = keys_result.stdout.strip()
-            log.write(f"[green]✓[/] Found existing rule '{rule_name}'")
-        else:
-            log.write(f"[yellow]![/] Rule not found — creating '{rule_name}'…")
-            await az_async(
-                "eventhubs", "eventhub", "authorization-rule", "create",
-                "--subscription", sub_id, "--resource-group", rg,
-                "--namespace-name", ns, "--eventhub-name", eh,
-                "--name", rule_name, "--rights", "Listen", "--output", "none",
-                check=True,
-            )
+        try:
             keys_result = await az_async(
                 "eventhubs", "eventhub", "authorization-rule", "keys", "list",
                 "--subscription", sub_id, "--resource-group", rg,
                 "--namespace-name", ns, "--eventhub-name", eh,
                 "--name", rule_name, "--query", "primaryConnectionString", "-o", "tsv",
-                check=True,
             )
-            conn_str = keys_result.stdout.strip()
-            log.write("[green]✓[/] Auth rule created")
+            if keys_result.returncode == 0 and keys_result.stdout.strip():
+                conn_str = keys_result.stdout.strip()
+                log.write(f"[green]✓[/] Found existing rule '{rule_name}'")
+            else:
+                log.write(f"[yellow]![/] Rule not found — creating '{rule_name}'…")
+                await az_async(
+                    "eventhubs", "eventhub", "authorization-rule", "create",
+                    "--subscription", sub_id, "--resource-group", rg,
+                    "--namespace-name", ns, "--eventhub-name", eh,
+                    "--name", rule_name, "--rights", "Listen", "--output", "none",
+                    check=True,
+                )
+                keys_result = await az_async(
+                    "eventhubs", "eventhub", "authorization-rule", "keys", "list",
+                    "--subscription", sub_id, "--resource-group", rg,
+                    "--namespace-name", ns, "--eventhub-name", eh,
+                    "--name", rule_name, "--query", "primaryConnectionString", "-o", "tsv",
+                    check=True,
+                )
+                conn_str = keys_result.stdout.strip()
+                log.write("[green]✓[/] Auth rule created")
 
-        log.write("[green]✓[/] Writing .env…")
-        write_env(self._wizard_app.env_file, conn_str)
-        log.write("[green]✓[/] Done!")
-        self.app.exit()
+            if not conn_str:
+                self._show_error("Could not retrieve a connection string for the auth rule.")
+                return
+
+            log.write("[green]✓[/] Writing .env…")
+            write_env(self._wizard_app.env_file, conn_str)
+            log.write("[green]✓[/] Done!")
+            self.app.exit()
+
+        except Exception as exc:
+            self._show_error(f"Failed to configure auth rule: {exc}")
 
 
 class DeployNewScreen(_WizardScreen):
@@ -487,8 +499,12 @@ class DeployNewScreen(_WizardScreen):
         acc = await az_async("account", "show", "--query", "user.name", "-o", "tsv")
         if acc.returncode != 0:
             log.write("[yellow]![/] Not logged in — starting az login…")
-            with self.app.suspend():
-                subprocess.run([az, "login"], check=True)
+            try:
+                with self.app.suspend():
+                    subprocess.run([az, "login"], check=True)
+            except subprocess.CalledProcessError as exc:
+                self._deploy_error(f"az login failed: {exc}")
+                return
             acc = await az_async("account", "show", "--query", "user.name", "-o", "tsv")
         user = acc.stdout.strip()
         log.write(f"[green]✓[/] Logged in as [bold]{user}[/]")
@@ -636,6 +652,7 @@ class DeployNewScreen(_WizardScreen):
 
     def _start_deploy(self) -> None:
         self.query_one(ContentSwitcher).current = "step-progress"
+        self.query_one("#btn-back-progress", Button).disabled = True
         self._run_deploy()
 
     @work(exclusive=True)
@@ -778,3 +795,4 @@ class DeployNewScreen(_WizardScreen):
         except Exception as exc:
             log.write(f"[red]✗[/] Deployment failed: {exc}")
             self.query_one("#progress-spinner", LoadingIndicator).display = False
+            self.query_one("#btn-back-progress", Button).disabled = False

@@ -5,11 +5,19 @@ from pathlib import Path
 from typing import Optional
 
 
+def _read_env_text(env_file: Path) -> str:
+    """Read .env as UTF-8, falling back to latin-1 on decode errors."""
+    try:
+        return env_file.read_text(encoding="utf-8")
+    except UnicodeDecodeError:
+        return env_file.read_text(encoding="latin-1")
+
+
 def get_existing_conn_str(env_file: Path) -> Optional[str]:
     """Return a non-empty connection string from .env, or None."""
     if not env_file.exists():
         return None
-    for line in env_file.read_text(encoding="utf-8").splitlines():
+    for line in _read_env_text(env_file).splitlines():
         if line.startswith("EVENT_HUB_CONNECTION_STRING="):
             value = line[len("EVENT_HUB_CONNECTION_STRING="):].strip()
             return value if value else None
@@ -21,7 +29,7 @@ def has_entra_config(env_file: Path) -> bool:
     if not env_file.exists():
         return False
     found_ns = found_name = False
-    for line in env_file.read_text(encoding="utf-8").splitlines():
+    for line in _read_env_text(env_file).splitlines():
         if line.startswith("EVENT_HUB_NAMESPACE=") and line.split("=", 1)[1].strip():
             found_ns = True
         if line.startswith("EVENT_HUB_NAME=") and line.split("=", 1)[1].strip():

@@ -1,13 +1,9 @@
 from __future__ import annotations
 
 import asyncio
-import platform
 import shutil
 import subprocess
-from pathlib import Path
 from typing import Optional
-
-_IS_WIN = platform.system() == "Windows"
 
 
 def find_az() -> Optional[str]:

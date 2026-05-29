@@ -100,7 +100,7 @@ The scripts create a virtual environment, install dependencies, and launch the a
 
 ### 🧙 First-run setup wizard
 
-On first launch the wizard asks how you want to connect and then writes `.env` automatically. Three options are available:
+On first launch the wizard asks how you want to connect and then writes `.env` automatically. Four options are available:
 
 <!-- markdownlint-disable MD060 -->
 | Option                | Description                                                                            | Azure CLI required |
@@ -108,6 +108,7 @@ On first launch the wizard asks how you want to connect and then writes `.env` a
 | **1 — Pick existing** | Choose an existing Event Hub from your subscriptions                                   | ✅                  |
 | **2 — Deploy new**    | Discover your firewall and deploy a new Event Hub incl. diagnostic settings (~2–3 min) | ✅                  |
 | **3 — Paste string**  | Paste a connection string directly — no Azure CLI needed                               | —                  |
+| **4 — Entra ID**      | Enter namespace + hub name and authenticate passwordlessly via `DefaultAzureCredential` | —                 |
 <!-- markdownlint-enable MD060 -->
 
 Run with `--reconfigure` to redo setup at any time:

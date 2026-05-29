@@ -102,11 +102,13 @@ The scripts create a virtual environment, install dependencies, and launch the a
 
 On first launch the wizard asks how you want to connect and then writes `.env` automatically. Three options are available:
 
+<!-- markdownlint-disable MD060 -->
 | Option                | Description                                                                            | Azure CLI required |
-| --------------------- | -------------------------------------------------------------------------------------- | :----------------: |
-| **1 — Pick existing** | Choose an existing Event Hub from your subscriptions                                   |         ✅          |
-| **2 — Deploy new**    | Discover your firewall and deploy a new Event Hub incl. diagnostic settings (~2–3 min) |         ✅          |
-| **3 — Paste string**  | Paste a connection string directly — no Azure CLI needed                               |         —          |
+| --------------------- | -------------------------------------------------------------------------------------- | ------------------ |
+| **1 — Pick existing** | Choose an existing Event Hub from your subscriptions                                   | ✅                  |
+| **2 — Deploy new**    | Discover your firewall and deploy a new Event Hub incl. diagnostic settings (~2–3 min) | ✅                  |
+| **3 — Paste string**  | Paste a connection string directly — no Azure CLI needed                               | —                  |
+<!-- markdownlint-enable MD060 -->
 
 Run with `--reconfigure` to redo setup at any time:
 
@@ -172,16 +174,17 @@ EVENT_HUB_START_POSITION=latest
 
 ### Environment variables
 
-| Variable                      | Description                                                  | Default      |
-| ----------------------------- | ------------------------------------------------------------ | ------------ |
-| `EVENT_HUB_CONNECTION_STRING` | Primary connection string incl. `EntityPath=<your-hub-name>` | —            |
-| `EVENT_HUB_NAMESPACE`         | Fully qualified namespace (e.g. `mynamespace.servicebus.windows.net`) — for Entra ID auth | —            |
-| `EVENT_HUB_NAME`              | Event Hub name — for Entra ID auth                           | —            |
-| `EVENT_HUB_CONSUMER_GROUP`    | Consumer group                                               | `$Default`   |
-| `EVENT_HUB_START_POSITION`    | `latest` (live only) or `earliest` (read full retention)     | `latest`     |
+<!-- markdownlint-disable MD060 -->
+| Variable                      | Description                                                                               | Default    |
+| ----------------------------- | ----------------------------------------------------------------------------------------- | ---------- |
+| `EVENT_HUB_CONNECTION_STRING` | Primary connection string incl. `EntityPath=<your-hub-name>`                              | —          |
+| `EVENT_HUB_NAMESPACE`         | Fully qualified namespace (e.g. `mynamespace.servicebus.windows.net`) — for Entra ID auth | —          |
+| `EVENT_HUB_NAME`              | Event Hub name — for Entra ID auth                                                        | —          |
+| `EVENT_HUB_CONSUMER_GROUP`    | Consumer group                                                                            | `$Default` |
+| `EVENT_HUB_START_POSITION`    | `latest` (live only) or `earliest` (read full retention)                                  | `latest`   |
+<!-- markdownlint-enable MD060 -->
 
 > When both `EVENT_HUB_NAMESPACE`/`EVENT_HUB_NAME` and `EVENT_HUB_CONNECTION_STRING` are set, Entra ID is preferred.
-
 > **Tip:** If you deploy the Event Hub manually, configure [Diagnostic Settings](https://learn.microsoft.com/en-us/azure/azure-monitor/platform/diagnostic-settings) on your Azure Firewall to forward logs to the `firewall-logs` Event Hub.
 
 ---
@@ -215,7 +218,6 @@ pyinstaller \
   --hidden-import azure.eventhub.aio \
   --hidden-import azure.eventhub._transport._pyamqp_transport \
   --add-data "fw_parser.py:." \
-  --add-data "setup_wizard.py:." \
   main.py
 
 # Binary is at dist/az-firewall-watch  (or dist/az-firewall-watch.exe on Windows)

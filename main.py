@@ -66,7 +66,7 @@ _load_env(_BASE_DIR / ".env")
 _has_conn_str = bool(os.environ.get("EVENT_HUB_CONNECTION_STRING"))
 _has_entra = bool(os.environ.get("EVENT_HUB_NAMESPACE") and os.environ.get("EVENT_HUB_NAME"))
 if (not _has_conn_str and not _has_entra) or "--reconfigure" in sys.argv:
-    from setup_wizard import run_wizard  # noqa: E402
+    from setup.app import run_wizard  # noqa: E402
     run_wizard(_BASE_DIR, reconfigure="--reconfigure" in sys.argv)
     _load_env(_BASE_DIR / ".env", override=True)
 

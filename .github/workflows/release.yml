@@ -44,7 +44,6 @@ jobs:
             --hidden-import azure.eventhub.aio \
             --hidden-import azure.eventhub._transport._pyamqp_transport \
             --add-data "fw_parser.py:." \
-            --add-data "setup_wizard.py:." \
             --add-data "version.txt:." \
             main.py
 
@@ -59,7 +58,6 @@ jobs:
             --hidden-import azure.eventhub.aio `
             "--hidden-import" "azure.eventhub._transport._pyamqp_transport" `
             "--add-data" "fw_parser.py;." `
-            "--add-data" "setup_wizard.py;." `
             "--add-data" "version.txt;." `
             main.py
 

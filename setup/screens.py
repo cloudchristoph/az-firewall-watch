@@ -1,29 +1,10 @@
-#!/usr/bin/env python3
-"""
-Cross-platform setup wizard for fw-log-tui.
-
-Checks for Azure CLI / verifies login when needed (for subscription discovery/deploy flows)
-and writes Event Hub credentials to .env (either a connection string or Entra ID namespace/hub config).
-
-Usage (standalone):
-    python setup_wizard.py [--reconfigure]
-
-Called automatically by main.py when no Event Hub credentials are configured.
-"""
 from __future__ import annotations
 
-import asyncio
 import json
-import platform
-import shutil
 import subprocess
-import sys
-from pathlib import Path
-from typing import TYPE_CHECKING, Optional, cast
+from typing import TYPE_CHECKING, cast
 
 from textual import work
-from textual.app import App, ComposeResult
-from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
 from textual.screen import Screen
 from textual.widgets import (
@@ -40,118 +21,25 @@ from textual.widgets import (
     Static,
 )
 
-# ── platform helpers ───────────────────────────────────────────────────────────
-_IS_WIN = platform.system() == "Windows"
+from .services import write_env, write_env_entra
+from .utils import az_async, find_az, location_short
 
-# On Windows, `az` is a batch wrapper (az.cmd); shutil.which respects PATHEXT.
-def _find_az() -> Optional[str]:
-    return shutil.which("az") or shutil.which("az.cmd")
+if TYPE_CHECKING:
+    from .app import WizardApp
 
-
-def _run_az(*args: str, capture: bool = True, check: bool = False) -> subprocess.CompletedProcess:
-    az = _find_az()
-    if not az:
-        raise FileNotFoundError("Azure CLI not found")
-    return subprocess.run(
-        [az, *args],
-        capture_output=capture,
-        text=True,
-        check=check,
-    )
-
-
-async def _az_async(*args: str, capture: bool = True, check: bool = False):
-    """Run an az CLI command in a thread pool so the TUI stays responsive."""
-    return await asyncio.to_thread(_run_az, *args, capture=capture, check=check)
-
-
-# ── .env helpers ───────────────────────────────────────────────────────────────
-def get_existing_conn_str(env_file: Path) -> Optional[str]:
-    """Return a non-empty connection string from .env, or None."""
-    if not env_file.exists():
-        return None
-    for line in env_file.read_text(encoding="utf-8").splitlines():
-        if line.startswith("EVENT_HUB_CONNECTION_STRING="):
-            value = line[len("EVENT_HUB_CONNECTION_STRING="):].strip()
-            return value if value else None
-    return None
-
-
-def has_entra_config(env_file: Path) -> bool:
-    """Return True if .env has EVENT_HUB_NAMESPACE and EVENT_HUB_NAME set."""
-    if not env_file.exists():
-        return False
-    found_ns = found_name = False
-    for line in env_file.read_text(encoding="utf-8").splitlines():
-        if line.startswith("EVENT_HUB_NAMESPACE=") and line.split("=", 1)[1].strip():
-            found_ns = True
-        if line.startswith("EVENT_HUB_NAME=") and line.split("=", 1)[1].strip():
-            found_name = True
-    return found_ns and found_name
-
-
-def write_env(env_file: Path, conn_str: str) -> None:
-    """Write a connection-string-based .env file."""
-    from datetime import datetime, timezone
-    ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    env_file.write_text(
-        f"# Written by setup_wizard.py - {ts}\n"
-        "# Do NOT commit this file - it contains a shared access key.\n"
-        f"EVENT_HUB_CONNECTION_STRING={conn_str}\n"
-        "EVENT_HUB_CONSUMER_GROUP=$Default\n"
-        "EVENT_HUB_START_POSITION=latest\n",
-        encoding="utf-8",
-    )
-
-
-def write_env_entra(env_file: Path, namespace: str, hub_name: str) -> None:
-    """Write an Entra ID (passwordless) .env file."""
-    from datetime import datetime, timezone
-    ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    env_file.write_text(
-        f"# Written by setup_wizard.py - {ts}\n"
-        "# Entra ID (passwordless) authentication — no secrets stored.\n"
-        "# Your identity must have 'Azure Event Hubs Data Receiver' role.\n"
-        f"EVENT_HUB_NAMESPACE={namespace}\n"
-        f"EVENT_HUB_NAME={hub_name}\n"
-        "EVENT_HUB_CONSUMER_GROUP=$Default\n"
-        "EVENT_HUB_START_POSITION=latest\n",
-        encoding="utf-8",
-    )
-
-
-# ── location abbreviation (CAF style) ─────────────────────────────────────────
-_LOC_SHORT: dict[str, str] = {
-    "germanywestcentral": "gwc", "germanynorth": "gn",
-    "westeurope": "we",          "northeurope": "ne",
-    "eastus": "eus",             "eastus2": "eus2",
-    "westus": "wus",             "westus2": "wus2",
-    "centralus": "cus",          "uksouth": "uks",
-    "ukwest": "ukw",             "francecentral": "frc",
-    "swedencentral": "swc",      "switzerlandnorth": "swn",
-    "australiaeast": "ae",       "southeastasia": "sea",
-    "eastasia": "ea",            "japaneast": "jpe",
-}
-
-
-def location_short(loc: str) -> str:
-    return _LOC_SHORT.get(loc.lower(), loc[:6])
-
-
-# ── Textual screens ────────────────────────────────────────────────────────────
 
 class _WizardScreen(Screen):
     """Base screen that exposes a typed accessor for :class:`WizardApp`."""
 
     @property
-    def _wizard_app(self) -> "WizardApp":  # forward ref resolved at type-check time
-        return self.app  # type: ignore[return-value]
+    def _wizard_app(self) -> "WizardApp":
+        return cast("WizardApp", self.app)
 
 
 class WelcomeScreen(Screen):
     """Main wizard menu."""
 
-    def compose(self) -> ComposeResult:
+    def compose(self):
         with Vertical(classes="wiz-box"):
             yield Static(
                 "Azure Firewall Watch — Setup Wizard",
@@ -205,7 +93,7 @@ class WelcomeScreen(Screen):
 class PasteConnectionScreen(_WizardScreen):
     """Option 3 — paste a SAS connection string."""
 
-    def compose(self) -> ComposeResult:
+    def compose(self):
         with Vertical(classes="wiz-box"):
             yield Static("Paste Connection String", classes="wiz-title")
             yield Static(
@@ -264,7 +152,7 @@ class PasteConnectionScreen(_WizardScreen):
 class EntraIdScreen(_WizardScreen):
     """Option 4 — Entra ID (passwordless) setup."""
 
-    def compose(self) -> ComposeResult:
+    def compose(self):
         with Vertical(classes="wiz-box"):
             yield Static("Entra ID (Passwordless) Authentication", classes="wiz-title")
             yield Static(
@@ -325,11 +213,10 @@ class PickExistingScreen(_WizardScreen):
 
     _items: list
 
-    def compose(self) -> ComposeResult:
+    def compose(self):
         with Vertical(classes="wiz-box"):
             yield Static("Pick Existing Event Hub", classes="wiz-title")
             with ContentSwitcher(initial="phase-loading"):
-                # ── Phase A: loading ──────────────────────────────────────────
                 with Vertical(id="phase-loading"):
                     yield Static(
                         "Scanning subscriptions for Event Hubs…",
@@ -341,7 +228,6 @@ class PickExistingScreen(_WizardScreen):
                     with Horizontal(classes="wiz-buttons"):
                         yield Button("Back", id="btn-back-loading", variant="default")
 
-                # ── Phase B: select ───────────────────────────────────────────
                 with Vertical(id="phase-select"):
                     yield Static("Available Event Hubs:", classes="wiz-info")
                     yield ListView(id="hub-list")
@@ -358,11 +244,9 @@ class PickExistingScreen(_WizardScreen):
 
     @work(exclusive=True)
     async def _run_scan(self) -> None:
-        """Worker: az CLI check → login if needed → scan hubs."""
         log = self.query_one("#scan-log", RichLog)
 
-        # ── 1. Check az CLI ───────────────────────────────────────────────────
-        az = _find_az()
+        az = find_az()
         if not az:
             self._show_error(
                 "Azure CLI not found.\n"
@@ -371,22 +255,20 @@ class PickExistingScreen(_WizardScreen):
                 "  Windows: winget install Microsoft.AzureCLI",
             )
             return
-        result = await _az_async("version", "--query", '"azure-cli"', "-o", "tsv")
+        result = await az_async("version", "--query", '"azure-cli"', "-o", "tsv")
         version = result.stdout.strip() if result.returncode == 0 else "unknown"
         log.write(f"[green]✓[/] Azure CLI {version}")
 
-        # ── 2. Check login ────────────────────────────────────────────────────
-        acc = await _az_async("account", "show", "--query", "user.name", "-o", "tsv")
+        acc = await az_async("account", "show", "--query", "user.name", "-o", "tsv")
         if acc.returncode != 0:
             log.write("[yellow]![/] Not logged in — starting az login…")
             with self.app.suspend():
                 subprocess.run([az, "login"], check=True)
-            acc = await _az_async("account", "show", "--query", "user.name", "-o", "tsv")
+            acc = await az_async("account", "show", "--query", "user.name", "-o", "tsv")
         user = acc.stdout.strip()
         log.write(f"[green]✓[/] Logged in as [bold]{user}[/]")
 
-        # ── 3. Scan subscriptions ─────────────────────────────────────────────
-        subs_result = await _az_async(
+        subs_result = await az_async(
             "account", "list",
             "--query", "[?state=='Enabled'].{id:id, name:name}",
             "-o", "json",
@@ -398,7 +280,7 @@ class PickExistingScreen(_WizardScreen):
         for sub in subs:
             sub_id, sub_name = sub["id"], sub["name"]
             log.write(f"[cyan]i[/] Scanning {sub_name}…")
-            ns_result = await _az_async(
+            ns_result = await az_async(
                 "eventhubs", "namespace", "list",
                 "--subscription", sub_id,
                 "--query", "[].{name:name, rg:resourceGroup}",
@@ -408,7 +290,7 @@ class PickExistingScreen(_WizardScreen):
                 continue
             for ns_info in (json.loads(ns_result.stdout) or []):
                 ns, rg = ns_info["name"], ns_info["rg"]
-                eh_result = await _az_async(
+                eh_result = await az_async(
                     "eventhubs", "eventhub", "list",
                     "--namespace-name", ns,
                     "--resource-group", rg,
@@ -459,7 +341,6 @@ class PickExistingScreen(_WizardScreen):
 
     @work(exclusive=True)
     async def _run_confirm(self, idx: int) -> None:
-        """Worker: get or create Listen auth rule, then write .env."""
         sub_id, _sub_name, rg, ns, eh = self._items[idx]
         rule_name = "firewall-mon-listen"
 
@@ -467,7 +348,7 @@ class PickExistingScreen(_WizardScreen):
         self.query_one(ContentSwitcher).current = "phase-loading"
         log.write(f"[cyan]i[/] Looking up auth rule '{rule_name}'…")
 
-        keys_result = await _az_async(
+        keys_result = await az_async(
             "eventhubs", "eventhub", "authorization-rule", "keys", "list",
             "--subscription", sub_id, "--resource-group", rg,
             "--namespace-name", ns, "--eventhub-name", eh,
@@ -478,14 +359,14 @@ class PickExistingScreen(_WizardScreen):
             log.write(f"[green]✓[/] Found existing rule '{rule_name}'")
         else:
             log.write(f"[yellow]![/] Rule not found — creating '{rule_name}'…")
-            await _az_async(
+            await az_async(
                 "eventhubs", "eventhub", "authorization-rule", "create",
                 "--subscription", sub_id, "--resource-group", rg,
                 "--namespace-name", ns, "--eventhub-name", eh,
                 "--name", rule_name, "--rights", "Listen", "--output", "none",
                 check=True,
             )
-            keys_result = await _az_async(
+            keys_result = await az_async(
                 "eventhubs", "eventhub", "authorization-rule", "keys", "list",
                 "--subscription", sub_id, "--resource-group", rg,
                 "--namespace-name", ns, "--eventhub-name", eh,
@@ -517,12 +398,10 @@ class DeployNewScreen(_WizardScreen):
     _send_rule: str
     _diag_name: str
 
-    def compose(self) -> ComposeResult:
+    def compose(self):
         with Vertical(classes="wiz-box"):
             yield Static("Deploy New Event Hub", classes="wiz-title")
             with ContentSwitcher(initial="step-loading"):
-
-                # Panel 0 — loading (az check + login + sub list)
                 with Vertical(id="step-loading"):
                     yield Static("Checking Azure CLI…", classes="wiz-info")
                     yield RichLog(id="deploy-log", highlight=True, markup=True)
@@ -531,7 +410,6 @@ class DeployNewScreen(_WizardScreen):
                     with Horizontal(classes="wiz-buttons"):
                         yield Button("Back", id="btn-back-loading", variant="default")
 
-                # Panel 1 — subscription selection
                 with Vertical(id="step-subscription"):
                     yield Static("Select a subscription:", classes="wiz-info")
                     yield ListView(id="sub-list")
@@ -539,7 +417,6 @@ class DeployNewScreen(_WizardScreen):
                         yield Button("Back", id="btn-back-sub", variant="default")
                         yield Button("Next →", id="btn-next-sub", variant="primary")
 
-                # Panel 2 — firewall selection
                 with Vertical(id="step-firewall"):
                     yield Static("Select a firewall:", classes="wiz-info")
                     yield RichLog(id="fw-scan-log", highlight=True, markup=True)
@@ -550,7 +427,6 @@ class DeployNewScreen(_WizardScreen):
                         yield Button("Back", id="btn-back-fw", variant="default")
                         yield Button("Next →", id="btn-next-fw", variant="primary")
 
-                # Panel 3 — naming
                 with Vertical(id="step-naming"):
                     yield Static("Resource naming:", classes="wiz-info")
                     yield Label("Resource group name:")
@@ -570,7 +446,6 @@ class DeployNewScreen(_WizardScreen):
                         yield Button("Back", id="btn-back-naming", variant="default")
                         yield Button("Next →", id="btn-next-naming", variant="primary")
 
-                # Panel 4 — summary
                 with Vertical(id="step-summary"):
                     yield Static("Deployment Summary:", classes="wiz-info")
                     yield Static("", id="summary-text")
@@ -578,7 +453,6 @@ class DeployNewScreen(_WizardScreen):
                         yield Button("Back", id="btn-back-summary", variant="default")
                         yield Button("Deploy", id="btn-deploy", variant="success")
 
-                # Panel 5 — progress
                 with Vertical(id="step-progress"):
                     yield Static("Deploying…", classes="wiz-info")
                     yield RichLog(id="progress-log", highlight=True, markup=True)
@@ -597,9 +471,8 @@ class DeployNewScreen(_WizardScreen):
 
     @work(exclusive=True)
     async def _run_loading(self) -> None:
-        """Worker for panel 0: az check + login + subscription list."""
         log = self.query_one("#deploy-log", RichLog)
-        az = _find_az()
+        az = find_az()
         if not az:
             self._deploy_error(
                 "Azure CLI not found.\n"
@@ -607,20 +480,20 @@ class DeployNewScreen(_WizardScreen):
                 "  Windows: winget install Microsoft.AzureCLI",
             )
             return
-        result = await _az_async("version", "--query", '"azure-cli"', "-o", "tsv")
+        result = await az_async("version", "--query", '"azure-cli"', "-o", "tsv")
         version = result.stdout.strip() if result.returncode == 0 else "unknown"
         log.write(f"[green]✓[/] Azure CLI {version}")
 
-        acc = await _az_async("account", "show", "--query", "user.name", "-o", "tsv")
+        acc = await az_async("account", "show", "--query", "user.name", "-o", "tsv")
         if acc.returncode != 0:
             log.write("[yellow]![/] Not logged in — starting az login…")
             with self.app.suspend():
                 subprocess.run([az, "login"], check=True)
-            acc = await _az_async("account", "show", "--query", "user.name", "-o", "tsv")
+            acc = await az_async("account", "show", "--query", "user.name", "-o", "tsv")
         user = acc.stdout.strip()
         log.write(f"[green]✓[/] Logged in as [bold]{user}[/]")
 
-        subs_result = await _az_async(
+        subs_result = await az_async(
             "account", "list",
             "--query", "[?state=='Enabled'].{id:id, name:name}",
             "-o", "json",
@@ -681,7 +554,7 @@ class DeployNewScreen(_WizardScreen):
     async def _scan_firewalls(self) -> None:
         log = self.query_one("#fw-scan-log", RichLog)
         log.write(f"[cyan]i[/] Scanning for firewalls in {self._target_sub_name}…")
-        fw_result = await _az_async(
+        fw_result = await az_async(
             "network", "firewall", "list",
             "--subscription", self._target_sub,
             "--query", "[].{name:name, rg:resourceGroup, location:location, id:id}",
@@ -767,7 +640,6 @@ class DeployNewScreen(_WizardScreen):
 
     @work(exclusive=True)
     async def _run_deploy(self) -> None:
-        """Worker: runs all az deployment steps."""
         log = self.query_one("#progress-log", RichLog)
         sub_id = self._target_sub
         rg = self._rg
@@ -780,13 +652,12 @@ class DeployNewScreen(_WizardScreen):
         tags = ["project=az-firewall-watch", "managed-by=az-cli"]
 
         try:
-            # Resource group
             using_existing = self._selected_fw and rg == self._selected_fw["rg"]
             if using_existing:
                 log.write(f"[cyan]i[/] Using existing resource group '{rg}'")
             else:
                 log.write(f"[cyan]i[/] Creating resource group '{rg}'…")
-                await _az_async(
+                await az_async(
                     "group", "create",
                     "--subscription", sub_id,
                     "--name", rg, "--location", location,
@@ -795,9 +666,8 @@ class DeployNewScreen(_WizardScreen):
                 )
             log.write("[green]✓[/] Resource group ready")
 
-            # Namespace
             log.write(f"[cyan]i[/] Creating namespace '{ns}' (Basic SKU)…")
-            await _az_async(
+            await az_async(
                 "eventhubs", "namespace", "create",
                 "--subscription", sub_id,
                 "--name", ns, "--resource-group", rg, "--location", location,
@@ -807,9 +677,8 @@ class DeployNewScreen(_WizardScreen):
             )
             log.write("[green]✓[/] Namespace ready")
 
-            # Event Hub
             log.write(f"[cyan]i[/] Creating Event Hub '{eh_name}'…")
-            await _az_async(
+            await az_async(
                 "eventhubs", "eventhub", "create",
                 "--subscription", sub_id,
                 "--name", eh_name, "--namespace-name", ns,
@@ -819,9 +688,8 @@ class DeployNewScreen(_WizardScreen):
             )
             log.write("[green]✓[/] Event Hub ready")
 
-            # Listen auth rule
             log.write(f"[cyan]i[/] Creating Listen rule '{listen_rule}'…")
-            await _az_async(
+            await az_async(
                 "eventhubs", "eventhub", "authorization-rule", "create",
                 "--subscription", sub_id,
                 "--resource-group", rg, "--namespace-name", ns,
@@ -831,8 +699,7 @@ class DeployNewScreen(_WizardScreen):
             )
             log.write("[green]✓[/] Listen rule created")
 
-            # Get connection string
-            keys_result = await _az_async(
+            keys_result = await az_async(
                 "eventhubs", "eventhub", "authorization-rule", "keys", "list",
                 "--subscription", sub_id,
                 "--resource-group", rg, "--namespace-name", ns,
@@ -842,9 +709,8 @@ class DeployNewScreen(_WizardScreen):
             )
             conn_str = keys_result.stdout.strip()
 
-            # Send rule + diagnostic settings
             log.write(f"[cyan]i[/] Creating Send rule '{send_rule}'…")
-            await _az_async(
+            await az_async(
                 "eventhubs", "namespace", "authorization-rule", "create",
                 "--subscription", sub_id,
                 "--resource-group", rg, "--namespace-name", ns,
@@ -854,7 +720,7 @@ class DeployNewScreen(_WizardScreen):
             )
             log.write("[green]✓[/] Send rule created")
 
-            send_rule_result = await _az_async(
+            send_rule_result = await az_async(
                 "eventhubs", "namespace", "authorization-rule", "show",
                 "--subscription", sub_id,
                 "--resource-group", rg, "--namespace-name", ns,
@@ -864,7 +730,7 @@ class DeployNewScreen(_WizardScreen):
             send_rule_id = send_rule_result.stdout.strip()
 
             log.write("[cyan]i[/] Discovering diagnostic log categories…")
-            cats_result = await _az_async(
+            cats_result = await az_async(
                 "monitor", "diagnostic-settings", "categories", "list",
                 "--resource", self._selected_fw["id"],
                 "--query", "value[?categoryType=='Logs'].name",
@@ -884,7 +750,7 @@ class DeployNewScreen(_WizardScreen):
             )
 
             log.write(f"[cyan]i[/] Configuring diagnostic settings '{diag_name}'…")
-            diag_result = await _az_async(
+            diag_result = await az_async(
                 "monitor", "diagnostic-settings", "create",
                 "--name", diag_name,
                 "--resource", self._selected_fw["id"],
@@ -912,99 +778,3 @@ class DeployNewScreen(_WizardScreen):
         except Exception as exc:
             log.write(f"[red]✗[/] Deployment failed: {exc}")
             self.query_one("#progress-spinner", LoadingIndicator).display = False
-
-
-class WizardApp(App[None]):
-    """Top-level Textual app for the setup wizard."""
-
-    TITLE = "Azure Firewall Watch — Setup Wizard"
-
-    CSS = """
-    Screen {
-        align: center middle;
-    }
-    .wiz-box {
-        width: 72;
-        height: auto;
-        background: $surface;
-        border: thick $primary;
-        padding: 1 2;
-    }
-    .wiz-title {
-        text-style: bold;
-        color: $accent;
-        margin-bottom: 1;
-        text-align: center;
-    }
-    .wiz-info {
-        color: $text-muted;
-        margin-bottom: 1;
-    }
-    .wiz-error {
-        color: $error;
-        margin-bottom: 1;
-    }
-    .wiz-ok {
-        color: $success;
-    }
-    .wiz-warn {
-        color: $warning;
-    }
-    .wiz-buttons {
-        height: auto;
-        margin-top: 1;
-        align: right middle;
-    }
-    .wiz-buttons Button {
-        margin-left: 1;
-    }
-    ContentSwitcher {
-        height: auto;
-    }
-    ContentSwitcher > Vertical {
-        height: auto;
-    }
-    RichLog {
-        height: 8;
-        border: solid $primary-darken-2;
-        margin-bottom: 1;
-    }
-    #scan-log {
-        height: 5;
-    }
-    LoadingIndicator {
-        height: 1;
-        margin-bottom: 1;
-    }
-    ListView {
-        height: 7;
-        border: solid $primary-darken-2;
-        margin-bottom: 1;
-    }
-    """
-
-    BINDINGS = [Binding("ctrl+q", "quit", "Quit")]
-
-    def __init__(self, env_file: Path) -> None:
-        super().__init__()
-        self.env_file = env_file
-
-    def on_mount(self) -> None:
-        self.push_screen(WelcomeScreen())
-
-
-# ── main entry point ──────────────────────────────────────────────────────────
-def run_wizard(base_dir: Path, reconfigure: bool = False) -> None:
-    """Run the setup wizard. Returns when .env is ready (or user quit)."""
-    env_file = base_dir / ".env"
-
-    # Skip if already configured and not forcing reconfigure
-    if not reconfigure and (get_existing_conn_str(env_file) or has_entra_config(env_file)):
-        return
-
-    WizardApp(env_file).run()
-
-
-if __name__ == "__main__":
-    reconfigure = "--reconfigure" in sys.argv
-    run_wizard(Path(__file__).parent, reconfigure=reconfigure)

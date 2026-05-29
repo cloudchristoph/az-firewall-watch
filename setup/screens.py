@@ -352,6 +352,7 @@ class PickExistingScreen(_WizardScreen):
         self.query_one(ContentSwitcher).current = "phase-loading"
         log.write(f"[cyan]i[/] Looking up auth rule '{rule_name}'…")
 
+        conn_str = ""
         try:
             keys_result = await az_async(
                 "eventhubs", "eventhub", "authorization-rule", "keys", "list",
@@ -390,6 +391,8 @@ class PickExistingScreen(_WizardScreen):
             log.write("[green]✓[/] Done!")
             self.app.exit()
 
+        except subprocess.CalledProcessError as exc:
+            self._show_error(f"Failed to create authorization rule: {exc}")
         except Exception as exc:
             self._show_error(f"Failed to configure auth rule: {exc}")
 

@@ -64,6 +64,7 @@ def parse_record(record: dict) -> Optional[FirewallDataRow]:
     structured = {
         "AZFWNetworkRule", "AZFWApplicationRule", "AZFWNatRule",
         "AZFWDnsQuery", "AZFWIdpsSignature", "AZFWThreatIntel",
+        "AZFWFqdnResolveFailure",
     }
     if category in structured:
         return _parse_structured(record, category, time, resource_id)
@@ -216,6 +217,27 @@ def _parse_structured(record: dict, category: str, time: str, resource_id: str =
             action=_s(props, "Action"),
             moreinfo=_s(props, "ThreatDescription"),
             resource_id=resource_id,
+        )
+
+    if category == "AZFWFqdnResolveFailure":
+        fw_policy = _s(props, "Policy")
+        rcg = _s(props, "RuleCollectionGroup")
+        rc = _s(props, "RuleCollection")
+        rule = _s(props, "Rule")
+        policy = "»".join(filter(None, [fw_policy, rcg, rc, rule]))
+        return FirewallDataRow(
+            rowid=_next_id(),
+            time=time,
+            category="AppRule",
+            targetip=_s(props, "Fqdn"),
+            action="ResolveFail",
+            policy=policy,
+            moreinfo=_s(props, "Error"),
+            resource_id=resource_id,
+            fw_policy=fw_policy,
+            rule_collection_group=rcg,
+            rule_collection=rc,
+            rule_name=rule,
         )
 
     return FirewallDataRow(rowid=_next_id(), time=time, category=f"SKIP:{category}")

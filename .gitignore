@@ -14,3 +14,6 @@ __pycache__/
 build/
 dist/
 *.spec
+
+# Local tests
+debug/

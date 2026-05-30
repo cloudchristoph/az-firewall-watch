@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING, cast
 
 from textual import work
 from textual.containers import Horizontal, Vertical
-from textual.screen import Screen
+from textual.screen import ModalScreen, Screen
 from textual.widgets import (
     Button,
     ContentSwitcher,
@@ -34,6 +34,42 @@ class _WizardScreen(Screen):
     @property
     def _wizard_app(self) -> "WizardApp":
         return cast("WizardApp", self.app)
+
+
+class ConfirmCreateRuleScreen(ModalScreen[bool]):
+    """Confirmation modal shown before creating a new auth rule."""
+
+    def __init__(self, rule_name: str, namespace: str, event_hub: str) -> None:
+        super().__init__()
+        self._rule_name = rule_name
+        self._namespace = namespace
+        self._event_hub = event_hub
+
+    def compose(self):
+        with Vertical(classes="wiz-box"):
+            yield Static("Confirm environment change", classes="wiz-title")
+            yield Static(
+                "No reusable Listen auth rule was found.\n\n"
+                "A new Event Hub authorization rule will be created:\n"
+                f"  Rule: {self._rule_name}\n"
+                f"  Namespace: {self._namespace}\n"
+                f"  Event Hub: {self._event_hub}\n\n"
+                "Do you want to continue?",
+                classes="wiz-info",
+            )
+            with Horizontal(classes="wiz-buttons"):
+                yield Button("Cancel", id="btn-cancel", variant="default")
+                yield Button("Create Rule", id="btn-confirm", variant="warning")
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "btn-confirm":
+            self.dismiss(True)
+            return
+        self.dismiss(False)
+
+    def on_key(self, event) -> None:  # type: ignore[override]
+        if event.key in ("escape", "q"):
+            self.dismiss(False)
 
 
 class WelcomeScreen(Screen):
@@ -346,25 +382,125 @@ class PickExistingScreen(_WizardScreen):
     @work(exclusive=True)
     async def _run_confirm(self, idx: int) -> None:
         sub_id, _sub_name, rg, ns, eh = self._items[idx]
-        rule_name = "firewall-mon-listen"
+        rule_name = "az-firewall-watch-listen"
 
         log = self.query_one("#scan-log", RichLog)
         self.query_one(ContentSwitcher).current = "phase-loading"
         log.write(f"[cyan]i[/] Looking up auth rule '{rule_name}'…")
 
         conn_str = ""
+
+        def _has_listen_rights(rule: dict) -> bool:
+            rights = rule.get("rights") or []
+            if isinstance(rights, str):
+                rights = [rights]
+            return "Listen" in rights or "Manage" in rights
+
+        def _with_entity_path(raw_conn_str: str) -> str:
+            if "EntityPath=" in raw_conn_str:
+                return raw_conn_str
+            sep = "" if raw_conn_str.endswith(";") else ";"
+            return f"{raw_conn_str}{sep}EntityPath={eh}"
+
         try:
-            keys_result = await az_async(
-                "eventhubs", "eventhub", "authorization-rule", "keys", "list",
+            # 1) Prefer existing entity-level rule with Listen (or Manage).
+            entity_rules_result = await az_async(
+                "eventhubs", "eventhub", "authorization-rule", "list",
                 "--subscription", sub_id, "--resource-group", rg,
                 "--namespace-name", ns, "--eventhub-name", eh,
-                "--name", rule_name, "--query", "primaryConnectionString", "-o", "tsv",
+                "-o", "json",
             )
-            if keys_result.returncode == 0 and keys_result.stdout.strip():
-                conn_str = keys_result.stdout.strip()
-                log.write(f"[green]✓[/] Found existing rule '{rule_name}'")
-            else:
-                log.write(f"[yellow]![/] Rule not found — creating '{rule_name}'…")
+            entity_rules = (
+                json.loads(entity_rules_result.stdout)
+                if entity_rules_result.returncode == 0 and entity_rules_result.stdout.strip()
+                else []
+            )
+
+            preferred_entity = next(
+                (
+                    rule for rule in entity_rules
+                    if rule.get("name") == rule_name and _has_listen_rights(rule)
+                ),
+                None,
+            )
+            chosen_entity = preferred_entity or next(
+                (rule for rule in entity_rules if _has_listen_rights(rule)),
+                None,
+            )
+
+            if chosen_entity:
+                chosen_rule_name = chosen_entity.get("name", "")
+                log.write(
+                    f"[green]✓[/] Using existing Event Hub rule '{chosen_rule_name}'"
+                )
+                keys_result = await az_async(
+                    "eventhubs", "eventhub", "authorization-rule", "keys", "list",
+                    "--subscription", sub_id, "--resource-group", rg,
+                    "--namespace-name", ns, "--eventhub-name", eh,
+                    "--name", chosen_rule_name,
+                    "--query", "primaryConnectionString", "-o", "tsv",
+                )
+                if keys_result.returncode == 0 and keys_result.stdout.strip():
+                    conn_str = _with_entity_path(keys_result.stdout.strip())
+
+            # 2) Fall back to existing namespace-level rule with Listen (or Manage),
+            # excluding RootManageSharedAccessKey.
+            if not conn_str:
+                namespace_rules_result = await az_async(
+                    "eventhubs", "namespace", "authorization-rule", "list",
+                    "--subscription", sub_id, "--resource-group", rg,
+                    "--namespace-name", ns,
+                    "-o", "json",
+                )
+                namespace_rules = (
+                    json.loads(namespace_rules_result.stdout)
+                    if namespace_rules_result.returncode == 0 and namespace_rules_result.stdout.strip()
+                    else []
+                )
+
+                preferred_namespace = next(
+                    (
+                        rule for rule in namespace_rules
+                        if rule.get("name") == rule_name and _has_listen_rights(rule)
+                    ),
+                    None,
+                )
+                chosen_namespace = preferred_namespace or next(
+                    (
+                        rule
+                        for rule in namespace_rules
+                        if rule.get("name") != "RootManageSharedAccessKey"
+                        and _has_listen_rights(rule)
+                    ),
+                    None,
+                )
+
+                if chosen_namespace:
+                    chosen_rule_name = chosen_namespace.get("name", "")
+                    log.write(
+                        f"[green]✓[/] Using existing namespace rule '{chosen_rule_name}'"
+                    )
+                    keys_result = await az_async(
+                        "eventhubs", "namespace", "authorization-rule", "keys", "list",
+                        "--subscription", sub_id, "--resource-group", rg,
+                        "--namespace-name", ns,
+                        "--name", chosen_rule_name,
+                        "--query", "primaryConnectionString", "-o", "tsv",
+                    )
+                    if keys_result.returncode == 0 and keys_result.stdout.strip():
+                        conn_str = _with_entity_path(keys_result.stdout.strip())
+
+            # 3) Create dedicated entity-level Listen rule only if nothing reusable exists.
+            if not conn_str:
+                confirmed = await self.app.push_screen_wait(
+                    ConfirmCreateRuleScreen(rule_name=rule_name, namespace=ns, event_hub=eh)
+                )
+                if not confirmed:
+                    log.write("[yellow]![/] Rule creation canceled by user")
+                    self.query_one(ContentSwitcher).current = "phase-select"
+                    return
+
+                log.write(f"[yellow]![/] No reusable Listen rule found — creating '{rule_name}'…")
                 await az_async(
                     "eventhubs", "eventhub", "authorization-rule", "create",
                     "--subscription", sub_id, "--resource-group", rg,
@@ -379,7 +515,7 @@ class PickExistingScreen(_WizardScreen):
                     "--name", rule_name, "--query", "primaryConnectionString", "-o", "tsv",
                     check=True,
                 )
-                conn_str = keys_result.stdout.strip()
+                conn_str = _with_entity_path(keys_result.stdout.strip())
                 log.write("[green]✓[/] Auth rule created")
 
             if not conn_str:
@@ -451,11 +587,11 @@ class DeployNewScreen(_WizardScreen):
                     yield Label("Event Hub name:")
                     yield Input(value="firewall-logs", id="inp-eh-name")
                     yield Label("Listen auth rule name:")
-                    yield Input(value="firewall-mon-listen", id="inp-listen-rule")
+                    yield Input(value="az-firewall-watch-listen", id="inp-listen-rule")
                     yield Label("Send auth rule name:")
-                    yield Input(value="fw-diag-send", id="inp-send-rule")
+                    yield Input(value="az-firewall-watch-send", id="inp-send-rule")
                     yield Label("Diagnostic setting name:")
-                    yield Input(value="fw-logs-to-eventhub", id="inp-diag-name")
+                    yield Input(value="az-firewall-watch-diag", id="inp-diag-name")
                     yield Label("", id="lbl-naming-error", classes="wiz-error")
                     with Horizontal(classes="wiz-buttons"):
                         yield Button("Back", id="btn-back-naming", variant="default")
@@ -643,7 +779,7 @@ class DeployNewScreen(_WizardScreen):
             f"Subscription  : {self._target_sub_name}",
             f"Firewall      : {self._selected_fw['name']} → diagnostics will be configured",
             f"Location      : {self._location}",
-            f"Resource group: {rg}",
+            f"Resource group: {rg}" + (" → using existing" if self._selected_fw and rg == self._selected_fw["rg"] else ""),
             f"EH Namespace  : {ns}",
             f"Event Hub     : {eh_name}",
             f"Listen rule   : {listen_rule}",

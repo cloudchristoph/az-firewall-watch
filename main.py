@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-fw-log-tui  —  Azure Firewall log stream in your terminal.
+az-firewall-watch — Azure Firewall log stream in your terminal.
 
 Connects to an Azure Event Hub and displays incoming firewall logs in a
-filterable TUI table. Connection string is read from .env in this folder.
+filterable TUI table. Connection parameters are read from .env in this folder.
 
 Key bindings
   q / ctrl+q  Quit
@@ -24,10 +24,11 @@ from pathlib import Path
 from dotenv import load_dotenv
 from rich.text import Text
 from textual import on, work
-from textual.app import App, ComposeResult
+from textual.app import App, ComposeResult, SystemCommand
 from textual.binding import Binding
 from textual.containers import Horizontal
-from textual.widgets import DataTable, Footer, Header, Input, Label
+from textual.screen import Screen
+from textual.widgets import DataTable, Footer, Header, Input, Label, Select
 
 # ── base directory (works both from source and as a PyInstaller binary) ───────
 if getattr(sys, "frozen", False):
@@ -49,6 +50,17 @@ sys.path.insert(0, str(_BASE_DIR))
 from fw_parser import FirewallDataRow, parse_record  # noqa: E402
 from helpers import _category_text, _highlight, _parse_eventhub_endpoint, _to_local  # noqa: E402
 from dialogs import ConnectingDialog, DetailDialog, ErrorDialog, StatusBar, UpdateDialog  # noqa: E402
+
+
+CATEGORY_OPTIONS: list[tuple[str, str]] = [
+    ("NetworkRule", "networkrule"),
+    ("AppRule", "apprule"),
+    ("NATRule", "natrule"),
+    ("DnsQuery", "dnsquery"),
+    ("DnsProxy", "dnsproxy"),
+    ("IDPS", "idps"),
+    ("ThreatIntel", "threatintel"),
+]
 
 # ── config ────────────────────────────────────────────────────────────────────
 def _load_env(path: Path, override: bool = False) -> None:
@@ -80,17 +92,18 @@ class FirewallLogApp(App[None]):
 
     TITLE = f"Azure Firewall Watch v{VERSION}"
     SUB_TITLE = "Live Log Monitor  |  connecting..."
-    ENABLE_COMMAND_PALETTE = False
 
     CSS = """
     Screen {
         layout: vertical;
+        overflow: hidden;
     }
 
     #filter-bar {
         height: 3;
         background: $surface;
         padding: 0 1;
+        overflow: hidden;
     }
     #filter-bar Label {
         height: 3;
@@ -101,6 +114,10 @@ class FirewallLogApp(App[None]):
     }
     #filter-bar Input {
         width: 18;
+        margin-right: 1;
+    }
+    #filter-bar #f-cat {
+        width: 24;
         margin-right: 1;
     }
 
@@ -139,6 +156,8 @@ class FirewallLogApp(App[None]):
         self._fw_name_set: bool = False
         self._connecting_active: bool = False
         self._pending_update: tuple[str, str] | None = None
+        self._seen_policies: set[str] = set()
+        self._selected_rowid: str | None = None
 
     # ── layout ─────────────────────────────────────────────────────────────────
     def compose(self) -> ComposeResult:
@@ -148,7 +167,12 @@ class FirewallLogApp(App[None]):
             yield Input(placeholder="Source IP",    id="f-src",    classes="filter-input")
             yield Input(placeholder="Dest / FQDN",  id="f-dst",    classes="filter-input")
             yield Input(placeholder="Action",       id="f-action", classes="filter-input")
-            yield Input(placeholder="Category",     id="f-cat",    classes="filter-input")
+            yield Select(
+                [(label, value) for label, value in CATEGORY_OPTIONS],
+                prompt="All",
+                id="f-cat",
+                allow_blank=True,
+            )
             yield Input(placeholder="Protocol",     id="f-proto",  classes="filter-input")
             yield Input(placeholder="Port",          id="f-port",   classes="filter-input")
         yield DataTable(zebra_stripes=True, cursor_type="row", id="log-table")
@@ -160,7 +184,7 @@ class FirewallLogApp(App[None]):
         tbl.add_columns(
             "Time (Local)", "Category", "Proto",
             "Source", "Dest / FQDN", "Port",
-            "Action", "Policy / Info",
+            "Action", "Rule Info",
         )
         self._start_stream()
         self.set_interval(1.0, self._flush_rows)
@@ -513,6 +537,10 @@ class FirewallLogApp(App[None]):
         skips, self._skip_pending = self._skip_pending, 0
 
         if batch:
+            for r in batch:
+                if r.fw_policy:
+                    self._seen_policies.add(r.fw_policy)
+            batch.sort(key=lambda r: r.time, reverse=True)
             self._all_rows = (batch + self._all_rows)[:MAX_ROWS]
 
         status = self.query_one("#status", StatusBar)
@@ -528,25 +556,39 @@ class FirewallLogApp(App[None]):
         visible = [r for r in self._all_rows if self._matches(r, f)]
 
         tbl = self.query_one("#log-table", DataTable)
+        prev_scroll_y = tbl.scroll_y
+        prev_rowid = self._selected_rowid
+        single_policy = len(self._seen_policies) <= 1
+
         tbl.clear()
         for row in visible:
-            src_str = f"{row.sourceip}:{row.srcport}"
             action_text = self._action_text(row.action)
             if f["action"]:
                 action_text.highlight_regex(
                     f"(?i){re.escape(f['action'])}", style="bold reverse"
                 )
+            info = row.policy or row.moreinfo
+            if single_policy and row.fw_policy and info.startswith(row.fw_policy + "»"):
+                info = info[len(row.fw_policy) + 1:]
             tbl.add_row(
                 _to_local(row.time),
-                _category_text(row.category, f["cat"]),
+                _category_text(row.category),
                 _highlight(row.protocol, f["proto"]),
-                _highlight(src_str, f["src"]),
+                self._source_text(row.sourceip, row.srcport, f["src"]),
                 _highlight(row.targetip, f["dst"]),
                 row.targetport,
                 action_text,
-                (row.policy or row.moreinfo)[:60],
+                info[:60],
                 key=row.rowid,
             )
+
+        if prev_rowid is not None:
+            try:
+                idx = tbl.get_row_index(prev_rowid)
+                tbl.move_cursor(row=idx, animate=False, scroll=False)
+                tbl.scroll_to(y=prev_scroll_y, animate=False)
+            except Exception:
+                pass
 
     @staticmethod
     def _action_text(action: str) -> Text:
@@ -561,20 +603,33 @@ class FirewallLogApp(App[None]):
             return Text(action, style="bold magenta")
         # DNS response codes
         if a == "noerror":
-            return Text(action, style="green")
+            return Text(action, style="dim")
         if a == "nxdomain":
             return Text(action, style="bold yellow")
         if a in ("servfail", "refused"):
             return Text(action, style="bold red")
         return Text(action)
 
+    @staticmethod
+    def _source_text(sourceip: str, srcport: str, term: str) -> Text:
+        """Render 'ip:port' with the port portion dimmed."""
+        t = Text()
+        t.append(sourceip)
+        t.append(":", style="dim")
+        t.append(srcport, style="dim")
+        if term:
+            t.highlight_regex(f"(?i){re.escape(term)}", style="bold reverse")
+        return t
+
     # ── filtering ───────────────────────────────────────────────────────────────
     def _get_filters(self) -> dict[str, str]:
+        cat_val = self.query_one("#f-cat", Select).value
+        cat = cat_val.lower() if isinstance(cat_val, str) else ""
         return {
             "src":    self.query_one("#f-src",    Input).value.lower(),
             "dst":    self.query_one("#f-dst",    Input).value.lower(),
             "action": self.query_one("#f-action", Input).value.lower(),
-            "cat":    self.query_one("#f-cat",    Input).value.lower(),
+            "cat":    cat,
             "proto":  self.query_one("#f-proto",  Input).value.lower(),
             "port":   self.query_one("#f-port",   Input).value.lower(),
         }
@@ -592,6 +647,16 @@ class FirewallLogApp(App[None]):
     @on(Input.Changed, ".filter-input")
     def on_filter_changed(self, _event: Input.Changed) -> None:
         self._refresh_table()
+
+    @on(Select.Changed, "#f-cat")
+    def on_category_changed(self, _event: Select.Changed) -> None:
+        self._refresh_table()
+
+    @on(DataTable.RowHighlighted)
+    def on_row_highlighted(self, event: DataTable.RowHighlighted) -> None:
+        key = event.row_key.value if event.row_key else None
+        if key is not None:
+            self._selected_rowid = key
 
     @on(DataTable.RowSelected)
     def on_row_selected(self, event: DataTable.RowSelected) -> None:
@@ -611,18 +676,27 @@ class FirewallLogApp(App[None]):
     def action_clear_logs(self) -> None:
         self._all_rows = []
         self._pending = []
+        self._selected_rowid = None
+        self._seen_policies.clear()
         self.query_one("#log-table", DataTable).clear()
         status = self.query_one("#status", StatusBar)
         status.total = 0
         status.skipped = 0
 
     def action_clear_filters(self) -> None:
-        for fid in ("#f-src", "#f-dst", "#f-action", "#f-cat", "#f-proto", "#f-port"):
+        for fid in ("#f-src", "#f-dst", "#f-action", "#f-proto", "#f-port"):
             self.query_one(fid, Input).value = ""
+        self.query_one("#f-cat", Select).value = Select.BLANK
         self._refresh_table()
 
     def action_focus_filter(self) -> None:
         self.query_one("#f-src", Input).focus()
+
+    def get_system_commands(self, screen: Screen):  # type: ignore[override]
+        for cmd in super().get_system_commands(screen):
+            if cmd.title in ("Maximize", "Minimize"):
+                continue
+            yield cmd
 
 
 # ── entry point ───────────────────────────────────────────────────────────────

@@ -9,7 +9,7 @@ from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal
 from textual.screen import Screen
-from textual.widgets import DataTable, Footer, Header, Input, Label, Select
+from textual.widgets import DataTable, Footer, Header, Input, Label, Select, Switch
 
 from dialogs import DetailDialog, StatusBar
 from fw_parser import FirewallDataRow
@@ -53,6 +53,9 @@ class FirewallLogApp(App[None]):
     #filter-bar #f-cat {
         width: 24;
         margin-right: 1;
+    }
+    #filter-bar #f-hide-dns {
+        margin: 0 1;
     }
 
     DataTable {
@@ -109,6 +112,8 @@ class FirewallLogApp(App[None]):
             )
             yield Input(placeholder="Protocol",     id="f-proto",  classes="filter-input")
             yield Input(placeholder="Port",          id="f-port",   classes="filter-input")
+            yield Label("Hide DNS")
+            yield Switch(value=True, id="f-hide-dns")
         yield DataTable(zebra_stripes=True, cursor_type="row", id="log-table")
         yield StatusBar(id="status")
         yield Footer()
@@ -254,20 +259,22 @@ class FirewallLogApp(App[None]):
         return t
 
     # ── filtering ──────────────────────────────────────────────────────────────
-    def _get_filters(self) -> dict[str, str]:
+    def _get_filters(self) -> dict:
         cat_val = self.query_one("#f-cat", Select).value
         cat = cat_val.lower() if isinstance(cat_val, str) else ""
         return {
-            "src":    self.query_one("#f-src",    Input).value.lower(),
-            "dst":    self.query_one("#f-dst",    Input).value.lower(),
-            "action": self.query_one("#f-action", Input).value.lower(),
-            "cat":    cat,
-            "proto":  self.query_one("#f-proto",  Input).value.lower(),
-            "port":   self.query_one("#f-port",   Input).value.lower(),
+            "src":      self.query_one("#f-src",    Input).value.lower(),
+            "dst":      self.query_one("#f-dst",    Input).value.lower(),
+            "action":   self.query_one("#f-action", Input).value.lower(),
+            "cat":      cat,
+            "proto":    self.query_one("#f-proto",  Input).value.lower(),
+            "port":     self.query_one("#f-port",   Input).value.lower(),
+            "hide_dns": self.query_one("#f-hide-dns", Switch).value,
         }
 
     @staticmethod
-    def _matches(row: FirewallDataRow, f: dict[str, str]) -> bool:
+    def _matches(row: FirewallDataRow, f: dict) -> bool:
+        if f["hide_dns"] and row.category.lower() == "dnsquery":               return False
         if f["src"]    and f["src"]    not in row.sourceip.lower():             return False
         if f["dst"]    and f["dst"]    not in (row.targetip or "").lower():     return False
         if f["action"] and f["action"] not in row.action.lower():               return False
@@ -282,7 +289,15 @@ class FirewallLogApp(App[None]):
         self._refresh_table()
 
     @on(Select.Changed, "#f-cat")
-    def on_category_changed(self, _event: Select.Changed) -> None:
+    def on_category_changed(self, event: Select.Changed) -> None:
+        # If the user explicitly picks DnsQuery, disable the hide-DNS toggle so
+        # they actually see those rows.
+        if isinstance(event.value, str) and event.value == "dnsquery":
+            self.query_one("#f-hide-dns", Switch).value = False
+        self._refresh_table()
+
+    @on(Switch.Changed, "#f-hide-dns")
+    def on_hide_dns_changed(self, _event: Switch.Changed) -> None:
         self._refresh_table()
 
     @on(DataTable.RowHighlighted)
@@ -320,6 +335,7 @@ class FirewallLogApp(App[None]):
         for fid in ("#f-src", "#f-dst", "#f-action", "#f-proto", "#f-port"):
             self.query_one(fid, Input).value = ""
         self.query_one("#f-cat", Select).clear()
+        self.query_one("#f-hide-dns", Switch).value = True
         # Deselect any pinned row so the view returns to auto-scrolling.
         self._selected_rowid = None
         self._refresh_table()

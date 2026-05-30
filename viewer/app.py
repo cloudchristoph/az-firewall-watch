@@ -177,6 +177,7 @@ class FirewallLogApp(App[None]):
                 info = row.policy or row.moreinfo
                 if single_policy and row.fw_policy and info.startswith(row.fw_policy + "»"):
                     info = info[len(row.fw_policy) + 1:]
+                info_text = self._info_text(info)
                 tbl.add_row(
                     _to_local(row.time),
                     _category_text(row.category),
@@ -185,7 +186,7 @@ class FirewallLogApp(App[None]):
                     _highlight(row.targetip, f["dst"]),
                     row.targetport,
                     action_text,
-                    info[:60],
+                    info_text,
                     key=row.rowid,
                 )
 
@@ -229,6 +230,22 @@ class FirewallLogApp(App[None]):
         t.append(srcport, style="dim")
         if term:
             t.highlight_regex(f"(?i){re.escape(term)}", style="bold reverse")
+        return t
+
+    # group → collection → rule: progressively more prominent
+    _INFO_SEGMENT_STYLES = ("dim", "default", "bold")
+
+    @staticmethod
+    def _info_text(info: str) -> Text:
+        """Render rule-info with dimmed separators and per-segment colors."""
+        t = Text()
+        parts = info.split("»")
+        styles = FirewallLogApp._INFO_SEGMENT_STYLES
+        for i, part in enumerate(parts):
+            if i > 0:
+                t.append(" » ", style="dim")
+            label = part[:40] + "…" if len(part) > 40 else part
+            t.append(label, style=styles[min(i, len(styles) - 1)])
         return t
 
     # ── filtering ──────────────────────────────────────────────────────────────

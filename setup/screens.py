@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import json
-import subprocess
 from typing import TYPE_CHECKING, cast
 
 from textual import work
@@ -21,8 +19,16 @@ from textual.widgets import (
     Static,
 )
 
+from .operations import (
+    cli_ensure_login,
+    deploy_new_hub,
+    list_subscriptions,
+    resolve_sas_conn_str,
+    scan_event_hubs,
+    scan_firewalls,
+)
 from .services import write_env, write_env_entra
-from .utils import az_async, find_az, location_short
+from .utils import location_short
 
 if TYPE_CHECKING:
     from .app import WizardApp
@@ -34,6 +40,60 @@ class _WizardScreen(Screen):
     @property
     def _wizard_app(self) -> "WizardApp":
         return cast("WizardApp", self.app)
+
+
+class WelcomeScreen(Screen):
+    """Main wizard menu."""
+
+    def compose(self):
+        with Vertical(classes="wiz-box"):
+            yield Static(
+                "Azure Firewall Watch — Setup Wizard",
+                classes="wiz-title",
+            )
+            yield Static(
+                "How do you want to connect to the Azure Event Hub?",
+                classes="wiz-info",
+            )
+            with RadioSet(id="welcome-radio"):
+                yield RadioButton(
+                    "Discover Event Hub automatically",
+                    id="opt-discover",
+                    value=True,
+                )
+                yield RadioButton(
+                    "Deploy new Event Hub and Diagnostics settings",
+                    id="opt-deploy",
+                )
+                yield RadioButton(
+                    "Enter existing Event Hub data",
+                    id="opt-enter",
+                )
+                yield RadioButton(
+                    "Paste SAS connection string",
+                    id="opt-paste",
+                )
+            with Horizontal(classes="wiz-buttons"):
+                yield Button("Quit", id="btn-quit", variant="error")
+                yield Button("Next →", id="btn-next", variant="primary")
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "btn-quit":
+            self.app.exit()
+            return
+        if event.button.id == "btn-next":
+            radio = self.query_one("#welcome-radio", RadioSet)
+            if radio.pressed_button is None:
+                return
+            match radio.pressed_button.id:
+                case "opt-discover":
+                    self.app.push_screen(PickExistingScreen())
+                case "opt-deploy":
+                    self.app.push_screen(DeployNewScreen())
+                case "opt-enter":
+                    self.app.push_screen(EnterExistingHubScreen())
+                case "opt-paste":
+                    self.app.push_screen(PasteConnectionScreen())
 
 
 class ConfirmCreateRuleScreen(ModalScreen[bool]):
@@ -72,58 +132,52 @@ class ConfirmCreateRuleScreen(ModalScreen[bool]):
             self.dismiss(False)
 
 
-class WelcomeScreen(Screen):
-    """Main wizard menu."""
+class AuthMethodScreen(ModalScreen[str | None]):
+    """Sub-choice modal: Entra ID or SAS connection string."""
 
     def compose(self):
         with Vertical(classes="wiz-box"):
+            yield Static("How do you want to connect?", classes="wiz-title")
             yield Static(
-                "Azure Firewall Watch — Setup Wizard",
-                classes="wiz-title",
-            )
-            yield Static(
-                "How do you want to connect to Azure Event Hub?",
+                "Entra ID - no secrets stored.\n"
+                "  Uses existing Azure CLI login, managed identity,\n"
+                "  environment credentials, etc.\n"
+                "  Prerequisite: Your identity must have the\n"
+                "  'Azure Event Hubs Data Receiver' role on the namespace or hub.\n\n"
+                "SAS auth rule - a connection string is stored in .env",
                 classes="wiz-info",
             )
-            with RadioSet(id="welcome-radio"):
+            with RadioSet(id="auth-radio"):
                 yield RadioButton(
-                    "Choose from existing Event Hubs in my subscriptions",
-                    id="opt-pick",
+                    "Entra ID (recommended)",
+                    id="opt-entra",
                     value=True,
                 )
                 yield RadioButton(
-                    "Discover firewall & deploy new Event Hub  (~2–3 min)",
-                    id="opt-deploy",
-                )
-                yield RadioButton(
-                    "Paste a connection string directly",
-                    id="opt-paste",
-                )
-                yield RadioButton(
-                    "Use Entra ID (passwordless) — enter namespace + hub name",
-                    id="opt-entra",
+                    "SAS auth rule",
+                    id="opt-sas",
                 )
             with Horizontal(classes="wiz-buttons"):
-                yield Button("Quit", id="btn-quit", variant="error")
+                yield Button("Back", id="btn-back", variant="default")
                 yield Button("Next →", id="btn-next", variant="primary")
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
-        if event.button.id == "btn-quit":
-            self.app.exit()
+        if event.button.id == "btn-back":
+            self.dismiss(None)
             return
         if event.button.id == "btn-next":
-            radio = self.query_one("#welcome-radio", RadioSet)
+            radio = self.query_one("#auth-radio", RadioSet)
             if radio.pressed_button is None:
                 return
             match radio.pressed_button.id:
-                case "opt-pick":
-                    self.app.push_screen(PickExistingScreen())
-                case "opt-deploy":
-                    self.app.push_screen(DeployNewScreen())
-                case "opt-paste":
-                    self.app.push_screen(PasteConnectionScreen())
                 case "opt-entra":
-                    self.app.push_screen(EntraIdScreen())
+                    self.dismiss("entra")
+                case "opt-sas":
+                    self.dismiss("sas")
+
+    def on_key(self, event) -> None:  # type: ignore[override]
+        if event.key in ("escape", "q"):
+            self.dismiss(None)
 
 
 class PasteConnectionScreen(_WizardScreen):
@@ -135,7 +189,7 @@ class PasteConnectionScreen(_WizardScreen):
             yield Static(
                 "Expected format:\n"
                 "  Endpoint=sb://<namespace>.servicebus.windows.net/;"
-                "SharedAccessKeyName=<rule>;SharedAccessKey=<key>;EntityPath=<hub>",
+                "  SharedAccessKeyName=<rule>;SharedAccessKey=<key>;EntityPath=<hub>",
                 classes="wiz-info",
             )
             yield Input(
@@ -185,15 +239,16 @@ class PasteConnectionScreen(_WizardScreen):
         self.app.exit()
 
 
-class EntraIdScreen(_WizardScreen):
-    """Option 4 — Entra ID (passwordless) setup."""
+class EnterExistingHubScreen(_WizardScreen):
+    """Option 3 — enter existing Event Hub name, connect with Entra ID."""
 
     def compose(self):
         with Vertical(classes="wiz-box"):
-            yield Static("Entra ID (Passwordless) Authentication", classes="wiz-title")
+            yield Static("Enter Existing Event Hub", classes="wiz-title")
             yield Static(
-                "No secrets stored — uses DefaultAzureCredential\n"
-                "(Azure CLI login, managed identity, environment credentials, etc.)\n\n"
+                "Uses Entra ID — no secrets stored.\n"
+                "Authentication via existing Azure CLI login,\n"
+                "managed identity, environment credentials, etc.)\n\n"
                 "Prerequisite: Your identity must have the\n"
                 "'Azure Event Hubs Data Receiver' role on the namespace or hub.",
                 classes="wiz-info",
@@ -281,74 +336,16 @@ class PickExistingScreen(_WizardScreen):
     @work(exclusive=True)
     async def _run_scan(self) -> None:
         log = self.query_one("#scan-log", RichLog)
-
-        az = find_az()
-        if not az:
-            self._show_error(
-                "Azure CLI not found.\n"
-                "  macOS:   brew install azure-cli\n"
-                "  Ubuntu:  curl -sL https://aka.ms/InstallAzureCLIDeb | sudo bash\n"
-                "  Windows: winget install Microsoft.AzureCLI",
-            )
-            return
-        result = await az_async("version", "--query", '"azure-cli"', "-o", "tsv")
-        version = result.stdout.strip() if result.returncode == 0 else "unknown"
-        log.write(f"[green]✓[/] Azure CLI {version}")
-
-        acc = await az_async("account", "show", "--query", "user.name", "-o", "tsv")
-        if acc.returncode != 0:
-            log.write("[yellow]![/] Not logged in — starting az login…")
-            try:
-                with self.app.suspend():
-                    subprocess.run([az, "login"], check=True)
-            except subprocess.CalledProcessError as exc:
-                self._show_error(f"az login failed: {exc}")
+        try:
+            await cli_ensure_login(log.write, self.app.suspend)
+            subs = await list_subscriptions(log.write)
+            items = await scan_event_hubs(subs, log.write)
+            if not items:
+                self._show_error("No Event Hubs found in your accessible subscriptions.")
                 return
-            acc = await az_async("account", "show", "--query", "user.name", "-o", "tsv")
-        user = acc.stdout.strip()
-        log.write(f"[green]✓[/] Logged in as [bold]{user}[/]")
-
-        subs_result = await az_async(
-            "account", "list",
-            "--query", "[?state=='Enabled'].{id:id, name:name}",
-            "-o", "json",
-        )
-        subs = json.loads(subs_result.stdout) if subs_result.returncode == 0 else []
-        log.write(f"[cyan]i[/] Found {len(subs)} subscription(s)")
-
-        items: list[tuple[str, str, str, str, str]] = []
-        for sub in subs:
-            sub_id, sub_name = sub["id"], sub["name"]
-            log.write(f"[cyan]i[/] Scanning {sub_name}…")
-            ns_result = await az_async(
-                "eventhubs", "namespace", "list",
-                "--subscription", sub_id,
-                "--query", "[].{name:name, rg:resourceGroup}",
-                "-o", "json",
-            )
-            if ns_result.returncode != 0:
-                continue
-            for ns_info in (json.loads(ns_result.stdout) or []):
-                ns, rg = ns_info["name"], ns_info["rg"]
-                eh_result = await az_async(
-                    "eventhubs", "eventhub", "list",
-                    "--namespace-name", ns,
-                    "--resource-group", rg,
-                    "--subscription", sub_id,
-                    "--query", "[].name",
-                    "-o", "json",
-                )
-                if eh_result.returncode != 0:
-                    continue
-                for eh in (json.loads(eh_result.stdout) or []):
-                    items.append((sub_id, sub_name, rg, ns, eh))
-                    log.write(f"[green]✓[/] {eh}  (ns: {ns}, rg: {rg})")
-
-        if not items:
-            self._show_error("No Event Hubs found in your accessible subscriptions.")
-            return
-
-        self._show_results(items)
+            self._show_results(items)
+        except Exception as exc:
+            self._show_error(str(exc))
 
     def _show_error(self, message: str) -> None:
         self.query_one("#scan-spinner", LoadingIndicator).display = False
@@ -382,153 +379,36 @@ class PickExistingScreen(_WizardScreen):
     @work(exclusive=True)
     async def _run_confirm(self, idx: int) -> None:
         sub_id, _sub_name, rg, ns, eh = self._items[idx]
-        rule_name = "az-firewall-watch-listen"
 
+        auth_method = await self.app.push_screen_wait(AuthMethodScreen())
+        if auth_method is None:
+            return
+
+        if auth_method == "entra":
+            write_env_entra(self._wizard_app.env_file, f"{ns}.servicebus.windows.net", eh)
+            self.app.exit()
+            return
+
+        rule_name = "az-firewall-watch-listen"
         log = self.query_one("#scan-log", RichLog)
         self.query_one(ContentSwitcher).current = "phase-loading"
-        log.write(f"[cyan]i[/] Looking up auth rule '{rule_name}'…")
 
-        conn_str = ""
-
-        def _has_listen_rights(rule: dict) -> bool:
-            rights = rule.get("rights") or []
-            if isinstance(rights, str):
-                rights = [rights]
-            return "Listen" in rights or "Manage" in rights
-
-        def _with_entity_path(raw_conn_str: str) -> str:
-            if "EntityPath=" in raw_conn_str:
-                return raw_conn_str
-            sep = "" if raw_conn_str.endswith(";") else ";"
-            return f"{raw_conn_str}{sep}EntityPath={eh}"
+        async def _confirm_create() -> bool:
+            return await self.app.push_screen_wait(
+                ConfirmCreateRuleScreen(rule_name=rule_name, namespace=ns, event_hub=eh)
+            )
 
         try:
-            # 1) Prefer existing entity-level rule with Listen (or Manage).
-            entity_rules_result = await az_async(
-                "eventhubs", "eventhub", "authorization-rule", "list",
-                "--subscription", sub_id, "--resource-group", rg,
-                "--namespace-name", ns, "--eventhub-name", eh,
-                "-o", "json",
+            conn_str = await resolve_sas_conn_str(
+                sub_id, rg, ns, eh, rule_name, log.write, _confirm_create
             )
-            entity_rules = (
-                json.loads(entity_rules_result.stdout)
-                if entity_rules_result.returncode == 0 and entity_rules_result.stdout.strip()
-                else []
-            )
-
-            preferred_entity = next(
-                (
-                    rule for rule in entity_rules
-                    if rule.get("name") == rule_name and _has_listen_rights(rule)
-                ),
-                None,
-            )
-            chosen_entity = preferred_entity or next(
-                (rule for rule in entity_rules if _has_listen_rights(rule)),
-                None,
-            )
-
-            if chosen_entity:
-                chosen_rule_name = chosen_entity.get("name", "")
-                log.write(
-                    f"[green]✓[/] Using existing Event Hub rule '{chosen_rule_name}'"
-                )
-                keys_result = await az_async(
-                    "eventhubs", "eventhub", "authorization-rule", "keys", "list",
-                    "--subscription", sub_id, "--resource-group", rg,
-                    "--namespace-name", ns, "--eventhub-name", eh,
-                    "--name", chosen_rule_name,
-                    "--query", "primaryConnectionString", "-o", "tsv",
-                )
-                if keys_result.returncode == 0 and keys_result.stdout.strip():
-                    conn_str = _with_entity_path(keys_result.stdout.strip())
-
-            # 2) Fall back to existing namespace-level rule with Listen (or Manage),
-            # excluding RootManageSharedAccessKey.
             if not conn_str:
-                namespace_rules_result = await az_async(
-                    "eventhubs", "namespace", "authorization-rule", "list",
-                    "--subscription", sub_id, "--resource-group", rg,
-                    "--namespace-name", ns,
-                    "-o", "json",
-                )
-                namespace_rules = (
-                    json.loads(namespace_rules_result.stdout)
-                    if namespace_rules_result.returncode == 0 and namespace_rules_result.stdout.strip()
-                    else []
-                )
-
-                preferred_namespace = next(
-                    (
-                        rule for rule in namespace_rules
-                        if rule.get("name") == rule_name and _has_listen_rights(rule)
-                    ),
-                    None,
-                )
-                chosen_namespace = preferred_namespace or next(
-                    (
-                        rule
-                        for rule in namespace_rules
-                        if rule.get("name") != "RootManageSharedAccessKey"
-                        and _has_listen_rights(rule)
-                    ),
-                    None,
-                )
-
-                if chosen_namespace:
-                    chosen_rule_name = chosen_namespace.get("name", "")
-                    log.write(
-                        f"[green]✓[/] Using existing namespace rule '{chosen_rule_name}'"
-                    )
-                    keys_result = await az_async(
-                        "eventhubs", "namespace", "authorization-rule", "keys", "list",
-                        "--subscription", sub_id, "--resource-group", rg,
-                        "--namespace-name", ns,
-                        "--name", chosen_rule_name,
-                        "--query", "primaryConnectionString", "-o", "tsv",
-                    )
-                    if keys_result.returncode == 0 and keys_result.stdout.strip():
-                        conn_str = _with_entity_path(keys_result.stdout.strip())
-
-            # 3) Create dedicated entity-level Listen rule only if nothing reusable exists.
-            if not conn_str:
-                confirmed = await self.app.push_screen_wait(
-                    ConfirmCreateRuleScreen(rule_name=rule_name, namespace=ns, event_hub=eh)
-                )
-                if not confirmed:
-                    log.write("[yellow]![/] Rule creation canceled by user")
-                    self.query_one(ContentSwitcher).current = "phase-select"
-                    return
-
-                log.write(f"[yellow]![/] No reusable Listen rule found — creating '{rule_name}'…")
-                await az_async(
-                    "eventhubs", "eventhub", "authorization-rule", "create",
-                    "--subscription", sub_id, "--resource-group", rg,
-                    "--namespace-name", ns, "--eventhub-name", eh,
-                    "--name", rule_name, "--rights", "Listen", "--output", "none",
-                    check=True,
-                )
-                keys_result = await az_async(
-                    "eventhubs", "eventhub", "authorization-rule", "keys", "list",
-                    "--subscription", sub_id, "--resource-group", rg,
-                    "--namespace-name", ns, "--eventhub-name", eh,
-                    "--name", rule_name, "--query", "primaryConnectionString", "-o", "tsv",
-                    check=True,
-                )
-                conn_str = _with_entity_path(keys_result.stdout.strip())
-                log.write("[green]✓[/] Auth rule created")
-
-            if not conn_str:
-                self._show_error("Could not retrieve a connection string for the auth rule.")
+                self.query_one(ContentSwitcher).current = "phase-select"
                 return
-
             log.write("[green]✓[/] Writing .env…")
             write_env(self._wizard_app.env_file, conn_str)
             log.write("[green]✓[/] Done!")
             self.app.exit()
-
-        except subprocess.CalledProcessError as exc:
-            self._show_error(f"Failed to create authorization rule: {exc}")
         except Exception as exc:
             self._show_error(f"Failed to configure auth rule: {exc}")
 
@@ -548,6 +428,8 @@ class DeployNewScreen(_WizardScreen):
     _listen_rule: str
     _send_rule: str
     _diag_name: str
+    _auth_method: str
+    _current_user_id: str
 
     def compose(self):
         with Vertical(classes="wiz-box"):
@@ -614,6 +496,8 @@ class DeployNewScreen(_WizardScreen):
     def on_mount(self) -> None:
         self._subs = []
         self._firewalls = []
+        self._auth_method = "sas"
+        self._current_user_id = ""
         self.query_one("#lbl-deploy-error", Label).display = False
         self.query_one("#lbl-fw-error", Label).display = False
         self.query_one("#lbl-naming-error", Label).display = False
@@ -623,42 +507,17 @@ class DeployNewScreen(_WizardScreen):
     @work(exclusive=True)
     async def _run_loading(self) -> None:
         log = self.query_one("#deploy-log", RichLog)
-        az = find_az()
-        if not az:
-            self._deploy_error(
-                "Azure CLI not found.\n"
-                "  macOS:   brew install azure-cli\n"
-                "  Windows: winget install Microsoft.AzureCLI",
-            )
-            return
-        result = await az_async("version", "--query", '"azure-cli"', "-o", "tsv")
-        version = result.stdout.strip() if result.returncode == 0 else "unknown"
-        log.write(f"[green]✓[/] Azure CLI {version}")
-
-        acc = await az_async("account", "show", "--query", "user.name", "-o", "tsv")
-        if acc.returncode != 0:
-            log.write("[yellow]![/] Not logged in — starting az login…")
-            try:
-                with self.app.suspend():
-                    subprocess.run([az, "login"], check=True)
-            except subprocess.CalledProcessError as exc:
-                self._deploy_error(f"az login failed: {exc}")
+        try:
+            _, user_id = await cli_ensure_login(log.write, self.app.suspend)
+            self._current_user_id = user_id
+            subs = await list_subscriptions(log.write)
+            if not subs:
+                self._deploy_error("No enabled subscriptions found.")
                 return
-            acc = await az_async("account", "show", "--query", "user.name", "-o", "tsv")
-        user = acc.stdout.strip()
-        log.write(f"[green]✓[/] Logged in as [bold]{user}[/]")
-
-        subs_result = await az_async(
-            "account", "list",
-            "--query", "[?state=='Enabled'].{id:id, name:name}",
-            "-o", "json",
-        )
-        subs = json.loads(subs_result.stdout) if subs_result.returncode == 0 else []
-        if not subs:
-            self._deploy_error("No enabled subscriptions found.")
-            return
-        self._subs = subs
-        self._advance_to_subscription()
+            self._subs = subs
+            self._advance_to_subscription()
+        except Exception as exc:
+            self._deploy_error(str(exc))
 
     def _deploy_error(self, message: str) -> None:
         self.query_one("#deploy-spinner", LoadingIndicator).display = False
@@ -708,25 +567,24 @@ class DeployNewScreen(_WizardScreen):
     @work(exclusive=True)
     async def _scan_firewalls(self) -> None:
         log = self.query_one("#fw-scan-log", RichLog)
-        log.write(f"[cyan]i[/] Scanning for firewalls in {self._target_sub_name}…")
-        fw_result = await az_async(
-            "network", "firewall", "list",
-            "--subscription", self._target_sub,
-            "--query", "[].{name:name, rg:resourceGroup, location:location, id:id}",
-            "-o", "json",
-        )
-        fws = json.loads(fw_result.stdout) if fw_result.returncode == 0 else []
-        if not fws:
+        try:
+            fws = await scan_firewalls(self._target_sub, self._target_sub_name, log.write)
+            if not fws:
+                err = self.query_one("#lbl-fw-error", Label)
+                err.update(
+                    "No Azure Firewalls found in this subscription.\n"
+                    "Deployment requires an existing firewall to determine the region."
+                )
+                err.display = True
+                self.query_one("#fw-spinner", LoadingIndicator).display = False
+                return
+            self._firewalls = fws
+            self._populate_firewall_list(fws)
+        except Exception as exc:
             err = self.query_one("#lbl-fw-error", Label)
-            err.update(
-                "No Azure Firewalls found in this subscription.\n"
-                "Deployment requires an existing firewall to determine the region."
-            )
+            err.update(str(exc))
             err.display = True
             self.query_one("#fw-spinner", LoadingIndicator).display = False
-            return
-        self._firewalls = fws
-        self._populate_firewall_list(fws)
 
     def _populate_firewall_list(self, fws: list) -> None:
         lv = self.query_one("#fw-list", ListView)
@@ -775,16 +633,32 @@ class DeployNewScreen(_WizardScreen):
         self._send_rule = send_rule
         self._diag_name = diag_name
 
+        self._pick_auth_and_advance()
+
+    @work(exclusive=True)
+    async def _pick_auth_and_advance(self) -> None:
+        auth_method = await self.app.push_screen_wait(AuthMethodScreen())
+        if auth_method is None:
+            return
+        self._auth_method = auth_method
+        auth_label = (
+            "Entra ID" if auth_method == "entra" else "SAS connection string"
+        )
         rows = [
             f"Subscription  : {self._target_sub_name}",
             f"Firewall      : {self._selected_fw['name']} → diagnostics will be configured",
             f"Location      : {self._location}",
-            f"Resource group: {rg}" + (" → using existing" if self._selected_fw and rg == self._selected_fw["rg"] else ""),
-            f"EH Namespace  : {ns}",
-            f"Event Hub     : {eh_name}",
-            f"Listen rule   : {listen_rule}",
-            f"Send rule     : {send_rule}",
-            f"Diag setting  : {diag_name}",
+            f"Resource group: {self._rg}"
+            + (" → using existing" if self._selected_fw and self._rg == self._selected_fw["rg"] else ""),
+            f"EH Namespace  : {self._ns}",
+            f"Event Hub     : {self._eh_name}",
+            f"Auth method   : {auth_label}",
+        ]
+        if auth_method == "sas":
+            rows.append(f"Listen rule   : {self._listen_rule}")
+        rows += [
+            f"Send rule     : {self._send_rule}",
+            f"Diag setting  : {self._diag_name}",
         ]
         self.query_one("#summary-text", Static).update("\n".join(rows))
         self.query_one(ContentSwitcher).current = "step-summary"
@@ -797,140 +671,34 @@ class DeployNewScreen(_WizardScreen):
     @work(exclusive=True)
     async def _run_deploy(self) -> None:
         log = self.query_one("#progress-log", RichLog)
-        sub_id = self._target_sub
-        rg = self._rg
-        ns = self._ns
-        location = self._location
-        eh_name = self._eh_name
-        listen_rule = self._listen_rule
-        send_rule = self._send_rule
-        diag_name = self._diag_name
-        tags = ["project=az-firewall-watch", "managed-by=az-cli"]
-
         try:
-            using_existing = self._selected_fw and rg == self._selected_fw["rg"]
-            if using_existing:
-                log.write(f"[cyan]i[/] Using existing resource group '{rg}'")
-            else:
-                log.write(f"[cyan]i[/] Creating resource group '{rg}'…")
-                await az_async(
-                    "group", "create",
-                    "--subscription", sub_id,
-                    "--name", rg, "--location", location,
-                    "--tags", *tags, "--output", "none",
-                    check=True,
-                )
-            log.write("[green]✓[/] Resource group ready")
-
-            log.write(f"[cyan]i[/] Creating namespace '{ns}' (Basic SKU)…")
-            await az_async(
-                "eventhubs", "namespace", "create",
-                "--subscription", sub_id,
-                "--name", ns, "--resource-group", rg, "--location", location,
-                "--sku", "Basic", "--minimum-tls-version", "1.2",
-                "--tags", *tags, "--output", "none",
-                check=True,
+            conn_str = await deploy_new_hub(
+                sub_id=self._target_sub,
+                rg=self._rg,
+                ns=self._ns,
+                location=self._location,
+                eh_name=self._eh_name,
+                listen_rule=self._listen_rule,
+                send_rule=self._send_rule,
+                diag_name=self._diag_name,
+                fw=self._selected_fw,
+                auth_method=self._auth_method,
+                current_user_id=self._current_user_id,
+                using_existing_rg=bool(
+                    self._selected_fw and self._rg == self._selected_fw["rg"]
+                ),
+                log=log.write,
             )
-            log.write("[green]✓[/] Namespace ready")
-
-            log.write(f"[cyan]i[/] Creating Event Hub '{eh_name}'…")
-            await az_async(
-                "eventhubs", "eventhub", "create",
-                "--subscription", sub_id,
-                "--name", eh_name, "--namespace-name", ns,
-                "--resource-group", rg, "--partition-count", "1",
-                "--output", "none",
-                check=True,
-            )
-            log.write("[green]✓[/] Event Hub ready")
-
-            log.write(f"[cyan]i[/] Creating Listen rule '{listen_rule}'…")
-            await az_async(
-                "eventhubs", "eventhub", "authorization-rule", "create",
-                "--subscription", sub_id,
-                "--resource-group", rg, "--namespace-name", ns,
-                "--eventhub-name", eh_name, "--name", listen_rule,
-                "--rights", "Listen", "--output", "none",
-                check=True,
-            )
-            log.write("[green]✓[/] Listen rule created")
-
-            keys_result = await az_async(
-                "eventhubs", "eventhub", "authorization-rule", "keys", "list",
-                "--subscription", sub_id,
-                "--resource-group", rg, "--namespace-name", ns,
-                "--eventhub-name", eh_name, "--name", listen_rule,
-                "--query", "primaryConnectionString", "-o", "tsv",
-                check=True,
-            )
-            conn_str = keys_result.stdout.strip()
-
-            log.write(f"[cyan]i[/] Creating Send rule '{send_rule}'…")
-            await az_async(
-                "eventhubs", "namespace", "authorization-rule", "create",
-                "--subscription", sub_id,
-                "--resource-group", rg, "--namespace-name", ns,
-                "--name", send_rule, "--rights", "Send",
-                "--output", "none",
-                check=True,
-            )
-            log.write("[green]✓[/] Send rule created")
-
-            send_rule_result = await az_async(
-                "eventhubs", "namespace", "authorization-rule", "show",
-                "--subscription", sub_id,
-                "--resource-group", rg, "--namespace-name", ns,
-                "--name", send_rule, "--query", "id", "-o", "tsv",
-                check=True,
-            )
-            send_rule_id = send_rule_result.stdout.strip()
-
-            log.write("[cyan]i[/] Discovering diagnostic log categories…")
-            cats_result = await az_async(
-                "monitor", "diagnostic-settings", "categories", "list",
-                "--resource", self._selected_fw["id"],
-                "--query", "value[?categoryType=='Logs'].name",
-                "-o", "json",
-            )
-            available_cats: list[str] = []
-            if cats_result.returncode == 0 and cats_result.stdout.strip():
-                all_cats = json.loads(cats_result.stdout) or []
-                available_cats = [c for c in all_cats if c.startswith("AZFW")]
-            if not available_cats:
-                available_cats = [
-                    "AZFWNetworkRule", "AZFWApplicationRule", "AZFWNatRule",
-                    "AZFWThreatIntel", "AZFWIdpsSignature", "AZFWDnsQuery", "AZFWDnsProxy",
-                ]
-            diag_logs = json.dumps(
-                [{"category": c, "enabled": True} for c in available_cats]
-            )
-
-            log.write(f"[cyan]i[/] Configuring diagnostic settings '{diag_name}'…")
-            diag_result = await az_async(
-                "monitor", "diagnostic-settings", "create",
-                "--name", diag_name,
-                "--resource", self._selected_fw["id"],
-                "--event-hub", eh_name,
-                "--event-hub-rule", send_rule_id,
-                "--logs", diag_logs,
-                "--output", "none",
-            )
-            if diag_result.returncode == 0:
-                log.write(
-                    "[green]✓[/] Diagnostic settings configured — logs will start flowing shortly"
+            if self._auth_method == "entra":
+                write_env_entra(
+                    self._wizard_app.env_file,
+                    f"{self._ns}.servicebus.windows.net",
+                    self._eh_name,
                 )
             else:
-                log.write(
-                    f"[yellow]![/] Could not configure diagnostics automatically.\n"
-                    f"    Configure manually in Azure Portal:\n"
-                    f"    Firewall '{self._selected_fw['name']}' → Diagnostic settings → Add\n"
-                    f"    → Stream to Event Hub → ns: {ns}, hub: {eh_name}",
-                )
-
-            write_env(self._wizard_app.env_file, conn_str)
+                write_env(self._wizard_app.env_file, conn_str)
             log.write("[green]✓[/] .env written — setup complete!")
             self.app.exit()
-
         except Exception as exc:
             log.write(f"[red]✗[/] Deployment failed: {exc}")
             self.query_one("#progress-spinner", LoadingIndicator).display = False

@@ -56,14 +56,11 @@ class WelcomeScreen(Screen):
                 classes="wiz-info",
             )
             with RadioSet(id="welcome-radio"):
+                yield Static("Existing Event Hub", classes="wiz-section")
                 yield RadioButton(
                     "Discover Event Hub automatically",
                     id="opt-discover",
                     value=True,
-                )
-                yield RadioButton(
-                    "Deploy new Event Hub and Diagnostics settings",
-                    id="opt-deploy",
                 )
                 yield RadioButton(
                     "Enter existing Event Hub data",
@@ -72,6 +69,11 @@ class WelcomeScreen(Screen):
                 yield RadioButton(
                     "Paste SAS connection string",
                     id="opt-paste",
+                )
+                yield Static("New Event Hub", classes="wiz-section")
+                yield RadioButton(
+                    "Deploy new Event Hub and Diagnostics settings",
+                    id="opt-deploy",
                 )
             with Horizontal(classes="wiz-buttons"):
                 yield Button("Quit", id="btn-quit", variant="error")

@@ -55,6 +55,11 @@ class WizardApp(App[None]):
     .wiz-warn {
         color: $warning;
     }
+    .wiz-section {
+        text-style: bold;
+        color: $text;
+        margin-top: 1;
+    }
     .wiz-buttons {
         height: auto;
         margin-top: 1;

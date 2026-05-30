@@ -34,7 +34,6 @@ CATEGORY_OPTIONS: list[tuple[str, str]] = [
     ("AppRule", "apprule"),
     ("NATRule", "natrule"),
     ("DnsQuery", "dnsquery"),
-    ("DnsProxy", "dnsproxy"),
     ("IDPS", "idps"),
     ("ThreatIntel", "threatintel"),
 ]

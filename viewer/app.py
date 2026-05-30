@@ -145,8 +145,9 @@ class FirewallLogApp(App[None]):
             for r in batch:
                 if r.fw_policy:
                     self._seen_policies.add(r.fw_policy)
-            batch.sort(key=lambda r: r.time, reverse=True)
-            self._all_rows = (batch + self._all_rows)[:MAX_ROWS]
+            merged = batch + self._all_rows
+            merged.sort(key=lambda r: r.time, reverse=True)
+            self._all_rows = merged[:MAX_ROWS]
 
         status = self.query_one("#status", StatusBar)
         status.total += len(batch)

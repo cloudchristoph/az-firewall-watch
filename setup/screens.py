@@ -42,6 +42,16 @@ class _WizardScreen(Screen):
         return cast("WizardApp", self.app)
 
 
+class _SafeRadioSet(RadioSet):
+    """RadioSet that silently skips non-RadioButton children (e.g. section headers)."""
+
+    def action_toggle_button(self) -> None:
+        try:
+            super().action_toggle_button()
+        except AssertionError:
+            pass
+
+
 class WelcomeScreen(Screen):
     """Main wizard menu."""
 
@@ -55,21 +65,15 @@ class WelcomeScreen(Screen):
                 "How do you want to connect to the Azure Event Hub?",
                 classes="wiz-info",
             )
-            with RadioSet(id="welcome-radio"):
+            with _SafeRadioSet(id="welcome-radio"):
                 yield Static("Existing Event Hub", classes="wiz-section")
                 yield RadioButton(
                     "Discover Event Hub automatically",
                     id="opt-discover",
                     value=True,
                 )
-                yield RadioButton(
-                    "Enter existing Event Hub data",
-                    id="opt-enter",
-                )
-                yield RadioButton(
-                    "Paste SAS connection string",
-                    id="opt-paste",
-                )
+                yield RadioButton("Enter existing Event Hub data", id="opt-enter")
+                yield RadioButton("Paste SAS connection string", id="opt-paste")
                 yield Static("New Event Hub", classes="wiz-section")
                 yield RadioButton(
                     "Deploy new Event Hub and Diagnostics settings",
@@ -84,7 +88,7 @@ class WelcomeScreen(Screen):
             self.app.exit()
             return
         if event.button.id == "btn-next":
-            radio = self.query_one("#welcome-radio", RadioSet)
+            radio = self.query_one("#welcome-radio", _SafeRadioSet)
             if radio.pressed_button is None:
                 return
             match radio.pressed_button.id:

@@ -294,7 +294,7 @@ class FirewallLogApp(App[None]):
     def action_clear_filters(self) -> None:
         for fid in ("#f-src", "#f-dst", "#f-action", "#f-proto", "#f-port"):
             self.query_one(fid, Input).value = ""
-        self.query_one("#f-cat", Select).value = Select.BLANK
+        self.query_one("#f-cat", Select).clear()
         self._refresh_table()
 
     def action_focus_filter(self) -> None:

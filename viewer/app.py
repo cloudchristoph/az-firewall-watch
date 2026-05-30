@@ -78,6 +78,7 @@ class FirewallLogApp(App[None]):
         Binding("c", "clear_logs", "Clear"),
         Binding("escape", "clear_filters", "Clear Filters", priority=True),
         Binding("f", "focus_filter", "Filter"),
+        Binding("ctrl+s", "screenshot", "Screenshot", show=True),
     ]
 
     # ── state ──────────────────────────────────────────────────────────────────

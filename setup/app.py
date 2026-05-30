@@ -97,6 +97,7 @@ class WizardApp(App[None]):
 
     def __init__(self, env_file: Path) -> None:
         super().__init__()
+        self.theme = "flexoki"
         self.env_file = env_file
 
     def on_mount(self) -> None:

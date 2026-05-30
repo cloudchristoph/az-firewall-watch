@@ -82,6 +82,7 @@ class FirewallLogApp(App[None]):
     # ── state ──────────────────────────────────────────────────────────────────
     def __init__(self) -> None:
         super().__init__()
+        self.theme = "flexoki"
         self._all_rows: list[FirewallDataRow] = []
         self._pending: list[FirewallDataRow] = []
         self._skip_pending: int = 0

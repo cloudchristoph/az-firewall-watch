@@ -165,35 +165,39 @@ class FirewallLogApp(App[None]):
         prev_rowid = self._selected_rowid
         single_policy = len(self._seen_policies) <= 1
 
-        tbl.clear()
-        for row in visible:
-            action_text = self._action_text(row.action)
-            if f["action"]:
-                action_text.highlight_regex(
-                    f"(?i){re.escape(f['action'])}", style="bold reverse"
+        with tbl.prevent(DataTable.RowHighlighted):
+            tbl.clear()
+            for row in visible:
+                action_text = self._action_text(row.action)
+                if f["action"]:
+                    action_text.highlight_regex(
+                        f"(?i){re.escape(f['action'])}", style="bold reverse"
+                    )
+                info = row.policy or row.moreinfo
+                if single_policy and row.fw_policy and info.startswith(row.fw_policy + "»"):
+                    info = info[len(row.fw_policy) + 1:]
+                tbl.add_row(
+                    _to_local(row.time),
+                    _category_text(row.category),
+                    _highlight(row.protocol, f["proto"]),
+                    self._source_text(row.sourceip, row.srcport, f["src"]),
+                    _highlight(row.targetip, f["dst"]),
+                    row.targetport,
+                    action_text,
+                    info[:60],
+                    key=row.rowid,
                 )
-            info = row.policy or row.moreinfo
-            if single_policy and row.fw_policy and info.startswith(row.fw_policy + "»"):
-                info = info[len(row.fw_policy) + 1:]
-            tbl.add_row(
-                _to_local(row.time),
-                _category_text(row.category),
-                _highlight(row.protocol, f["proto"]),
-                self._source_text(row.sourceip, row.srcport, f["src"]),
-                _highlight(row.targetip, f["dst"]),
-                row.targetport,
-                action_text,
-                info[:60],
-                key=row.rowid,
-            )
 
-        if prev_rowid is not None:
-            try:
-                idx = tbl.get_row_index(prev_rowid)
-                tbl.move_cursor(row=idx, animate=False, scroll=False)
-                tbl.scroll_to(y=prev_scroll_y, animate=False)
-            except Exception:
-                pass
+            if prev_rowid is not None:
+                try:
+                    idx = tbl.get_row_index(prev_rowid)
+                    tbl.move_cursor(row=idx, animate=False, scroll=False)
+                    tbl.scroll_to(y=prev_scroll_y, animate=False)
+                except Exception:
+                    pass
+            else:
+                # No active selection — keep the view pinned to the newest row.
+                tbl.scroll_home(animate=False)
 
     @staticmethod
     def _action_text(action: str) -> Text:
@@ -293,6 +297,8 @@ class FirewallLogApp(App[None]):
         for fid in ("#f-src", "#f-dst", "#f-action", "#f-proto", "#f-port"):
             self.query_one(fid, Input).value = ""
         self.query_one("#f-cat", Select).clear()
+        # Deselect any pinned row so the view returns to auto-scrolling.
+        self._selected_rowid = None
         self._refresh_table()
 
     def action_focus_filter(self) -> None:

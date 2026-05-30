@@ -1,2 +1,2 @@
 # Build-time dependencies (not needed to run the app)
-pyinstaller>=6.0
+pyinstaller>=6.16

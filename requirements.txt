@@ -1,4 +1,4 @@
-azure-eventhub>=5.11.0
-azure-identity>=1.15.0
-python-dotenv>=1.0.0
-textual>=0.63.0
+azure-eventhub>=5.15.0
+azure-identity>=1.25.0
+python-dotenv>=1.1.0
+textual>=8.2.0

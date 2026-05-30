@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from rich.text import Text
 from textual.app import ComposeResult
 from textual.containers import Horizontal
 from textual.reactive import reactive

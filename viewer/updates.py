@@ -47,5 +47,4 @@ async def check_for_update(app: "FirewallLogApp", current_version: str) -> None:
         # Always push immediately — even over ConnectingDialog.
         # The first-event handler in streaming will surgically remove
         # ConnectingDialog from beneath it without touching UpdateDialog.
-        app._pending_update = (tag, release_url)
         await app.push_screen(UpdateDialog(tag, release_url))

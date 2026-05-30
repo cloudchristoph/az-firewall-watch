@@ -160,7 +160,6 @@ async def run_stream(app: "FirewallLogApp") -> None:
 
     # Show the connecting splash and keep a flag so we know when to dismiss it.
     _dialog = ConnectingDialog(namespace, hub)
-    app._connecting_active = True
     await app.push_screen(_dialog)
     _splash_shown = True
     _credential = None  # track credential for cleanup on error
@@ -225,7 +224,7 @@ async def run_stream(app: "FirewallLogApp") -> None:
                     status.status = "Connected"
                     app.sub_title = "Live Log Monitor  |  connected"
 
-                    async def on_event(partition_ctx, event) -> None:  # type: ignore[misc]
+                    async def on_event(_partition_ctx, event) -> None:  # type: ignore[misc]
                         nonlocal _splash_shown
                         if event is None or app._paused:
                             return
@@ -250,13 +249,11 @@ async def run_stream(app: "FirewallLogApp") -> None:
                                 has_real = True
                         if has_real and _splash_shown:
                             _splash_shown = False
-                            app._connecting_active = False
                             if isinstance(app.screen, UpdateDialog):
                                 # UpdateDialog is on top of ConnectingDialog.
                                 # Save its state, pop both, re-push UpdateDialog.
                                 upd_tag = app.screen._latest
                                 upd_url = app.screen._url
-                                app._pending_update = None
                                 app.pop_screen()   # remove UpdateDialog
                                 app.pop_screen()   # remove ConnectingDialog
                                 await app.push_screen(UpdateDialog(upd_tag, upd_url))
@@ -271,7 +268,6 @@ async def run_stream(app: "FirewallLogApp") -> None:
 
         except asyncio.CancelledError:
             if _splash_shown:
-                app._connecting_active = False
                 app.pop_screen()
             status.status = "Streaming stopped"
             return
@@ -316,6 +312,5 @@ async def run_stream(app: "FirewallLogApp") -> None:
             )
         status.status = f"Failed after {_MAX_ATTEMPTS} attempts — see dialog"
         if _splash_shown:
-            app._connecting_active = False
             app.pop_screen()
         await app.push_screen(ErrorDialog(str(last_exc), hint))

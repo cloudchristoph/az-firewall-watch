@@ -88,8 +88,6 @@ class FirewallLogApp(App[None]):
         self._skip_pending: int = 0
         self._paused: bool = False
         self._fw_name_set: bool = False
-        self._connecting_active: bool = False
-        self._pending_update: tuple[str, str] | None = None
         self._seen_policies: set[str] = set()
         self._selected_rowid: str | None = None
 

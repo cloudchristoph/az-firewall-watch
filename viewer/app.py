@@ -330,6 +330,7 @@ class FirewallLogApp(App[None]):
         status = self.query_one("#status", StatusBar)
         status.total = 0
         status.skipped = 0
+        status.visible_count = -1
 
     def action_clear_filters(self) -> None:
         for fid in ("#f-src", "#f-dst", "#f-action", "#f-proto", "#f-port"):

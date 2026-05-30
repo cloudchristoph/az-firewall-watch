@@ -268,7 +268,9 @@ async def run_stream(app: "FirewallLogApp") -> None:
 
         except asyncio.CancelledError:
             if _splash_shown:
-                app.pop_screen()
+                if isinstance(app.screen, UpdateDialog):
+                    app.pop_screen()   # remove UpdateDialog
+                app.pop_screen()       # remove ConnectingDialog
             status.status = "Streaming stopped"
             return
 
@@ -312,5 +314,7 @@ async def run_stream(app: "FirewallLogApp") -> None:
             )
         status.status = f"Failed after {_MAX_ATTEMPTS} attempts — see dialog"
         if _splash_shown:
-            app.pop_screen()
+            if isinstance(app.screen, UpdateDialog):
+                app.pop_screen()   # remove UpdateDialog
+            app.pop_screen()       # remove ConnectingDialog
         await app.push_screen(ErrorDialog(str(last_exc), hint))

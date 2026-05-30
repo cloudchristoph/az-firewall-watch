@@ -1,0 +1,93 @@
+<!-- markdownlint-disable MD024 -->
+# Changelog
+
+All notable changes to **Azure Firewall Watch** are documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [0.3.0] - 2026-05-30
+
+This release adds passwordless Entra ID authentication, better Azure Firewall log parsing, a more polished live viewer experience, and a full Textual setup wizard.
+
+### Added
+
+- **Entra ID (passwordless) authentication** via `DefaultAzureCredential`, alongside the existing SAS connection string flow. Huge thanks to [@kyjones03](https://github.com/kyjones03) for providing this.
+- **Full Textual setup wizard** replacing the old line-based prompts, with a grouped Welcome screen, confirmation dialogs, and a dedicated auth-method screen for choosing between Entra ID and SAS.
+- **New Event Hub deployment improvements** — the wizard can create Event Hub resources, configure Azure Firewall diagnostic settings, and for Entra ID flows attempt to assign the *Azure Event Hubs Data Receiver* role.
+- **Auth-rule discovery** — when SAS auth is picked, the wizard scans for a reusable Listen auth rule and only offers to create a new one, after explicit confirmation, if none exists.
+- **`AZFWFqdnResolveFailure` parser** — resolution failures are surfaced as `AppRule` rows with action `ResolveFail`, including the failed FQDN and error message.
+- **Hide DNS toggle** in the filter bar, enabled by default, to suppress noisy `DnsQuery` rows
+- **Screenshot binding** — `Ctrl+S` saves an SVG snapshot of the current TUI view.
+- **Visible-row counter** in the status bar that activates whenever a filter is in effect; the *Skipped* counter is hidden when nothing was skipped.
+- **Styled rule-info segments** — Policy » RuleCollectionGroup » RuleCollection » Rule is rendered with progressively stronger styling for easier scanning.
+- **New default theme** and a distinctive color for `DnsQuery` rows.
+
+### Changed
+
+- Legacy `AzureFirewallDnsProxy` log records are now normalized to the `DnsQuery` category so users see a single display name regardless of diagnostic mode.
+- **Viewer extracted into its own `viewer/` package** with dedicated modules for the app, configuration, streaming, and update checks.
+- **Setup wizard restructured** into a dedicated `setup/` package with separate modules for screens, Azure operations, services, and utilities.
+- `Ctrl+P` is now reserved for **Pause/Resume**; the built-in command palette binding was removed so the shortcut also works while a filter input is focused.
+- Build and runtime dependency minimums were updated to the versions required by the new wizard, viewer, and Entra ID support.
+
+### Fixed
+
+- DNS proxy `action` values now correctly show the DNS response code, such as `NOERROR` or `NXDOMAIN`, instead of unrelated trailing query data.
+- Legacy parser data extraction was reworked for `AzureFirewallNetworkRule`, `AzureFirewallApplicationRule`, `AzureFirewallNatRule`, and `AzureFirewallDnsProxy`.
+- Status-bar `visible_count` is now reset when the log table is cleared, avoiding stale `Events (filtered): N/0` output.
+- Screen stack handling is now correct when the streaming worker is cancelled or fails while the *Update available* dialog is shown above the connecting splash.
+- Streaming no longer leaks `DefaultAzureCredential` instances on exception paths.
+- `AsyncioRequestsTransport` is used for the Entra ID credential to avoid event-loop conflicts.
+- Resource Graph response parsing was fixed for the ARM permission check, and receive-permission matching now includes parent-scope role assignments.
+- Several UI regressions were fixed, including row sorting, table row handling, auto-scroll behavior, clear-filter behavior, header-row selection, and the update-check naming collision with Textual’s internal `flush` method.
+
+## [0.2.1] - 2026-05-11
+
+### Added
+
+- **Update check on startup** — the app checks for a newer GitHub release on launch and shows a dialog linking to the release page.
+- **Version display in title bar** — the current version is read from `version.txt` and shown in the TUI title.
+
+### Changed
+
+- `helpers.py` and `dialogs.py` extracted from `main.py` for better maintainability.
+
+### Fixed
+
+- Windows crash when `.env` was saved with cp1252 encoding instead of UTF-8.
+
+[Full diff](https://github.com/cloudchristoph/az-firewall-watch/compare/v0.2.0...v0.2.1)
+
+## [0.2.0] - 2026-05-09
+
+### Added
+
+- **Row detail dialog** — press `Enter` on any log row to see all parsed fields (time UTC + local, category, protocol, source, destination, action, firewall policy, rule collection group, rule collection, rule, extra info).
+- **Category colour coding** — NetworkRule, AppRule, NATRule, DnsQuery, IDPS and ThreatIntel each get a distinct colour in the table.
+- **Port filter** — new filter input for destination port next to the existing filters.
+- **Pause / resume** — shortcut changed to `Ctrl+P` (works even when a filter input is focused); the status bar is also clickable to toggle pause, and the paused state is shown with a distinct background colour.
+- **Connection dialog** — shows namespace and hub name (never the key); keeps the spinner running after a successful probe and dismisses automatically once the first real log event arrives.
+- **Error dialog** — distinguishes auth errors (bad credentials) from network errors with specific hints.
+
+### Changed
+
+- DnsQuery rows now show the query type (`A`, `AAAA`, `MX`, …) in the Protocol column and port `53` in the Port column.
+- `»` separator used consistently across all rule types in the Policy column.
+- Time column shows local time in `YYYY-MM-DD HH:MM:SS` format instead of the raw UTC ISO string.
+- Status bar shows `Connected` instead of perpetual `Connected — waiting for events`.
+
+[Full diff](https://github.com/cloudchristoph/az-firewall-watch/compare/v0.1.0...v0.2.0)
+
+## [0.1.0] - 2026-05-09
+
+### Added
+
+- Initial public release: streaming TUI for Azure Firewall logs from Event Hubs with filtering, search, and prebuilt binaries for Linux (x86_64), macOS (Apple Silicon) and Windows.
+
+[Full diff](https://github.com/cloudchristoph/az-firewall-watch/commits/v0.1.0)
+
+[Unreleased]: https://github.com/cloudchristoph/az-firewall-watch/compare/v0.2.1...HEAD
+[0.2.1]: https://github.com/cloudchristoph/az-firewall-watch/releases/tag/v0.2.1
+[0.2.0]: https://github.com/cloudchristoph/az-firewall-watch/releases/tag/v0.2.0
+[0.1.0]: https://github.com/cloudchristoph/az-firewall-watch/releases/tag/v0.1.0

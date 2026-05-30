@@ -9,7 +9,18 @@ permissions:
   contents: write # needed to create/upload release assets
 
 jobs:
+  validate-changelog:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Ensure CHANGELOG has section for this tag
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          grep -q "^## \[${version}\]" CHANGELOG.md \
+            || { echo "::error::CHANGELOG.md is missing '## [${version}]' section"; exit 1; }
+
   build:
+    needs: validate-changelog
     strategy:
       fail-fast: false
       matrix:
@@ -29,6 +40,10 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            requirements-build.txt
 
       - name: Install dependencies
         run: pip install -r requirements.txt -r requirements-build.txt
@@ -81,39 +96,47 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v6
+
       - uses: actions/download-artifact@v4
         with:
           path: dist
           merge-multiple: true
+
+      - name: Extract release notes from CHANGELOG.md
+        id: changelog
+        shell: bash
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          # Slice the section between "## [<version>]" and the next "## [" header.
+          notes=$(awk -v ver="$version" '
+            $0 ~ "^## \\[" ver "\\]" { flag=1; next }
+            flag && /^## \[/ { exit }
+            flag { print }
+          ' CHANGELOG.md)
+          if [ -z "$notes" ]; then
+            echo "::warning::No CHANGELOG.md section found for version $version — falling back to auto-generated notes."
+            notes="_No manual release notes provided._"
+          fi
+          {
+            echo "notes<<EOF"
+            echo "$notes"
+            echo ""
+            echo "## Download"
+            echo ""
+            echo "| Platform | File |"
+            echo "|----------|------|"
+            echo "| Linux (x86_64) | \`az-firewall-watch-linux.tar.gz\` |"
+            echo "| macOS Apple Silicon | \`az-firewall-watch-macos.tar.gz\` |"
+            echo "| Windows | \`az-firewall-watch.exe\` |"
+            echo ""
+            echo "See the [Getting started](https://github.com/${GITHUB_REPOSITORY}/blob/${GITHUB_REF_NAME}/README.md#-getting-started) section of the README for first-run instructions on each platform."
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v3
         with:
           files: dist/*
           generate_release_notes: true
-          body: |
-            ## Download
-
-            | Platform | File |
-            |----------|------|
-            | Linux (x86_64) | `az-firewall-watch-linux.tar.gz` |
-            | macOS Apple Silicon | `az-firewall-watch-macos.tar.gz` |
-            | Windows | `az-firewall-watch.exe` |
-
-            ### First run on macOS
-            ```bash
-            tar -xzf az-firewall-watch-macos.tar.gz
-            xattr -d com.apple.quarantine az-firewall-watch
-            ./az-firewall-watch
-            ```
-
-            ### First run on Linux
-            ```bash
-            tar -xzf az-firewall-watch-linux.tar.gz
-            chmod +x az-firewall-watch
-            ./az-firewall-watch
-            ```
-
-            ### First run on Windows
-            Double-click `az-firewall-watch.exe` or run it from PowerShell.
-            Windows SmartScreen may warn on first launch — click **More info → Run anyway**.
+          body: ${{ steps.changelog.outputs.notes }}

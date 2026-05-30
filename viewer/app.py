@@ -25,6 +25,7 @@ class FirewallLogApp(App[None]):
 
     TITLE = f"Azure Firewall Watch v{VERSION}"
     SUB_TITLE = "Live Log Monitor  |  connecting..."
+    COMMAND_PALETTE_BINDING = ""  # disable palette so ctrl+p is free for pause
 
     CSS = """
     Screen {
@@ -73,7 +74,7 @@ class FirewallLogApp(App[None]):
     BINDINGS = [
         Binding("q", "quit", "Quit", show=False),
         Binding("ctrl+q", "quit", "Quit", priority=True, show=True),
-        Binding("ctrl+p", "toggle_pause", "Pause/Resume", priority=True, show=True),
+        Binding("ctrl+p", "toggle_pause", "Pause/Resume", show=True),
         Binding("c", "clear_logs", "Clear"),
         Binding("escape", "clear_filters", "Clear Filters", priority=True),
         Binding("f", "focus_filter", "Filter"),

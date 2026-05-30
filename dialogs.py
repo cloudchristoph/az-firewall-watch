@@ -201,14 +201,20 @@ class StatusBar(Static):
 
     status: reactive[str] = reactive("Starting…")
     total: reactive[int] = reactive(0)
+    visible_count: reactive[int] = reactive(-1)  # -1 = no filter active
     skipped: reactive[int] = reactive(0)
     paused: reactive[bool] = reactive(False)
 
     def render(self) -> str:  # type: ignore[override]
         icon = "⏸ PAUSED" if self.paused else "▶ LIVE"
+        skipped_part = f"   Skipped: {self.skipped}" if self.skipped else ""
+        if self.visible_count >= 0:
+            events_part = f"Events (filtered): {self.visible_count}/{self.total}"
+        else:
+            events_part = f"Events: {self.total}"
         return (
             f" {icon}   {self.status}   │   "
-            f"Events: {self.total}   Skipped: {self.skipped} "
+            f"{events_part}{skipped_part} "
         )
 
     def watch_paused(self, paused: bool) -> None:

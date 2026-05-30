@@ -161,6 +161,9 @@ class FirewallLogApp(App[None]):
     def _refresh_table(self) -> None:
         f = self._get_filters()
         visible = [r for r in self._all_rows if self._matches(r, f)]
+        status = self.query_one("#status", StatusBar)
+        filtered = any(f.values())
+        status.visible_count = len(visible) if filtered else -1
 
         tbl = self.query_one("#log-table", DataTable)
         prev_scroll_y = tbl.scroll_y

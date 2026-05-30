@@ -640,15 +640,15 @@ class DeployNewScreen(_WizardScreen):
         self._diag_name = diag_name
 
         rows = [
-            f"Subscription : {self._target_sub_name}",
-            f"Firewall     : {self._selected_fw['name']} → diagnostics will be configured",
-            f"Location     : {self._location}",
+            f"Subscription  : {self._target_sub_name}",
+            f"Firewall      : {self._selected_fw['name']} → diagnostics will be configured",
+            f"Location      : {self._location}",
             f"Resource group: {rg}",
-            f"EH Namespace : {ns}",
-            f"Event Hub    : {eh_name}",
-            f"Listen rule  : {listen_rule}",
-            f"Send rule    : {send_rule}",
-            f"Diag setting : {diag_name}",
+            f"EH Namespace  : {ns}",
+            f"Event Hub     : {eh_name}",
+            f"Listen rule   : {listen_rule}",
+            f"Send rule     : {send_rule}",
+            f"Diag setting  : {diag_name}",
         ]
         self.query_one("#summary-text", Static).update("\n".join(rows))
         self.query_one(ContentSwitcher).current = "step-summary"

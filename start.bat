@@ -1,5 +1,5 @@
 @echo off
-:: start.bat  —  run fw-log-tui from source (Windows)
+:: start.bat  —  run az-firewall-watch from source (Windows)
 ::
 :: Usage:
 ::   start.bat               normal start (setup wizard runs if .env is missing)

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# start.sh  —  run fw-log-tui from source (Linux / macOS)
+# start.sh  —  run az-firewall-watch from source (Linux / macOS)
 #
 # Usage:
 #   ./start.sh               normal start (setup wizard runs if .env is missing)

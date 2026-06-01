@@ -6,6 +6,27 @@ All notable changes to **Azure Firewall Watch** are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+This release introduces Azure management-plane enrichment. The viewer now reads the firewall, policy and IP-group resources via ARM (using `DefaultAzureCredential` or the Azure CLI), so source/destination IPs and rule context can be rendered in human-friendly terms.
+
+### Added
+
+- **Management-plane enrichment** — viewer now reads the firewall, its policy, and any referenced IP groups via ARM REST. Works with `DefaultAzureCredential` (Entra ID) or falls back to the Azure CLI for users on SAS connection strings.
+- **FwInstance.N naming** — source IPs that fall inside the firewall's own subnet are rendered as `FwInstance.<lastOctet>` so backend-instance traffic stands out from regular client traffic.
+- **IP-group context in the detail dialog** — matching IP-group names are shown for source and destination, alongside the matching rule's priority, action and the policy SKU tier.
+- **SKU-aware category dropdown** — `ThreatIntel` and `IDPS` are hidden from the filter dropdown when the policy SKU is Standard or Basic.
+- **Persistent metadata cache** at `~/.az-firewall-watch/cache.json` (`0600`), with a 24 h TTL. Falls back to `BASE_DIR/.azfw-cache.json` when the home directory is not writable.
+- **Ctrl+R — Refresh metadata** binding to force a re-fetch of firewall / policy / IP-groups, bypassing the cache.
+
+### Changed
+
+- `requirements.txt` now lists `aiohttp` explicitly (was previously transitive via `azure-eventhub`).
+
+### Fixed
+
+- _(none yet)_
+
 ## [0.3.0] - 2026-05-30
 
 This release adds passwordless Entra ID authentication, better Azure Firewall log parsing, a more polished live viewer experience, and a full Textual setup wizard.

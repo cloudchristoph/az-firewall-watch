@@ -15,7 +15,9 @@ from dialogs import DetailDialog, StatusBar
 from fw_parser import FirewallDataRow
 from helpers import _category_text, _highlight, _to_local
 
+from .azure_resources import FirewallInfo, FirewallPolicyInfo, IpGroupInfo
 from .config import CATEGORY_OPTIONS, MAX_ROWS, VERSION
+from .management import load_management_data
 from .streaming import run_stream
 from .updates import check_for_update
 
@@ -82,6 +84,7 @@ class FirewallLogApp(App[None]):
         Binding("escape", "clear_filters", "Clear Filters", priority=True),
         Binding("f", "focus_filter", "Filter"),
         Binding("ctrl+s", "screenshot", "Screenshot", show=True),
+        Binding("ctrl+r", "refresh_metadata", "Refresh metadata", show=True),
     ]
 
     # ── state ──────────────────────────────────────────────────────────────────
@@ -95,6 +98,13 @@ class FirewallLogApp(App[None]):
         self._fw_name_set: bool = False
         self._seen_policies: set[str] = set()
         self._selected_rowid: str | None = None
+        # Management-plane enrichment state
+        self._firewall_id: str | None = None
+        self._fw_info: FirewallInfo | None = None
+        self._policy_info: FirewallPolicyInfo | None = None
+        self._ip_groups: dict[str, IpGroupInfo] = {}
+        self._subnet_cidrs: list[str] = []
+        self._mgmt_loaded: bool = False
 
     # ── layout ─────────────────────────────────────────────────────────────────
     def compose(self) -> ComposeResult:
@@ -137,6 +147,55 @@ class FirewallLogApp(App[None]):
     @work(exclusive=False)
     async def _check_update(self) -> None:
         await check_for_update(self, VERSION)
+
+    @work(exclusive=True, group="mgmt")
+    async def _load_mgmt(self, firewall_id: str, *, force: bool = False) -> None:
+        """Background fetch of firewall / policy / IP-groups metadata."""
+        snap = await load_management_data(firewall_id, force=force)
+        if snap is None:
+            self.query_one("#status", StatusBar).status = (
+                "Live  (metadata unavailable \u2014 check ARM access)"
+            )
+            return
+        self._fw_info = snap.firewall
+        self._policy_info = snap.policy
+        self._ip_groups = snap.ip_groups
+        self._subnet_cidrs = snap.subnet_cidrs
+        self._mgmt_loaded = True
+        self._apply_mgmt_data()
+        age_min = int(snap.age_seconds() // 60)
+        tier = snap.policy.sku_tier if snap.policy else "?"
+        self.query_one("#status", StatusBar).status = (
+            f"Live  (policy {tier}, {len(snap.ip_groups)} IP groups, "
+            f"cache age {age_min}m)"
+        )
+        self._refresh_table()
+
+    def _apply_mgmt_data(self) -> None:
+        """React to newly loaded management data: SKU-gated category dropdown."""
+        if self._policy_info is None:
+            return
+        tier = (self._policy_info.sku_tier or "").lower()
+        if tier in ("standard", "basic"):
+            hidden = {"threatintel", "idps"}
+            opts = [(label, value) for label, value in CATEGORY_OPTIONS
+                    if value not in hidden]
+        else:
+            opts = list(CATEGORY_OPTIONS)
+        select = self.query_one("#f-cat", Select)
+        current = select.value
+        try:
+            select.set_options(opts)
+            if isinstance(current, str) and any(v == current for _, v in opts):
+                select.value = current
+        except Exception:
+            pass
+
+    def request_mgmt_load(self, firewall_id: str) -> None:
+        """Called from streaming.on_event when we first see a resourceId."""
+        if self._firewall_id is None:
+            self._firewall_id = firewall_id
+            self._load_mgmt(firewall_id)
 
     # ── periodic flush ─────────────────────────────────────────────────────────
     async def _flush_rows(self) -> None:
@@ -188,12 +247,14 @@ class FirewallLogApp(App[None]):
                 if single_policy and row.fw_policy and info.startswith(row.fw_policy + "»"):
                     info = info[len(row.fw_policy) + 1:]
                 info_text = self._info_text(info)
+                src_display = self._format_ip(row.sourceip)
+                dst_display = self._format_ip(row.targetip)
                 tbl.add_row(
                     _to_local(row.time),
                     _category_text(row.category),
                     _highlight(row.protocol, f["proto"]),
-                    self._source_text(row.sourceip, row.srcport, f["src"]),
-                    _highlight(row.targetip, f["dst"]),
+                    self._source_text(src_display, row.srcport, f["src"]),
+                    _highlight(dst_display, f["dst"]),
                     row.targetport,
                     action_text,
                     info_text,
@@ -241,6 +302,14 @@ class FirewallLogApp(App[None]):
         if term:
             t.highlight_regex(f"(?i){re.escape(term)}", style="bold reverse")
         return t
+
+    def _format_ip(self, ip: str) -> str:
+        """Return ``AzFw.N`` for IPs inside the firewall subnet, else the IP."""
+        if not self._subnet_cidrs or not ip or ip == "-":
+            return ip
+        from .enrichment import resolve_fw_instance
+        label = resolve_fw_instance(ip, self._subnet_cidrs)
+        return label or ip
 
     # group → collection → rule: progressively more prominent
     _INFO_SEGMENT_STYLES = ("dim", "default", "bold")
@@ -313,8 +382,42 @@ class FirewallLogApp(App[None]):
             return
         for row in self._all_rows:
             if row.rowid == rowid:
-                self.push_screen(DetailDialog(row))
+                enrichment = self._compute_enrichment(row)
+                self.push_screen(DetailDialog(row, enrichment=enrichment))
                 return
+
+    def _compute_enrichment(self, row: FirewallDataRow) -> dict:
+        """Build the optional enrichment payload for DetailDialog."""
+        if not self._mgmt_loaded:
+            return {}
+        from .enrichment import find_matching_ip_groups, find_rule, resolve_fw_instance
+        out: dict = {}
+        if self._subnet_cidrs:
+            src_lbl = resolve_fw_instance(row.sourceip, self._subnet_cidrs)
+            dst_lbl = resolve_fw_instance(row.targetip, self._subnet_cidrs)
+            if src_lbl:
+                out["source_fw_instance"] = src_lbl
+            if dst_lbl:
+                out["dest_fw_instance"] = dst_lbl
+        if self._ip_groups:
+            src_groups = find_matching_ip_groups(row.sourceip, self._ip_groups)
+            dst_groups = find_matching_ip_groups(row.targetip, self._ip_groups)
+            if src_groups:
+                out["source_ip_groups"] = src_groups
+            if dst_groups:
+                out["dest_ip_groups"] = dst_groups
+        if self._policy_info is not None:
+            out["policy_sku_tier"] = self._policy_info.sku_tier
+            match = find_rule(
+                row.category, row.sourceip, row.targetip,
+                row.moreinfo if row.category.lower() == "apprule" else "",
+                row.targetport, self._policy_info, self._ip_groups,
+            )
+            if match is not None:
+                rule, grp, rc = match
+                out["rule_priority"] = f"RCG:{grp.priority} \u00bb RC:{rc.priority}"
+                out["rule_action"] = rc.action
+        return out
 
     # ── actions (key bindings) ─────────────────────────────────────────────────
     def action_toggle_pause(self) -> None:
@@ -343,6 +446,16 @@ class FirewallLogApp(App[None]):
 
     def action_focus_filter(self) -> None:
         self.query_one("#f-src", Input).focus()
+
+    def action_refresh_metadata(self) -> None:
+        """Force-refresh the firewall / policy / IP-group cache."""
+        if self._firewall_id is None:
+            self.query_one("#status", StatusBar).status = (
+                "Refresh skipped \u2014 no firewall resource ID seen yet"
+            )
+            return
+        self.query_one("#status", StatusBar).status = "Refreshing metadata\u2026"
+        self._load_mgmt(self._firewall_id, force=True)
 
     def get_system_commands(self, screen: Screen):  # type: ignore[override]
         for cmd in super().get_system_commands(screen):

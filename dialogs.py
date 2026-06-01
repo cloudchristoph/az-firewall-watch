@@ -151,9 +151,10 @@ class DetailDialog(ModalScreen[None]):
     }
     """
 
-    def __init__(self, row: FirewallDataRow) -> None:
+    def __init__(self, row: FirewallDataRow, *, enrichment: dict | None = None) -> None:
         super().__init__()
         self._row = row
+        self._enrichment: dict = enrichment or {}
 
     @staticmethod
     def _field(label: str, value: str) -> Static:
@@ -185,6 +186,24 @@ class DetailDialog(ModalScreen[None]):
                 yield self._field("Policy / Info", row.policy)
             if row.moreinfo:
                 yield self._field("More Info    ", row.moreinfo)
+
+            enr = self._enrichment
+            if enr:
+                yield Static("")  # blank spacer
+                if enr.get("source_fw_instance"):
+                    yield self._field("Source (FW)  ", enr["source_fw_instance"])
+                if enr.get("dest_fw_instance"):
+                    yield self._field("Dest   (FW)  ", enr["dest_fw_instance"])
+                if enr.get("source_ip_groups"):
+                    yield self._field("Src IP Groups", ", ".join(enr["source_ip_groups"]))
+                if enr.get("dest_ip_groups"):
+                    yield self._field("Dst IP Groups", ", ".join(enr["dest_ip_groups"]))
+                if enr.get("rule_priority"):
+                    yield self._field("Rule Priority", enr["rule_priority"])
+                if enr.get("rule_action"):
+                    yield self._field("Rule Action  ", enr["rule_action"])
+                if enr.get("policy_sku_tier"):
+                    yield self._field("Policy SKU   ", enr["policy_sku_tier"])
 
             yield Button("Close  (Esc)", variant="primary", id="btn-close")
 

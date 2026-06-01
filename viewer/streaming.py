@@ -239,6 +239,7 @@ async def run_stream(app: "FirewallLogApp") -> None:
                                 if "/AZUREFIREWALLS/" in rid.upper():
                                     app.sub_title = rid.split("/")[-1]
                                     app._fw_name_set = True
+                                    app.request_mgmt_load(rid)
                             row = parse_record(rec)
                             if row is None:
                                 continue

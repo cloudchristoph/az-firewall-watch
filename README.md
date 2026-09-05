@@ -272,9 +272,10 @@ pytest
 ```
 
 The suite covers the log parser (structured and legacy formats), the filter
-logic, and a headless run of the TUI filter bar via Textual's test pilot. No
-Azure connection is required. The same suite runs in CI on every push and
-pull request.
+logic, the Event Hub streaming worker (against a fake client), the update
+check, and headless runs of both the viewer and the setup wizard via Textual's
+test pilot with the Azure CLI mocked out. No Azure connection is required. The
+same suite runs in CI on every push and pull request.
 
 ### 💰 Cost considerations
 

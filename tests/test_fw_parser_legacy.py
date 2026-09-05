@@ -112,6 +112,43 @@ def test_legacy_dns_proxy_short_message_does_not_crash(legacy_record):
     assert row.action == "-"
 
 
+LAB_RESOLVE_FAIL = (
+    "Failed to resolve FQDN ifconfig.me. Error lookup ifconfig.me on 127.0.0.53:53: "
+    "read udp 10.2.0.6:48652->10.2.0.6:65053: read: connection refused; "
+    "DNS resolution returned no IPv4 IPs. "
+    "Rule Collection: fwp-hub-premium-gwc:cclab-network-rule-collection-group:priority-demo-net-rules. "
+    "Rule: allow-ifconfig-me"
+)
+
+
+def test_legacy_dns_resolution_failure_is_resolvefail(legacy_record):
+    """Real record from a lab firewall; previously counted as SKIP:ParseErr."""
+    row = parse_record(legacy_record(
+        "AzureFirewallNetworkRule", "AzureFirewallDNSResolutionFailureLog", LAB_RESOLVE_FAIL,
+    ))
+    assert row.category == "AppRule"  # same rendering as structured AZFWFqdnResolveFailure
+    assert row.action == "ResolveFail"
+    assert row.targetip == "ifconfig.me"
+    assert row.moreinfo.startswith("lookup ifconfig.me on 127.0.0.53:53")
+    assert row.moreinfo.endswith("DNS resolution returned no IPv4 IPs")
+    assert row.fw_policy == "fwp-hub-premium-gwc"
+    assert row.rule_collection_group == "cclab-network-rule-collection-group"
+    assert row.rule_collection == "priority-demo-net-rules"
+    assert row.rule_name == "allow-ifconfig-me"
+    assert row.policy == "fwp-hub-premium-gwc»cclab-network-rule-collection-group»priority-demo-net-rules»allow-ifconfig-me"
+
+
+def test_legacy_dns_resolution_failure_without_rule_info(legacy_record):
+    row = parse_record(legacy_record(
+        "AzureFirewallNetworkRule", "AzureFirewallDNSResolutionFailureLog",
+        "Failed to resolve FQDN nope.invalid. Error NXDOMAIN.",
+    ))
+    assert row.action == "ResolveFail"
+    assert row.targetip == "nope.invalid"
+    assert row.moreinfo == "NXDOMAIN"
+    assert row.policy == ""
+
+
 def test_legacy_malformed_message_is_counted_as_parse_error(legacy_record):
     row = parse_record(legacy_record(
         "AzureFirewallNetworkRule", "AzureFirewallNetworkRuleLog", "garbage without structure",

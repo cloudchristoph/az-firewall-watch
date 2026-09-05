@@ -9,10 +9,17 @@ Ported from azure-firewall-mon/firewall-mon-app/src/app/services/event-hub-sourc
 """
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from typing import Optional
 
 _counter = 0
+
+# Legacy "AzureFirewallDNSResolutionFailureLog" message head (before " Rule Collection: ").
+_RESOLVE_FAIL_RE = re.compile(
+    r"Failed to resolve FQDN (?P<fqdn>\S+?)\.?(?:\s+Error\s+(?P<error>.*))?$",
+    re.DOTALL,
+)
 
 
 def _next_id() -> str:
@@ -351,6 +358,32 @@ def _parse_legacy(record: dict, op_name: str, time: str) -> FirewallDataRow:
                 policy=policy,
                 moreinfo=moreinfo,
                 fw_policy=policy_name,
+                rule_collection_group=rcg,
+                rule_collection=rc,
+                rule_name=rule_name,
+            )
+
+        if op_name == "AzureFirewallDNSResolutionFailureLog":
+            # "Failed to resolve FQDN example.com. Error lookup example.com on 127.0.0.53:53: ...;
+            #  DNS resolution returned no IPv4 IPs. Rule Collection: policy:rcg:rc. Rule: r"
+            # Legacy counterpart of AZFWFqdnResolveFailure — rendered the same way.
+            head, _, tail = msg.partition(" Rule Collection: ")
+            m = _RESOLVE_FAIL_RE.match(head)
+            fqdn = m.group("fqdn") if m else "-"
+            error = (m.group("error") if m else head).rstrip(".")
+            rc_path, _, rule_part = tail.partition(". Rule: ")
+            segments = rc_path.split(":")  # policy:rcg:rc (older firewalls may omit parts)
+            fw_policy, rcg, rc = (segments + ["", "", ""])[:3] if len(segments) >= 3 else ("", "", rc_path)
+            rule_name = rule_part.rstrip(".")
+            return FirewallDataRow(
+                rowid=_next_id(),
+                time=time,
+                category="AppRule",
+                targetip=fqdn,
+                action="ResolveFail",
+                policy="»".join(filter(None, [fw_policy, rcg, rc, rule_name])),
+                moreinfo=error,
+                fw_policy=fw_policy,
                 rule_collection_group=rcg,
                 rule_collection=rc,
                 rule_name=rule_name,

@@ -237,7 +237,7 @@ display name regardless of which diagnostic mode is enabled.
 | Category shown | Azure category (structured / legacy)                                                                                   |
 | -------------- | ---------------------------------------------------------------------------------------------------------------------- |
 | NetworkRule    | `AZFWNetworkRule` / `AzureFirewallNetworkRule`                                                                         |
-| AppRule        | `AZFWApplicationRule` / `AzureFirewallApplicationRule` / `AZFWFqdnResolveFailure` (rendered with action `ResolveFail`) |
+| AppRule        | `AZFWApplicationRule` / `AzureFirewallApplicationRule` / `AZFWFqdnResolveFailure` and legacy `AzureFirewallDNSResolutionFailureLog` (rendered with action `ResolveFail`) |
 | NATRule        | `AZFWNatRule` / `AzureFirewallNatRuleLog`                                                                              |
 | DnsQuery       | `AZFWDnsQuery` / `AzureFirewallDnsProxy`                                                                               |
 | IDPS           | `AZFWIdpsSignature`                                                                                                    |

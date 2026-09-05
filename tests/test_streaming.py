@@ -219,7 +219,7 @@ async def test_consumer_group_and_start_position_from_env(monkeypatch, fake_clie
         await wait_until(pilot, lambda: bool(fake_client.instances) and fake_client.instances[0].received_position is not None)
         client = fake_client.instances[0]
         assert client.kwargs["consumer_group"] == "watchers"
-        assert client.received_position == "@earliest"
+        assert client.received_position == "-1"  # SDK value for "beginning of stream"
 
 
 async def test_skipped_and_malformed_events_are_counted_not_displayed(monkeypatch, fake_client, firewall_id):

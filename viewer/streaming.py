@@ -156,7 +156,10 @@ async def run_stream(app: "FirewallLogApp") -> None:
     eh_name = os.environ.get("EVENT_HUB_NAME", "")
     consumer_group = os.environ.get("EVENT_HUB_CONSUMER_GROUP", "$Default")
     start_pos = os.environ.get("EVENT_HUB_START_POSITION", "latest")
-    position = "@latest" if start_pos == "latest" else "@earliest"
+    # SDK contract: "@latest" = only new events, "-1" = beginning of retention.
+    # Any other string is treated as a raw offset, so "@earliest" silently
+    # matched nothing.
+    position = "@latest" if start_pos == "latest" else "-1"
     use_entra = bool(eh_namespace and eh_name)
 
     status = app.query_one("#status", StatusBar)

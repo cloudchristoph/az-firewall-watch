@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+_(nothing yet)_
+
+## [0.4.1] - 2026-09-05
+
+Patch release for three findings from the GitHub Copilot review of 0.4.0.
+
 ### Fixed
 
 - Legacy `AzureFirewallDNSResolutionFailureLog` messages without an `Error …` part crashed the parser and were counted as parse errors.
@@ -124,7 +130,8 @@ This release adds passwordless Entra ID authentication, better Azure Firewall lo
 
 [Full diff](https://github.com/cloudchristoph/az-firewall-watch/commits/v0.1.0)
 
-[Unreleased]: https://github.com/cloudchristoph/az-firewall-watch/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/cloudchristoph/az-firewall-watch/compare/v0.4.1...HEAD
+[0.4.1]: https://github.com/cloudchristoph/az-firewall-watch/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/cloudchristoph/az-firewall-watch/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/cloudchristoph/az-firewall-watch/releases/tag/v0.3.0
 [0.2.1]: https://github.com/cloudchristoph/az-firewall-watch/releases/tag/v0.2.1

@@ -195,6 +195,11 @@ The status bar at the bottom shows the connection state, total events received,
 the currently visible count when a filter is active, and how many records were
 skipped (e.g. unknown categories).
 
+If an established connection drops, the app reconnects on its own with a
+capped backoff (up to 60 s between attempts) and reports the countdown in the
+status bar. Only the very first connection gives up after three attempts, and
+authentication errors stop immediately with a hint.
+
 ## 🔍 Filters
 
 All filters are **case-insensitive substring matches** applied instantly as you type.

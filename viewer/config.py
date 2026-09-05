@@ -37,8 +37,11 @@ CATEGORY_OPTIONS: list[tuple[str, str]] = [
     ("AppRule", "apprule"),
     ("NATRule", "natrule"),
     ("DnsQuery", "dnsquery"),
+    ("DnsFailure", "dnsfailure"),
     ("IDPS", "idps"),
     ("ThreatIntel", "threatintel"),
+    ("FlowTrace", "flowtrace"),
+    ("FatFlow", "fatflow"),
 ]
 
 __all__ = ["BASE_DIR", "SRC_DIR", "VERSION", "MAX_ROWS", "TABLE_TRIM_SLACK", "CATEGORY_OPTIONS", "load_env"]

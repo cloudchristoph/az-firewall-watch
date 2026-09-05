@@ -126,7 +126,7 @@ def test_legacy_dns_resolution_failure_is_resolvefail(legacy_record):
     row = parse_record(legacy_record(
         "AzureFirewallNetworkRule", "AzureFirewallDNSResolutionFailureLog", LAB_RESOLVE_FAIL,
     ))
-    assert row.category == "AppRule"  # same rendering as structured AZFWFqdnResolveFailure
+    assert row.category == "DnsFailure"  # same rendering as structured AZFWFqdnResolveFailure
     assert row.action == "ResolveFail"
     assert row.targetip == "ifconfig.me"
     assert row.moreinfo.startswith("lookup ifconfig.me on 127.0.0.53:53")

@@ -47,6 +47,9 @@ _CATEGORY_STYLES: dict[str, str] = {
     "apprule":     "bright_blue",
     "natrule":     "yellow",
     "dnsquery":    "dark_orange3",
+    "dnsfailure":  "bold dark_orange3",
+    "flowtrace":   "bright_black",
+    "fatflow":     "bold cyan",
     "idps":        "bold red",
     "threatintel": "bold magenta",
 }

@@ -19,14 +19,14 @@ def test_resource_id_match_is_case_insensitive(structured_record):
     assert parse_record(rec).category == "NetworkRule"
 
 
-@pytest.mark.parametrize("category", ["AZFWFlowTrace", "AZFWFatFlow", "AzureFirewallMetrics", ""])
+@pytest.mark.parametrize("category", ["AZFWDnsAdditional", "AZFWNetworkRuleAggregation", "AzureFirewallMetrics", ""])
 def test_unknown_category_is_skipped_with_name(structured_record, category):
     row = parse_record(structured_record(category))
     assert row.category == f"SKIP:Category:{category}"
 
 
 def test_skip_rows_keep_timestamp(structured_record):
-    row = parse_record(structured_record("AZFWFatFlow", time="2026-01-02T03:04:05Z"))
+    row = parse_record(structured_record("AZFWDnsAdditional", time="2026-01-02T03:04:05Z"))
     assert row.time == "2026-01-02T03:04:05Z"
 
 

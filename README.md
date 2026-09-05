@@ -209,8 +209,8 @@ All filters are **case-insensitive substring matches** applied instantly as you 
 | ----------- | -------------------------------------------------------------------------------------- |
 | Source IP   | `sourceip` field                                                                       |
 | Dest / FQDN | `targetip` / FQDN field                                                                |
-| Action      | `allow`, `deny`, `dnat`, `alert`, `resolvefail`, DNS RCODEs (`noerror`, `nxdomain`, …) |
-| Category    | `NetworkRule`, `AppRule`, `DnsQuery`, `NATRule`, `IDPS`, `ThreatIntel`                 |
+| Action      | `allow`, `deny`, `dnat`, `alert`, `resolvefail`, DNS RCODEs (`noerror`, `nxdomain`, …), flow flags (`rst`, `invalid`, …), `mbps` |
+| Category    | `NetworkRule`, `AppRule`, `NATRule`, `DnsQuery`, `DnsFailure`, `IDPS`, `ThreatIntel`, `FlowTrace`, `FatFlow` |
 | Protocol    | `TCP`, `UDP`, `HTTPS`, `HTTP`, DNS query types (`A`, `AAAA`, `MX`, …)                  |
 | Port        | Destination port (e.g. `443`, `80`, `53`)                                              |
 <!-- markdownlint-enable MD060 -->
@@ -219,7 +219,8 @@ All filters are **case-insensitive substring matches** applied instantly as you 
 
 DNS proxy traffic can dominate the log volume on busy firewalls. A **Hide DNS**
 switch sits at the end of the filter bar and is **on by default**, so `DnsQuery`
-rows are filtered out until you explicitly want to see them.
+rows are filtered out until you explicitly want to see them. `DnsFailure` rows
+(the firewall failing to resolve an FQDN from a rule) stay visible regardless.
 
 The toggle is smart:
 
@@ -239,14 +240,17 @@ formats produced by Azure Firewall are parsed. Legacy `AzureFirewallDnsProxy`
 entries are normalised into the `DnsQuery` category so you only deal with one
 display name regardless of which diagnostic mode is enabled.
 
-| Category shown | Azure category (structured / legacy)                                                                                   |
-| -------------- | ---------------------------------------------------------------------------------------------------------------------- |
-| NetworkRule    | `AZFWNetworkRule` / `AzureFirewallNetworkRule`                                                                         |
-| AppRule        | `AZFWApplicationRule` / `AzureFirewallApplicationRule` / `AZFWFqdnResolveFailure` and legacy `AzureFirewallDNSResolutionFailureLog` (rendered with action `ResolveFail`) |
-| NATRule        | `AZFWNatRule` / `AzureFirewallNatRuleLog`                                                                              |
-| DnsQuery       | `AZFWDnsQuery` / `AzureFirewallDnsProxy`                                                                               |
-| IDPS           | `AZFWIdpsSignature`                                                                                                    |
-| ThreatIntel    | `AZFWThreatIntel`                                                                                                      |
+| Category shown | Azure category (structured / legacy)                                                              |
+| -------------- | ------------------------------------------------------------------------------------------------- |
+| NetworkRule    | `AZFWNetworkRule` / `AzureFirewallNetworkRule`                                                    |
+| AppRule        | `AZFWApplicationRule` / `AzureFirewallApplicationRule`                                            |
+| NATRule        | `AZFWNatRule` / `AzureFirewallNatRuleLog`                                                         |
+| DnsQuery       | `AZFWDnsQuery` / `AzureFirewallDnsProxy`                                                          |
+| DnsFailure     | `AZFWFqdnResolveFailure` / legacy `AzureFirewallDNSResolutionFailureLog` — the firewall could not resolve an FQDN used in a network or DNAT rule; action `ResolveFail`, FQDN and error shown |
+| IDPS           | `AZFWIdpsSignature`                                                                               |
+| ThreatIntel    | `AZFWThreatIntel`                                                                                 |
+| FlowTrace      | `AZFWFlowTrace` — TCP flow flags (`SYN-ACK`, `FIN`, `RST`, `INVALID`, …) in the Action column; requires flow-trace logging on the firewall |
+| FatFlow        | `AZFWFatFlow` — top flows by bandwidth, rate in Mbit/s in the Action column; requires fat-flow logging on the firewall |
 
 Unknown or non-firewall categories are counted in the status bar as *skipped*
 rather than displayed.

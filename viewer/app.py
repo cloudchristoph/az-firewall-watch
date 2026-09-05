@@ -317,6 +317,18 @@ class FirewallLogApp(App[None]):
             return Text(action, style="bold yellow")
         if a in ("servfail", "refused"):
             return Text(action, style="bold red")
+        if a == "resolvefail":
+            return Text(action, style="bold dark_orange3")
+        # Flow-trace flags
+        if a == "invalid":
+            return Text(action, style="bold red")
+        if a == "rst":
+            return Text(action, style="bold yellow")
+        if a in ("fin", "fin-ack", "syn-ack", "syn"):
+            return Text(action, style="dim")
+        # Fat-flow bandwidth
+        if a.endswith(" mbps"):
+            return Text(action, style="bold cyan")
         return Text(action)
 
     @staticmethod

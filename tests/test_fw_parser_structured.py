@@ -133,17 +133,52 @@ def test_threat_intel(structured_record):
     assert row.moreinfo == "Known malicious IP"
 
 
-def test_fqdn_resolve_failure_is_apprule_with_resolvefail(structured_record):
+def test_fqdn_resolve_failure_is_dnsfailure_with_resolvefail(structured_record):
     row = parse_record(structured_record(
         "AZFWFqdnResolveFailure",
         Fqdn="nope.invalid", Error="NXDOMAIN", **RULE_PROPS,
     ))
-    assert row.category == "AppRule"
+    assert row.category == "DnsFailure"
     assert row.action == "ResolveFail"
     assert row.targetip == "nope.invalid"
     assert row.moreinfo == "NXDOMAIN"
     assert row.policy == "pol-hub»rcg-default»rc-allow»r-web"
     assert row.rule_name == "r-web"
+
+
+def test_flow_trace_shows_flag_as_action(structured_record):
+    row = parse_record(structured_record(
+        "AZFWFlowTrace",
+        Protocol="TCP", SourceIp="10.0.1.4", SourcePort=51000,
+        DestinationIp="10.0.2.5", DestinationPort=443,
+        Flag="INVALID", Action="Log", ActionReason="Additional TCP Log",
+    ))
+    assert row.category == "FlowTrace"
+    assert row.action == "INVALID"
+    assert (row.sourceip, row.srcport, row.targetip, row.targetport) == ("10.0.1.4", "51000", "10.0.2.5", "443")
+    assert row.moreinfo == "Log Additional TCP Log"
+    assert row.policy == ""
+
+
+def test_flow_trace_without_flag(structured_record):
+    row = parse_record(structured_record("AZFWFlowTrace", Protocol="TCP"))
+    assert row.action == "-"
+
+
+def test_fat_flow_shows_rate_in_mbps(structured_record):
+    row = parse_record(structured_record(
+        "AZFWFatFlow",
+        Protocol="TCP", SourceIp="10.0.1.4", SourcePort=51000,
+        DestinationIp="10.0.2.5", DestinationPort=443, FlowRate=12.3456,
+    ))
+    assert row.category == "FatFlow"
+    assert row.action == "12.3 Mbps"
+    assert row.moreinfo == "Top flow by bandwidth"
+
+
+def test_fat_flow_with_unparseable_rate(structured_record):
+    assert parse_record(structured_record("AZFWFatFlow", FlowRate="lots")).action == "lots Mbps"
+    assert parse_record(structured_record("AZFWFatFlow")).action == "-"
 
 
 def test_missing_properties_are_empty_strings_not_none(structured_record):
@@ -191,7 +226,9 @@ def test_rowids_are_unique_and_increasing(structured_record):
         ("AZFWDnsQuery", "DnsQuery"),
         ("AZFWIdpsSignature", "IDPS"),
         ("AZFWThreatIntel", "ThreatIntel"),
-        ("AZFWFqdnResolveFailure", "AppRule"),
+        ("AZFWFqdnResolveFailure", "DnsFailure"),
+        ("AZFWFlowTrace", "FlowTrace"),
+        ("AZFWFatFlow", "FatFlow"),
     ],
 )
 def test_every_structured_category_maps_to_display_name(structured_record, category, expected):

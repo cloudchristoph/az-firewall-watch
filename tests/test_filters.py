@@ -72,6 +72,10 @@ def test_hide_dns_removes_only_dnsquery_rows():
     assert matches(dns, make_filters(hide_dns=False))
 
 
+def test_hide_dns_keeps_dns_failures_visible():
+    assert matches(make_row(category="DnsFailure"), make_filters(hide_dns=True))
+
+
 def test_hide_dns_wins_over_explicit_category_filter():
     dns = make_row(category="DnsQuery")
     assert not matches(dns, make_filters(hide_dns=True, cat="dnsquery"))
@@ -97,6 +101,11 @@ def test_empty_target_is_tolerated():
         ("NXDOMAIN", "bold yellow"),
         ("SERVFAIL", "bold red"),
         ("REFUSED", "bold red"),
+        ("ResolveFail", "bold dark_orange3"),
+        ("INVALID", "bold red"),
+        ("RST", "bold yellow"),
+        ("FIN-ACK", "dim"),
+        ("12.3 Mbps", "bold cyan"),
     ],
 )
 def test_action_text_styles(action, style):
@@ -106,8 +115,8 @@ def test_action_text_styles(action, style):
 
 
 def test_action_text_unknown_action_is_unstyled():
-    text = FirewallLogApp._action_text("ResolveFail")
-    assert text.plain == "ResolveFail"
+    text = FirewallLogApp._action_text("Whatever")
+    assert text.plain == "Whatever"
     assert text.style == ""
 
 

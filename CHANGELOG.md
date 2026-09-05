@@ -6,9 +6,9 @@ All notable changes to **Azure Firewall Watch** are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.3.1] - unreleased
+## [0.4.0] - 2026-09-05
 
-Maintenance release: a test suite with CI, and three bugs it surfaced.
+New log categories (`FlowTrace`, `FatFlow`, `DnsFailure`), automatic reconnects, a much cheaper table refresh, a full test suite with CI, and a batch of bugs the tests and a lab firewall surfaced — including `earliest` never delivering events and `Escape`/`q` misbehaving in dialogs.
 
 ### Added
 
@@ -116,7 +116,7 @@ This release adds passwordless Entra ID authentication, better Azure Firewall lo
 
 [Full diff](https://github.com/cloudchristoph/az-firewall-watch/commits/v0.1.0)
 
-[0.3.1]: https://github.com/cloudchristoph/az-firewall-watch/compare/v0.3.0...HEAD
+[0.4.0]: https://github.com/cloudchristoph/az-firewall-watch/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/cloudchristoph/az-firewall-watch/releases/tag/v0.3.0
 [0.2.1]: https://github.com/cloudchristoph/az-firewall-watch/releases/tag/v0.2.1
 [0.2.0]: https://github.com/cloudchristoph/az-firewall-watch/releases/tag/v0.2.0

@@ -188,7 +188,7 @@ async def test_sas_connect_shows_splash_then_streams_rows(monkeypatch, fake_clie
         await wait_until(pilot, lambda: len(app._all_rows) == 3)
         status = app.query_one("#status", StatusBar)
         assert status.status == "Connected"
-        assert app.sub_title == "fw-hub"  # firewall name taken from resourceId
+        assert app.sub_title == "fw-hub"  # firewall name from the (upper-cased) resourceId, lower-cased
         assert not isinstance(app.screen, ConnectingDialog)  # popped on first real event
         client = fake_client.instances[0]
         assert client.kwargs["conn_str"] == SAS_CONN

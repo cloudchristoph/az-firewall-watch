@@ -31,7 +31,7 @@ def test_network_rule_with_rule_match(structured_record):
     assert row.rule_collection_group == "rcg-default"
     assert row.rule_collection == "rc-allow"
     assert row.rule_name == "r-web"
-    assert row.resource_id.endswith("/AZUREFIREWALLS/fw-hub")
+    assert row.resource_id.endswith("/AZUREFIREWALLS/FW-HUB")
     assert row.time == "2026-09-05T08:00:00Z"
 
 

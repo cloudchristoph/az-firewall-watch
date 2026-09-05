@@ -279,7 +279,10 @@ def _deploy_kwargs(**overrides):
 def _deploy_rules(az: FakeAz) -> FakeAz:
     az.on("eventhubs", "eventhub", "authorization-rule", "keys", "list", result="Endpoint=sb://ns/;SharedAccessKeyName=l;SharedAccessKey=K;EntityPath=firewall-logs\n")
     az.on("eventhubs", "namespace", "authorization-rule", "show", result="/subscriptions/s1/.../authorizationRules/az-firewall-watch-send\n")
-    az.on("monitor", "diagnostic-settings", "categories", "list", result=["AZFWNetworkRule", "AZFWApplicationRule", "AZFWFlowTrace", "AzureFirewallNetworkRule"])
+    az.on("monitor", "diagnostic-settings", "categories", "list", result=[
+        "AZFWNetworkRule", "AZFWApplicationRule", "AZFWFlowTrace",
+        "AZFWNetworkRuleAggregation", "AZFWDnsAdditional", "AzureFirewallNetworkRule",
+    ])
     return az
 
 
@@ -302,7 +305,9 @@ async def test_deploy_sas_creates_resources_in_order(az, log, no_sleep):
     diag = [c for c in az.calls if c[:3] == ("monitor", "diagnostic-settings", "create")][0]
     logs_json = diag[diag.index("--logs") + 1]
     cats = [entry["category"] for entry in json.loads(logs_json)]
-    assert cats == ["AZFWNetworkRule", "AZFWApplicationRule", "AZFWFlowTrace"]  # only AZFW* kept
+    # only categories the viewer displays, in VIEWER_CATEGORIES order; no aggregation logs
+    assert cats == ["AZFWNetworkRule", "AZFWApplicationRule", "AZFWFlowTrace"]
+    assert any("Not enabling" in line and "AZFWNetworkRuleAggregation" in line for line in log)
     assert "--event-hub-rule" in diag
     assert any("logs will start flowing" in line for line in log)
 
@@ -348,10 +353,9 @@ async def test_deploy_diagnostics_fallback_categories_when_lookup_fails(az, log,
     await ops.deploy_new_hub(log=_logger(log), **_deploy_kwargs())
     diag = [c for c in az.calls if c[:3] == ("monitor", "diagnostic-settings", "create")][0]
     cats = [e["category"] for e in json.loads(diag[diag.index("--logs") + 1])]
-    assert "AZFWNetworkRule" in cats and "AZFWDnsQuery" in cats
-    assert "AZFWFqdnResolveFailure" in cats
+    assert cats == list(ops.VIEWER_CATEGORIES)
     assert "AZFWDnsProxy" not in cats  # not a real category
-    assert all(c.startswith("AZFW") for c in cats)
+    assert not any("Aggregation" in c for c in cats)
 
 
 async def test_deploy_diagnostics_failure_logs_manual_instructions(az, log, no_sleep):

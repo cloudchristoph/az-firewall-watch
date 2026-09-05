@@ -267,7 +267,10 @@ async def run_stream(app: "FirewallLogApp") -> None:
                             if not app._fw_name_set:
                                 rid: str = rec.get("resourceId", "")
                                 if "/AZUREFIREWALLS/" in rid.upper():
-                                    app.sub_title = rid.split("/")[-1]
+                                    # Diagnostic resourceIds are upper-cased by Azure; the
+                                    # real name is lost. Lower-case is right for the usual
+                                    # kebab-case firewall names.
+                                    app.sub_title = rid.split("/")[-1].lower()
                                     app._fw_name_set = True
                             row = parse_record(rec)
                             if row is None:

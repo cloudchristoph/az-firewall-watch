@@ -104,6 +104,27 @@ async def _verify_data_plane_access(credential, eh_namespace: str) -> None:
         )
 
 
+async def _remove_splash(app: "FirewallLogApp") -> None:
+    """Remove the ConnectingDialog from the screen stack.
+
+    An UpdateDialog may sit on top of the splash; it is re-pushed afterwards
+    so it stays visible. Screen-stack errors are ignored because the stack may
+    already be torn down when the worker is cancelled during app shutdown.
+    """
+    from textual.app import ScreenStackError
+
+    try:
+        if isinstance(app.screen, UpdateDialog):
+            upd_tag, upd_url = app.screen._latest, app.screen._url
+            app.pop_screen()   # remove UpdateDialog
+            app.pop_screen()   # remove ConnectingDialog
+            await app.push_screen(UpdateDialog(upd_tag, upd_url))
+        else:
+            app.pop_screen()   # remove ConnectingDialog
+    except ScreenStackError:
+        pass
+
+
 def _error_hint(exc: Exception, use_entra: bool) -> str:
     if isinstance(exc, PermissionError):
         return (
@@ -135,7 +156,10 @@ async def run_stream(app: "FirewallLogApp") -> None:
     eh_name = os.environ.get("EVENT_HUB_NAME", "")
     consumer_group = os.environ.get("EVENT_HUB_CONSUMER_GROUP", "$Default")
     start_pos = os.environ.get("EVENT_HUB_START_POSITION", "latest")
-    position = "@latest" if start_pos == "latest" else "@earliest"
+    # SDK contract: "@latest" = only new events, "-1" = beginning of retention.
+    # Any other string is treated as a raw offset, so "@earliest" silently
+    # matched nothing.
+    position = "@latest" if start_pos == "latest" else "-1"
     use_entra = bool(eh_namespace and eh_name)
 
     status = app.query_one("#status", StatusBar)
@@ -249,16 +273,7 @@ async def run_stream(app: "FirewallLogApp") -> None:
                                 has_real = True
                         if has_real and _splash_shown:
                             _splash_shown = False
-                            if isinstance(app.screen, UpdateDialog):
-                                # UpdateDialog is on top of ConnectingDialog.
-                                # Save its state, pop both, re-push UpdateDialog.
-                                upd_tag = app.screen._latest
-                                upd_url = app.screen._url
-                                app.pop_screen()   # remove UpdateDialog
-                                app.pop_screen()   # remove ConnectingDialog
-                                await app.push_screen(UpdateDialog(upd_tag, upd_url))
-                            else:
-                                app.pop_screen()   # remove ConnectingDialog
+                            await _remove_splash(app)
 
                     await client.receive(on_event=on_event, starting_position=position)
             finally:
@@ -268,9 +283,8 @@ async def run_stream(app: "FirewallLogApp") -> None:
 
         except asyncio.CancelledError:
             if _splash_shown:
-                if isinstance(app.screen, UpdateDialog):
-                    app.pop_screen()   # remove UpdateDialog
-                app.pop_screen()       # remove ConnectingDialog
+                _splash_shown = False
+                await _remove_splash(app)
             status.status = "Streaming stopped"
             return
 
@@ -314,7 +328,6 @@ async def run_stream(app: "FirewallLogApp") -> None:
             )
         status.status = f"Failed after {_MAX_ATTEMPTS} attempts — see dialog"
         if _splash_shown:
-            if isinstance(app.screen, UpdateDialog):
-                app.pop_screen()   # remove UpdateDialog
-            app.pop_screen()       # remove ConnectingDialog
+            _splash_shown = False
+            await _remove_splash(app)
         await app.push_screen(ErrorDialog(str(last_exc), hint))

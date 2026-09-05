@@ -4,7 +4,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-from dotenv import load_dotenv
+from helpers import load_env  # re-exported for main.py
 
 
 # ── base directory (works both from source and as a PyInstaller binary) ───────
@@ -38,10 +38,4 @@ CATEGORY_OPTIONS: list[tuple[str, str]] = [
     ("ThreatIntel", "threatintel"),
 ]
 
-
-def load_env(path: Path, override: bool = False) -> None:
-    """Load a .env file, falling back to latin-1 if the file is not valid UTF-8."""
-    try:
-        load_dotenv(path, encoding="utf-8", override=override)
-    except UnicodeDecodeError:
-        load_dotenv(path, encoding="latin-1", override=override)
+__all__ = ["BASE_DIR", "SRC_DIR", "VERSION", "MAX_ROWS", "CATEGORY_OPTIONS", "load_env"]

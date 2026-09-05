@@ -400,7 +400,8 @@ async def deploy_new_hub(
     if not available_cats:
         available_cats = [
             "AZFWNetworkRule", "AZFWApplicationRule", "AZFWNatRule",
-            "AZFWThreatIntel", "AZFWIdpsSignature", "AZFWDnsQuery", "AZFWDnsProxy",
+            "AZFWThreatIntel", "AZFWIdpsSignature", "AZFWDnsQuery",
+            "AZFWFqdnResolveFailure",
         ]
     diag_logs = json.dumps([{"category": c, "enabled": True} for c in available_cats])
 

@@ -237,7 +237,7 @@ display name regardless of which diagnostic mode is enabled.
 | Category shown | Azure category (structured / legacy)                                                                                   |
 | -------------- | ---------------------------------------------------------------------------------------------------------------------- |
 | NetworkRule    | `AZFWNetworkRule` / `AzureFirewallNetworkRule`                                                                         |
-| AppRule        | `AZFWApplicationRule` / `AzureFirewallApplicationRule` / `AZFWFqdnResolveFailure` (rendered with action `ResolveFail`) |
+| AppRule        | `AZFWApplicationRule` / `AzureFirewallApplicationRule` / `AZFWFqdnResolveFailure` and legacy `AzureFirewallDNSResolutionFailureLog` (rendered with action `ResolveFail`) |
 | NATRule        | `AZFWNatRule` / `AzureFirewallNatRuleLog`                                                                              |
 | DnsQuery       | `AZFWDnsQuery` / `AzureFirewallDnsProxy`                                                                               |
 | IDPS           | `AZFWIdpsSignature`                                                                                                    |
@@ -263,6 +263,19 @@ pyinstaller \
 
 # Binary is at dist/az-firewall-watch  (or dist/az-firewall-watch.exe on Windows)
 ```
+
+### 🧪 Running tests
+
+```bash
+pip install -r requirements.txt -r requirements-dev.txt
+pytest
+```
+
+The suite covers the log parser (structured and legacy formats), the filter
+logic, the Event Hub streaming worker (against a fake client), the update
+check, and headless runs of both the viewer and the setup wizard via Textual's
+test pilot with the Azure CLI mocked out. No Azure connection is required. The
+same suite runs in CI on every push and pull request.
 
 ### 💰 Cost considerations
 

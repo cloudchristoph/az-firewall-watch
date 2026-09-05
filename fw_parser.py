@@ -3,7 +3,8 @@ Azure Firewall log parser.
 
 Supports both the legacy (properties.msg) format and the structured log format
 (AZFWNetworkRule, AZFWApplicationRule, AZFWNatRule, AZFWDnsQuery,
-AZFWIdpsSignature, AZFWThreatIntel).
+AZFWIdpsSignature, AZFWThreatIntel, AZFWFqdnResolveFailure, AZFWFlowTrace,
+AZFWFatFlow).
 
 Ported from azure-firewall-mon/firewall-mon-app/src/app/services/event-hub-source.service.ts
 """
@@ -71,7 +72,7 @@ def parse_record(record: dict) -> Optional[FirewallDataRow]:
     structured = {
         "AZFWNetworkRule", "AZFWApplicationRule", "AZFWNatRule",
         "AZFWDnsQuery", "AZFWIdpsSignature", "AZFWThreatIntel",
-        "AZFWFqdnResolveFailure",
+        "AZFWFqdnResolveFailure", "AZFWFlowTrace", "AZFWFatFlow",
     }
     if category in structured:
         return _parse_structured(record, category, time, resource_id)
@@ -238,10 +239,13 @@ def _parse_structured(record: dict, category: str, time: str, resource_id: str =
         rc = _s(props, "RuleCollection")
         rule = _s(props, "Rule")
         policy = "»".join(filter(None, [fw_policy, rcg, rc, rule]))
+        # The firewall's own DNS resolution of an FQDN used in a network/DNAT
+        # rule failed — a DNS failure, but not a client DNS-proxy query, so it
+        # gets its own category (and is not affected by the Hide-DNS toggle).
         return FirewallDataRow(
             rowid=_next_id(),
             time=time,
-            category="AppRule",
+            category="DnsFailure",
             targetip=_s(props, "Fqdn"),
             action="ResolveFail",
             policy=policy,
@@ -251,6 +255,45 @@ def _parse_structured(record: dict, category: str, time: str, resource_id: str =
             rule_collection_group=rcg,
             rule_collection=rc,
             rule_name=rule,
+        )
+
+    if category == "AZFWFlowTrace":
+        # Flag: FIN / FIN-ACK / SYN-ACK / RST / INVALID …; Action/ActionReason
+        # describe why the flow was logged (e.g. "Additional TCP Log").
+        reason = " ".join(filter(None, [_s(props, "Action"), _s(props, "ActionReason")]))
+        return FirewallDataRow(
+            rowid=_next_id(),
+            time=time,
+            category="FlowTrace",
+            protocol=_s(props, "Protocol"),
+            sourceip=_s(props, "SourceIp"),
+            srcport=_port(props, "SourcePort"),
+            targetip=_s(props, "DestinationIp"),
+            targetport=_port(props, "DestinationPort"),
+            action=_s(props, "Flag") or "-",
+            moreinfo=reason,
+            resource_id=resource_id,
+        )
+
+    if category == "AZFWFatFlow":
+        # Top-talker flows; FlowRate is in Mbit/s.
+        rate = _s(props, "FlowRate")
+        try:
+            rate_txt = f"{float(rate):.1f} Mbps"
+        except ValueError:
+            rate_txt = f"{rate} Mbps" if rate else "-"
+        return FirewallDataRow(
+            rowid=_next_id(),
+            time=time,
+            category="FatFlow",
+            protocol=_s(props, "Protocol"),
+            sourceip=_s(props, "SourceIp"),
+            srcport=_port(props, "SourcePort"),
+            targetip=_s(props, "DestinationIp"),
+            targetport=_port(props, "DestinationPort"),
+            action=rate_txt,
+            moreinfo="Top flow by bandwidth",
+            resource_id=resource_id,
         )
 
     return FirewallDataRow(rowid=_next_id(), time=time, category=f"SKIP:{category}")
@@ -383,7 +426,7 @@ def _parse_legacy(record: dict, op_name: str, time: str) -> FirewallDataRow:
             return FirewallDataRow(
                 rowid=_next_id(),
                 time=time,
-                category="AppRule",
+                category="DnsFailure",
                 targetip=fqdn,
                 action="ResolveFail",
                 policy="»".join(filter(None, [fw_policy, rcg, rc, rule_name])),

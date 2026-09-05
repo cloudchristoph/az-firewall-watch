@@ -25,9 +25,13 @@ _AUTH_KEYWORDS = (
     "unauthorized", "authentication", "forbidden",
     "401", "403", "invalid signature", "saskey",
 )
-# Exponential backoff delays in seconds between the three attempts.
+# Initial connection: three attempts with these delays, then an error dialog
+# (a first-time failure is most likely a configuration problem).
 _BACKOFF = [2, 5, 10]
 _MAX_ATTEMPTS = 3
+# After a connection has been established once, a drop is treated as
+# transient: reconnect indefinitely, backing off up to the last delay.
+_RECONNECT_BACKOFF = [2, 5, 10, 30, 60]
 
 
 async def _verify_data_plane_access(credential, eh_namespace: str) -> None:
@@ -181,6 +185,7 @@ async def run_stream(app: "FirewallLogApp") -> None:
 
     attempt = 0
     last_exc: Exception | None = None
+    connected_once = False  # switches to endless reconnects after first success
 
     # Show the connecting splash and keep a flag so we know when to dismiss it.
     _dialog = ConnectingDialog(namespace, hub)
@@ -188,9 +193,9 @@ async def run_stream(app: "FirewallLogApp") -> None:
     _splash_shown = True
     _credential = None  # track credential for cleanup on error
 
-    while attempt < _MAX_ATTEMPTS:
-        app.sub_title = "Live Log Monitor  |  connecting..."
-        status.status = "Connecting to Event Hub…"
+    while connected_once or attempt < _MAX_ATTEMPTS:
+        app.sub_title = "Live Log Monitor  |  " + ("reconnecting..." if connected_once else "connecting...")
+        status.status = "Reconnecting to Event Hub…" if connected_once else "Connecting to Event Hub…"
 
         try:
             # Build the client — prefer Entra ID when namespace+hub are set.
@@ -243,6 +248,7 @@ async def run_stream(app: "FirewallLogApp") -> None:
                             pass  # ARM check unavailable — proceed optimistically
 
                     attempt = 0  # reset backoff counter after a successful connect
+                    connected_once = True
                     if _splash_shown:
                         _dialog.show_waiting()
                     status.status = "Connected"
@@ -261,7 +267,10 @@ async def run_stream(app: "FirewallLogApp") -> None:
                             if not app._fw_name_set:
                                 rid: str = rec.get("resourceId", "")
                                 if "/AZUREFIREWALLS/" in rid.upper():
-                                    app.sub_title = rid.split("/")[-1]
+                                    # Diagnostic resourceIds are upper-cased by Azure; the
+                                    # real name is lost. Lower-case is right for the usual
+                                    # kebab-case firewall names.
+                                    app.sub_title = rid.split("/")[-1].lower()
                                     app._fw_name_set = True
                             row = parse_record(rec)
                             if row is None:
@@ -300,6 +309,19 @@ async def run_stream(app: "FirewallLogApp") -> None:
                 break
 
             attempt += 1
+            if connected_once:
+                # Lost an established connection: keep trying, capped backoff.
+                delay = _RECONNECT_BACKOFF[min(attempt, len(_RECONNECT_BACKOFF)) - 1]
+                app.sub_title = "Live Log Monitor  |  connection lost"
+                for remaining in range(delay, 0, -1):
+                    status.status = (
+                        f"Connection lost: {exc}"
+                        f"  — reconnect attempt {attempt}"
+                        f" in {remaining}s…"
+                    )
+                    await asyncio.sleep(1)
+                continue
+
             if attempt >= _MAX_ATTEMPTS:
                 break
 

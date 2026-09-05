@@ -43,6 +43,14 @@ async def wait_until(pilot, cond: Callable[[], bool], timeout: float = 5.0) -> N
         await pilot.pause(0.05)
 
 
+def _env_values(env_file: Path) -> dict[str, str]:
+    return dict(
+        line.split("=", 1)
+        for line in env_file.read_text(encoding="utf-8").splitlines()
+        if "=" in line and not line.startswith("#")
+    )
+
+
 def _visible_error(screen, label_id: str) -> str:
     lbl = screen.query_one(label_id, Label)
     return str(lbl.content) if lbl.display else ""
@@ -547,7 +555,7 @@ class TestDeployNew:
             await pilot.click("#btn-deploy")
             await wait_until(pilot, lambda: app._exit)
         assert has_entra_config(env_file)
-        assert "ehns-fwlogs-gwc-001.servicebus.windows.net" in env_file.read_text(encoding="utf-8")
+        assert _env_values(env_file)["EVENT_HUB_NAMESPACE"] == "ehns-fwlogs-gwc-001.servicebus.windows.net"
 
     async def test_deploy_with_new_rg_flag(self, env_file, fake_ops):
         app = WizardApp(env_file)

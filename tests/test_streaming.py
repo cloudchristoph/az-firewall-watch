@@ -39,6 +39,7 @@ def no_update_check(monkeypatch):
 @pytest.fixture
 def fast_backoff(monkeypatch):
     monkeypatch.setattr(streaming, "_BACKOFF", [0, 0, 0])
+    monkeypatch.setattr(streaming, "_RECONNECT_BACKOFF", [0])
 
 
 class FakeEvent:
@@ -187,7 +188,7 @@ async def test_sas_connect_shows_splash_then_streams_rows(monkeypatch, fake_clie
         await wait_until(pilot, lambda: len(app._all_rows) == 3)
         status = app.query_one("#status", StatusBar)
         assert status.status == "Connected"
-        assert app.sub_title == "fw-hub"  # firewall name taken from resourceId
+        assert app.sub_title == "fw-hub"  # firewall name from the (upper-cased) resourceId, lower-cased
         assert not isinstance(app.screen, ConnectingDialog)  # popped on first real event
         client = fake_client.instances[0]
         assert client.kwargs["conn_str"] == SAS_CONN
@@ -203,8 +204,9 @@ async def test_splash_shows_namespace_and_hub_but_never_the_key(monkeypatch, fak
         await wait_for_dialog(pilot, app, ConnectingDialog)
         await wait_until(pilot, lambda: app.query_one("#status", StatusBar).status == "Connected")
         text = _dialog_text(app.screen)
-        assert "lab-ns.servicebus.windows.net" in text
-        assert "firewall-logs" in text
+        fields = {k.strip(): v.strip() for k, v in (line.split(":", 1) for line in text.splitlines() if ":" in line)}
+        assert fields["Namespace"] == "lab-ns.servicebus.windows.net"
+        assert fields["Hub"] == "firewall-logs"
         assert "SECRET" not in text
         assert "waiting for first event" in text
 
@@ -375,6 +377,56 @@ async def test_receive_drop_after_connect_reconnects(monkeypatch, fake_client, f
         assert len(fake_client.instances) == 2
         assert app.query_one("#status", StatusBar).status == "Connected"
         assert not isinstance(app.screen, ErrorDialog)
+
+
+async def test_established_connection_reconnects_beyond_three_failures(monkeypatch, fake_client, firewall_id):
+    """After a successful connect, drops are retried indefinitely (no error dialog)."""
+    monkeypatch.setenv("EVENT_HUB_CONNECTION_STRING", SAS_CONN)
+    fake_client.script = (
+        [{"events": [FakeEvent(_records(firewall_id, 1))], "receive": ConnectionResetError("link detached")}]
+        + [{"probe": ConnectionError("namespace unreachable")}] * 6
+        + [{"events": [FakeEvent(_records(firewall_id, 2))]}]
+    )
+    app = FirewallLogApp()
+    async with app.run_test(size=(140, 40)) as pilot:
+        await wait_until(pilot, lambda: len(app._all_rows) == 3)
+        assert len(fake_client.instances) == 8
+        assert not isinstance(app.screen, ErrorDialog)
+        assert app.query_one("#status", StatusBar).status == "Connected"
+        assert app.sub_title == "fw-hub"
+
+
+async def test_reconnect_status_and_backoff_cap(monkeypatch, fake_client, firewall_id):
+    monkeypatch.setattr(streaming, "_RECONNECT_BACKOFF", [1])
+    monkeypatch.setenv("EVENT_HUB_CONNECTION_STRING", SAS_CONN)
+    fake_client.script = [
+        {"events": [FakeEvent(_records(firewall_id, 1))], "receive": ConnectionResetError("link detached")},
+        {"probe": ConnectionError("still down")},
+        {"events": []},
+    ]
+    app = FirewallLogApp()
+    async with app.run_test(size=(140, 40)) as pilot:
+        status = app.query_one("#status", StatusBar)
+        await wait_until(pilot, lambda: status.status.startswith("Connection lost"))
+        assert "link detached" in status.status
+        assert "reconnect attempt 1" in status.status
+        assert app.sub_title == "Live Log Monitor  |  connection lost"
+        await wait_until(pilot, lambda: "reconnect attempt 2" in status.status)
+        await wait_until(pilot, lambda: status.status == "Connected", timeout=8)
+        assert len(fake_client.instances) == 3
+
+
+async def test_auth_error_after_connect_still_stops_with_dialog(monkeypatch, fake_client, firewall_id):
+    monkeypatch.setenv("EVENT_HUB_CONNECTION_STRING", SAS_CONN)
+    fake_client.script = [
+        {"events": [FakeEvent(_records(firewall_id, 1))], "receive": RuntimeError("401 Unauthorized: key rotated")},
+        {"events": []},
+    ]
+    app = FirewallLogApp()
+    async with app.run_test(size=(140, 40)) as pilot:
+        await wait_for_dialog(pilot, app, ErrorDialog)
+        assert len(fake_client.instances) == 1
+        assert "key rotated" in _dialog_text(app.screen)
 
 
 async def test_worker_cancellation_pops_splash_and_stops(monkeypatch, fake_client):

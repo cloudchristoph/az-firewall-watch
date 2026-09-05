@@ -26,6 +26,9 @@ except Exception:
 
 # ── runtime limits ────────────────────────────────────────────────────────────
 MAX_ROWS = 5000  # maximum rows kept in memory
+# The table may exceed MAX_ROWS by this many rows before a full rebuild trims it
+# (removing rows one by one is O(n) each in Textual's DataTable).
+TABLE_TRIM_SLACK = 250
 
 
 # ── category dropdown options ─────────────────────────────────────────────────
@@ -34,8 +37,11 @@ CATEGORY_OPTIONS: list[tuple[str, str]] = [
     ("AppRule", "apprule"),
     ("NATRule", "natrule"),
     ("DnsQuery", "dnsquery"),
+    ("DnsFailure", "dnsfailure"),
     ("IDPS", "idps"),
     ("ThreatIntel", "threatintel"),
+    ("FlowTrace", "flowtrace"),
+    ("FatFlow", "fatflow"),
 ]
 
-__all__ = ["BASE_DIR", "SRC_DIR", "VERSION", "MAX_ROWS", "CATEGORY_OPTIONS", "load_env"]
+__all__ = ["BASE_DIR", "SRC_DIR", "VERSION", "MAX_ROWS", "TABLE_TRIM_SLACK", "CATEGORY_OPTIONS", "load_env"]

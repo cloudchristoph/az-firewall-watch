@@ -264,6 +264,18 @@ pyinstaller \
 # Binary is at dist/az-firewall-watch  (or dist/az-firewall-watch.exe on Windows)
 ```
 
+### 🧪 Running tests
+
+```bash
+pip install -r requirements.txt -r requirements-dev.txt
+pytest
+```
+
+The suite covers the log parser (structured and legacy formats), the filter
+logic, and a headless run of the TUI filter bar via Textual's test pilot. No
+Azure connection is required. The same suite runs in CI on every push and
+pull request.
+
 ### 💰 Cost considerations
 
 An Event Hub for firewall logs is typically inexpensive:

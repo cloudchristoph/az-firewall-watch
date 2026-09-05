@@ -6,6 +6,13 @@ All notable changes to **Azure Firewall Watch** are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **Test suite** (`tests/`, pytest) covering the structured and legacy log parser, the filter logic, rendering helpers, and a headless Textual run of the filter bar. Run with `pytest` after installing `requirements-dev.txt`.
+- **CI workflow** `.github/workflows/test.yml` that runs the suite on Linux (Python 3.10–3.13), Windows and macOS for every push and pull request.
+
 ## [0.3.0] - 2026-05-30
 
 This release adds passwordless Entra ID authentication, better Azure Firewall log parsing, a more polished live viewer experience, and a full Textual setup wizard.
@@ -87,7 +94,8 @@ This release adds passwordless Entra ID authentication, better Azure Firewall lo
 
 [Full diff](https://github.com/cloudchristoph/az-firewall-watch/commits/v0.1.0)
 
-[Unreleased]: https://github.com/cloudchristoph/az-firewall-watch/compare/v0.2.1...HEAD
+[Unreleased]: https://github.com/cloudchristoph/az-firewall-watch/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/cloudchristoph/az-firewall-watch/releases/tag/v0.3.0
 [0.2.1]: https://github.com/cloudchristoph/az-firewall-watch/releases/tag/v0.2.1
 [0.2.0]: https://github.com/cloudchristoph/az-firewall-watch/releases/tag/v0.2.0
 [0.1.0]: https://github.com/cloudchristoph/az-firewall-watch/releases/tag/v0.1.0

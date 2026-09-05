@@ -204,8 +204,9 @@ async def test_splash_shows_namespace_and_hub_but_never_the_key(monkeypatch, fak
         await wait_for_dialog(pilot, app, ConnectingDialog)
         await wait_until(pilot, lambda: app.query_one("#status", StatusBar).status == "Connected")
         text = _dialog_text(app.screen)
-        assert "lab-ns.servicebus.windows.net" in text
-        assert "firewall-logs" in text
+        fields = {k.strip(): v.strip() for k, v in (line.split(":", 1) for line in text.splitlines() if ":" in line)}
+        assert fields["Namespace"] == "lab-ns.servicebus.windows.net"
+        assert fields["Hub"] == "firewall-logs"
         assert "SECRET" not in text
         assert "waiting for first event" in text
 

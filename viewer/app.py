@@ -79,7 +79,12 @@ class FirewallLogApp(App[None]):
         Binding("ctrl+q", "quit", "Quit", priority=True, show=True),
         Binding("ctrl+p", "toggle_pause", "Pause/Resume", show=True),
         Binding("c", "clear_logs", "Clear"),
-        Binding("escape", "clear_filters", "Clear Filters", priority=True),
+        # Deliberately NOT a priority binding: priority bindings are resolved
+        # from the App downwards and ignore modal screens, which would swallow
+        # Escape before any dialog (Detail, Update, Error, Connecting) sees it.
+        # The regular chain (focused widget → screen → app) stops at a modal and
+        # still reaches this binding from the filter inputs on the main screen.
+        Binding("escape", "clear_filters", "Clear Filters"),
         Binding("f", "focus_filter", "Filter"),
         Binding("ctrl+s", "screenshot", "Screenshot", show=True),
     ]

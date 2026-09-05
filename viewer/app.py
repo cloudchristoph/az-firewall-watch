@@ -124,7 +124,7 @@ class FirewallLogApp(App[None]):
         self._fw_name_set: bool = False
         self._seen_policies: set[str] = set()
         self._selected_rowid: str | None = None
-        # rowid → row for everything currently shown or buffered
+        # rowid → row for every row currently in the table (detail dialog lookup)
         self._row_index: dict[str, FirewallDataRow] = {}
 
     # ── layout ─────────────────────────────────────────────────────────────────
@@ -195,10 +195,6 @@ class FirewallLogApp(App[None]):
         batch.sort(key=_row_time, reverse=True)
         merged = list(heapq.merge(batch, self._all_rows, key=_row_time, reverse=True))
         self._all_rows = merged[:MAX_ROWS]
-        # Rows that just fell off _all_rows may linger in the table until the
-        # next trim; keep them addressable for the detail dialog meanwhile.
-        for r in batch:
-            self._row_index[r.rowid] = r
 
         tbl = self.query_one("#log-table", DataTable)
         needs_full_rebuild = (
@@ -260,6 +256,11 @@ class FirewallLogApp(App[None]):
             for row in batch:
                 if self._matches(row, f):
                     tbl.add_row(*self._render_cells(row, f, single_policy), key=row.rowid)
+                    # Index only what is in the table (rows may linger there
+                    # beyond _all_rows until the next trim); the index is
+                    # rebuilt from _all_rows on every full refresh, so it
+                    # stays bounded by max(MAX_ROWS, table size).
+                    self._row_index[row.rowid] = row
                     added += 1
             if added:
                 tbl.sort(key=_time_cell_key, reverse=True)

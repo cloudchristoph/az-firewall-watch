@@ -538,6 +538,26 @@ async def test_credentials_are_closed_on_every_transient_failure(monkeypatch, fa
         assert all(c.closed for c in fake_credential.instances)
 
 
+# ── start position ───────────────────────────────────────────────────────────
+
+@pytest.mark.parametrize(
+    "value, expected",
+    [
+        ("latest", "@latest"),
+        ("LATEST", "@latest"),
+        ("", "@latest"),
+        ("@latest", "@latest"),
+        ("earliest", "-1"),
+        ("Earliest ", "-1"),
+        ("-1", "-1"),
+        ("12345", "12345"),           # raw offset passed through
+        ("2026-09-05T08:00:00Z", "2026-09-05T08:00:00Z"),
+    ],
+)
+def test_resolve_start_position(value, expected):
+    assert streaming.resolve_start_position(value) == expected
+
+
 # ── _error_hint ──────────────────────────────────────────────────────────────
 
 def test_error_hint_variants():

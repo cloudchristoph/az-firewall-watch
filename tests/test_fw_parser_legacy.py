@@ -149,6 +149,18 @@ def test_legacy_dns_resolution_failure_without_rule_info(legacy_record):
     assert row.policy == ""
 
 
+def test_legacy_dns_resolution_failure_without_error_text(legacy_record):
+    """Regression (Copilot review): the optional 'Error …' group must not crash the parser."""
+    row = parse_record(legacy_record(
+        "AzureFirewallNetworkRule", "AzureFirewallDNSResolutionFailureLog",
+        "Failed to resolve FQDN nope.invalid. Rule Collection: pol:rcg:rc. Rule: r",
+    ))
+    assert row.category == "DnsFailure"
+    assert row.targetip == "nope.invalid"
+    assert row.moreinfo == ""
+    assert row.policy == "pol»rcg»rc»r"
+
+
 def test_legacy_malformed_message_is_counted_as_parse_error(legacy_record):
     row = parse_record(legacy_record(
         "AzureFirewallNetworkRule", "AzureFirewallNetworkRuleLog", "garbage without structure",

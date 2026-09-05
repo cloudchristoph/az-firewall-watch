@@ -172,7 +172,7 @@ EVENT_HUB_START_POSITION=latest
 | `EVENT_HUB_NAMESPACE`         | Fully qualified namespace (e.g. `mynamespace.servicebus.windows.net`) — for Entra ID auth | —          |
 | `EVENT_HUB_NAME`              | Event Hub name — for Entra ID auth                                                        | —          |
 | `EVENT_HUB_CONSUMER_GROUP`    | Consumer group                                                                            | `$Default` |
-| `EVENT_HUB_START_POSITION`    | `latest` (only new events) or `earliest` (replay the hub's full retention first)          | `latest`   |
+| `EVENT_HUB_START_POSITION`    | `latest` (only new events) or `earliest` (replay the hub's full retention first); other values are passed to the SDK as a raw offset | `latest`   |
 <!-- markdownlint-enable MD060 -->
 
 > When both `EVENT_HUB_NAMESPACE`/`EVENT_HUB_NAME` and `EVENT_HUB_CONNECTION_STRING` are set, Entra ID is preferred.

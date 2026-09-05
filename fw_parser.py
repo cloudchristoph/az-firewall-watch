@@ -418,7 +418,7 @@ def _parse_legacy(record: dict, op_name: str, time: str) -> FirewallDataRow:
             head, _, tail = msg.partition(" Rule Collection: ")
             m = _RESOLVE_FAIL_RE.match(head)
             fqdn = m.group("fqdn") if m else "-"
-            error = (m.group("error") if m else head).rstrip(".")
+            error = ((m.group("error") or "") if m else head).rstrip(".")
             rc_path, _, rule_part = tail.partition(". Rule: ")
             segments = rc_path.split(":")  # policy:rcg:rc (older firewalls may omit parts)
             fw_policy, rcg, rc = (segments + ["", "", ""])[:3] if len(segments) >= 3 else ("", "", rc_path)

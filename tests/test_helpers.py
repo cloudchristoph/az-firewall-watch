@@ -28,6 +28,20 @@ def test_to_local_handles_fractional_seconds_and_offset(utc_tz):
     assert _to_local("2026-09-05T08:00:00.1234567+02:00") == "2026-09-05 06:00:00"
 
 
+@pytest.mark.parametrize(
+    "ts",
+    [
+        "2026-09-05T08:00:00.1234567Z",   # Azure diagnostics: 7 digits
+        "2026-09-05T08:00:00.123456Z",    # 6 digits
+        "2026-09-05T08:00:00.123Z",       # 3 digits
+        "2026-09-05T08:00:00.1Z",         # 1 digit
+    ],
+)
+def test_to_local_accepts_any_fraction_length(utc_tz, ts):
+    """Regression: Python 3.10 could not parse Azure's 7-digit fractions and fell back to raw UTC."""
+    assert _to_local(ts) == "2026-09-05 08:00:00"
+
+
 def test_to_local_falls_back_to_prefix_on_garbage():
     assert _to_local("garbage") == "garbage"
     assert _to_local("x" * 30) == "x" * 19

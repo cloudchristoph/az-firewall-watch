@@ -6,10 +6,15 @@ from datetime import datetime
 from rich.text import Text
 
 
+# Azure emits 7-digit fractional seconds; Python < 3.11 only parses 3 or 6.
+_FRACTION_RE = re.compile(r"(\.\d{1,6})\d*")
+
+
 def _to_local(ts: str) -> str:
     """Convert a UTC ISO-8601 timestamp to the local system timezone."""
     try:
-        dt = datetime.fromisoformat(ts.replace("Z", "+00:00"))
+        normalised = _FRACTION_RE.sub(r"\1", ts.replace("Z", "+00:00"), count=1)
+        dt = datetime.fromisoformat(normalised)
         return dt.astimezone().strftime("%Y-%m-%d %H:%M:%S")
     except (ValueError, TypeError):
         return ts[:19]

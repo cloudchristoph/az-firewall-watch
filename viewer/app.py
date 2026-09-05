@@ -257,9 +257,9 @@ class FirewallLogApp(App[None]):
                 if self._matches(row, f):
                     tbl.add_row(*self._render_cells(row, f, single_policy), key=row.rowid)
                     # Index only what is in the table (rows may linger there
-                    # beyond _all_rows until the next trim); the index is
-                    # rebuilt from _all_rows on every full refresh, so it
-                    # stays bounded by max(MAX_ROWS, table size).
+                    # beyond _all_rows until the next trim); every full refresh
+                    # rebuilds the index from the visible rows, so it stays
+                    # bounded by the table size.
                     self._row_index[row.rowid] = row
                     added += 1
             if added:
@@ -277,7 +277,7 @@ class FirewallLogApp(App[None]):
         """Full rebuild of the table from _all_rows (filter changes, trimming)."""
         f = self._get_filters()
         visible = [r for r in self._all_rows if self._matches(r, f)]
-        self._row_index = {r.rowid: r for r in self._all_rows}
+        self._row_index = {r.rowid: r for r in visible}  # exactly the rows in the table
         tbl = self.query_one("#log-table", DataTable)
         prev_scroll_y = tbl.scroll_y
         prev_rowid = self._selected_rowid

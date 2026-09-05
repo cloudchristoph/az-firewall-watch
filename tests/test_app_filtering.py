@@ -304,3 +304,12 @@ async def test_row_index_stays_bounded_under_restrictive_filter(structured_recor
         await pilot.pause()
         assert tbl.row_count == 20
         assert set(app._row_index) == {r.rowid for r in app._all_rows}
+        # A full rebuild under a filter indexes only the visible rows
+        app.query_one("#f-hide-dns", Switch).value = False  # triggers _refresh_table
+        app.query_one("#f-action", Input).value = "allow"
+        await pilot.pause()
+        assert tbl.row_count == 20
+        app.query_one("#f-action", Input).value = "deny"
+        await pilot.pause()
+        assert tbl.row_count == 0
+        assert app._row_index == {}

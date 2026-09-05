@@ -549,7 +549,9 @@ async def test_credentials_are_closed_on_every_transient_failure(monkeypatch, fa
         ("@latest", "@latest"),
         ("earliest", "-1"),
         ("Earliest ", "-1"),
+        ("@earliest", "-1"),          # SDK-style spelling; previously matched nothing
         ("-1", "-1"),
+        (None, "@latest"),
         ("12345", "12345"),           # raw offset passed through
         ("2026-09-05T08:00:00Z", "2026-09-05T08:00:00Z"),
     ],

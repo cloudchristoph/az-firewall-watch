@@ -112,16 +112,18 @@ def resolve_start_position(value: str) -> str:
     """Map EVENT_HUB_START_POSITION to the SDK's starting_position.
 
     ``latest`` → ``"@latest"`` (only new events), ``earliest`` → ``"-1"``
-    (beginning of retention), both case-insensitive; anything else is passed
-    through unchanged so a raw offset or sequence number can be used.
-    An empty value means ``latest``.
+    (beginning of retention), both case-insensitive and also accepted in the
+    SDK spellings ``@latest`` / ``@earliest``; anything else is passed through
+    unchanged so a raw offset or sequence number can be used. An empty or
+    missing value means ``latest``.
     """
-    normalised = (value or "").strip().lower()
+    raw = (value or "").strip()
+    normalised = raw.lower()
     if normalised in ("", "latest", "@latest"):
         return "@latest"
-    if normalised in ("earliest", "-1"):
+    if normalised in ("earliest", "@earliest", "-1"):
         return "-1"
-    return value.strip()
+    return raw
 
 
 async def _remove_splash(app: "FirewallLogApp") -> None:

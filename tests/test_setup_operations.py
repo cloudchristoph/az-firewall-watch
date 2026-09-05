@@ -349,6 +349,8 @@ async def test_deploy_diagnostics_fallback_categories_when_lookup_fails(az, log,
     diag = [c for c in az.calls if c[:3] == ("monitor", "diagnostic-settings", "create")][0]
     cats = [e["category"] for e in json.loads(diag[diag.index("--logs") + 1])]
     assert "AZFWNetworkRule" in cats and "AZFWDnsQuery" in cats
+    assert "AZFWFqdnResolveFailure" in cats
+    assert "AZFWDnsProxy" not in cats  # not a real category
     assert all(c.startswith("AZFW") for c in cats)
 
 

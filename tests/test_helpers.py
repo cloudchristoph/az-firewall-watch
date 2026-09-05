@@ -6,7 +6,7 @@ import time
 
 import pytest
 
-from helpers import _category_text, _highlight, _parse_eventhub_endpoint, _to_local
+from helpers import _category_text, _highlight, _parse_eventhub_endpoint, _to_local, load_env
 
 
 @pytest.fixture
@@ -101,3 +101,16 @@ def test_parse_eventhub_endpoint_never_returns_key():
 def test_parse_eventhub_endpoint_missing_parts():
     assert _parse_eventhub_endpoint("") == ("unknown", "unknown")
     assert _parse_eventhub_endpoint("EntityPath=h") == ("unknown", "h")
+
+
+def test_load_env_reads_utf8_and_falls_back_to_latin1(tmp_path, monkeypatch):
+    monkeypatch.delenv("AZFW_TEST_VALUE", raising=False)
+    env = tmp_path / ".env"
+    env.write_bytes("# Überschrift\nAZFW_TEST_VALUE=eins\n".encode("cp1252"))
+    load_env(env)
+    assert os.environ["AZFW_TEST_VALUE"] == "eins"
+    env.write_text("AZFW_TEST_VALUE=zwei\n", encoding="utf-8")
+    load_env(env)  # no override → keeps the first value
+    assert os.environ["AZFW_TEST_VALUE"] == "eins"
+    load_env(env, override=True)
+    assert os.environ["AZFW_TEST_VALUE"] == "zwei"

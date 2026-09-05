@@ -149,8 +149,22 @@ def test_fqdn_resolve_failure_is_apprule_with_resolvefail(structured_record):
 def test_missing_properties_are_empty_strings_not_none(structured_record):
     row = parse_record(structured_record("AZFWNetworkRule"))
     assert row.category == "NetworkRule"
-    for value in (row.protocol, row.sourceip, row.srcport, row.targetip, row.targetport, row.action, row.policy):
+    for value in (row.protocol, row.sourceip, row.targetip, row.action, row.policy):
         assert value == ""
+    assert (row.srcport, row.targetport) == ("-", "-")
+
+
+def test_icmp_without_ports_renders_dashes(structured_record):
+    row = parse_record(structured_record(
+        "AZFWNetworkRule", Protocol="ICMP", SourceIp="10.0.1.4", DestinationIp="10.0.2.5", Action="Allow",
+    ))
+    assert row.protocol == "ICMP"
+    assert (row.srcport, row.targetport) == ("-", "-")
+
+
+def test_dns_query_name_loses_trailing_dot_like_legacy(structured_record):
+    row = parse_record(structured_record("AZFWDnsQuery", QueryName="ifconfig.me.", QueryType="A"))
+    assert row.targetip == "ifconfig.me"
 
 
 def test_numeric_properties_are_stringified(structured_record):

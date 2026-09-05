@@ -94,6 +94,11 @@ def _s(props: dict, key: str) -> str:
     return str(v) if v is not None else ""
 
 
+def _port(props: dict, key: str) -> str:
+    """Port fields render as '-' when absent (e.g. ICMP has no ports)."""
+    return _s(props, key) or "-"
+
+
 def _parse_structured(record: dict, category: str, time: str, resource_id: str = "") -> FirewallDataRow:
     props: dict = record.get("properties", {})
 
@@ -104,8 +109,8 @@ def _parse_structured(record: dict, category: str, time: str, resource_id: str =
             category="DnsQuery",
             protocol=_s(props, "QueryType"),        # A/AAAA/MX/… → Proto column
             sourceip=_s(props, "SourceIp"),
-            srcport=_s(props, "SourcePort"),
-            targetip=_s(props, "QueryName"),        # queried hostname → Dest/FQDN column
+            srcport=_port(props, "SourcePort"),
+            targetip=_s(props, "QueryName").rstrip("."),  # hostname without trailing dot, like legacy
             targetport="53",                        # DNS is always port 53
             action=_s(props, "ResponseCode") or "Request",  # NOERROR/NXDOMAIN/… → Action column
             moreinfo=_s(props, "ErrorMessage"),
@@ -125,9 +130,9 @@ def _parse_structured(record: dict, category: str, time: str, resource_id: str =
             category="AppRule",
             protocol=_s(props, "Protocol"),
             sourceip=_s(props, "SourceIp"),
-            srcport=_s(props, "SourcePort"),
+            srcport=_port(props, "SourcePort"),
             targetip=_s(props, "Fqdn"),
-            targetport=_s(props, "DestinationPort"),
+            targetport=_port(props, "DestinationPort"),
             action=_s(props, "Action"),
             policy=full_policy,
             moreinfo=_s(props, "TargetUrl"),
@@ -153,9 +158,9 @@ def _parse_structured(record: dict, category: str, time: str, resource_id: str =
             category="NetworkRule",
             protocol=_s(props, "Protocol"),
             sourceip=_s(props, "SourceIp"),
-            srcport=_s(props, "SourcePort"),
+            srcport=_port(props, "SourcePort"),
             targetip=_s(props, "DestinationIp"),
-            targetport=_s(props, "DestinationPort"),
+            targetport=_port(props, "DestinationPort"),
             action=_s(props, "Action"),
             policy=full_policy,
             resource_id=resource_id,
@@ -180,9 +185,9 @@ def _parse_structured(record: dict, category: str, time: str, resource_id: str =
             category="NATRule",
             protocol=_s(props, "Protocol"),
             sourceip=_s(props, "SourceIp"),
-            srcport=_s(props, "SourcePort"),
+            srcport=_port(props, "SourcePort"),
             targetip=_s(props, "TranslatedIp"),
-            targetport=_s(props, "TranslatedPort"),
+            targetport=_port(props, "TranslatedPort"),
             action="DNAT",
             policy=full_policy,
             resource_id=resource_id,
@@ -199,9 +204,9 @@ def _parse_structured(record: dict, category: str, time: str, resource_id: str =
             category="IDPS",
             protocol=_s(props, "Protocol"),
             sourceip=_s(props, "SourceIp"),
-            srcport=_s(props, "SourcePort"),
+            srcport=_port(props, "SourcePort"),
             targetip=_s(props, "DestinationIp"),
-            targetport=_s(props, "DestinationPort"),
+            targetport=_port(props, "DestinationPort"),
             action=_s(props, "Action"),
             moreinfo=(
                 f"SEV:{_s(props, 'Severity')} "
@@ -219,9 +224,9 @@ def _parse_structured(record: dict, category: str, time: str, resource_id: str =
             category="ThreatIntel",
             protocol=_s(props, "Protocol"),
             sourceip=_s(props, "SourceIp"),
-            srcport=_s(props, "SourcePort"),
+            srcport=_port(props, "SourcePort"),
             targetip=_s(props, "DestinationIp"),
-            targetport=_s(props, "DestinationPort"),
+            targetport=_port(props, "DestinationPort"),
             action=_s(props, "Action"),
             moreinfo=_s(props, "ThreatDescription"),
             resource_id=resource_id,

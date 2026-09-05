@@ -2,8 +2,18 @@ from __future__ import annotations
 
 import re
 from datetime import datetime
+from pathlib import Path
 
+from dotenv import load_dotenv
 from rich.text import Text
+
+
+def load_env(path: Path, override: bool = False) -> None:
+    """Load a .env file, falling back to latin-1 if the file is not valid UTF-8."""
+    try:
+        load_dotenv(path, encoding="utf-8", override=override)
+    except UnicodeDecodeError:
+        load_dotenv(path, encoding="latin-1", override=override)
 
 
 # Azure emits 7-digit fractional seconds; Python < 3.11 only parses exactly 3 or 6.

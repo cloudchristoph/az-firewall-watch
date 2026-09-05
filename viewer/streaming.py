@@ -108,7 +108,7 @@ async def _verify_data_plane_access(credential, eh_namespace: str) -> None:
         )
 
 
-def resolve_start_position(value: str) -> str:
+def resolve_start_position(value: str | None) -> str:
     """Map EVENT_HUB_START_POSITION to the SDK's starting_position.
 
     ``latest`` → ``"@latest"`` (only new events), ``earliest`` → ``"-1"``

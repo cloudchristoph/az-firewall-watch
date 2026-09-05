@@ -108,6 +108,24 @@ async def _verify_data_plane_access(credential, eh_namespace: str) -> None:
         )
 
 
+def resolve_start_position(value: str | None) -> str:
+    """Map EVENT_HUB_START_POSITION to the SDK's starting_position.
+
+    ``latest`` → ``"@latest"`` (only new events), ``earliest`` → ``"-1"``
+    (beginning of retention), both case-insensitive and also accepted in the
+    SDK spellings ``@latest`` / ``@earliest``; anything else is passed through
+    unchanged so a raw offset or sequence number can be used. An empty or
+    missing value means ``latest``.
+    """
+    raw = (value or "").strip()
+    normalised = raw.lower()
+    if normalised in ("", "latest", "@latest"):
+        return "@latest"
+    if normalised in ("earliest", "@earliest", "-1"):
+        return "-1"
+    return raw
+
+
 async def _remove_splash(app: "FirewallLogApp") -> None:
     """Remove the ConnectingDialog from the screen stack.
 
@@ -160,10 +178,7 @@ async def run_stream(app: "FirewallLogApp") -> None:
     eh_name = os.environ.get("EVENT_HUB_NAME", "")
     consumer_group = os.environ.get("EVENT_HUB_CONSUMER_GROUP", "$Default")
     start_pos = os.environ.get("EVENT_HUB_START_POSITION", "latest")
-    # SDK contract: "@latest" = only new events, "-1" = beginning of retention.
-    # Any other string is treated as a raw offset, so "@earliest" silently
-    # matched nothing.
-    position = "@latest" if start_pos == "latest" else "-1"
+    position = resolve_start_position(start_pos)
     use_entra = bool(eh_namespace and eh_name)
 
     status = app.query_one("#status", StatusBar)

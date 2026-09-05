@@ -284,3 +284,32 @@ async def test_selected_row_stays_selected_when_rows_arrive(structured_record):
         await _inject(app, pilot, [_net(structured_record, f"2026-09-05T08:00:1{i}Z") for i in range(5)])
         assert tbl.cursor_row == 6  # five newer rows were inserted above it
         assert tbl.coordinate_to_cell_key((tbl.cursor_row, 0)).row_key.value == rows[1].rowid
+
+
+async def test_row_index_stays_bounded_under_restrictive_filter(structured_record, monkeypatch):
+    """Regression (Copilot review): rows filtered out on arrival must not accumulate in _row_index."""
+    monkeypatch.setattr(app_module, "MAX_ROWS", 20)
+    app = FirewallLogApp()
+    async with app.run_test(size=(140, 40)) as pilot:
+        await pilot.pause()
+        app.query_one("#f-action", Input).value = "deny"
+        await pilot.pause()
+        for i in range(10):
+            await _inject(app, pilot, [_net(structured_record, f"2026-09-05T08:{i:02d}:{j:02d}Z") for j in range(5)])
+        tbl = app.query_one("#log-table", DataTable)
+        assert tbl.row_count == 0                      # nothing matches "deny"
+        assert len(app._row_index) == 0                # … so nothing is indexed
+        assert len(app._all_rows) == 20
+        app.query_one("#f-action", Input).value = ""
+        await pilot.pause()
+        assert tbl.row_count == 20
+        assert set(app._row_index) == {r.rowid for r in app._all_rows}
+        # A full rebuild under a filter indexes only the visible rows
+        app.query_one("#f-hide-dns", Switch).value = False  # triggers _refresh_table
+        app.query_one("#f-action", Input).value = "allow"
+        await pilot.pause()
+        assert tbl.row_count == 20
+        app.query_one("#f-action", Input).value = "deny"
+        await pilot.pause()
+        assert tbl.row_count == 0
+        assert app._row_index == {}

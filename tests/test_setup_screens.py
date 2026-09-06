@@ -16,6 +16,7 @@ import setup.screens as screens
 from setup.app import WizardApp
 from setup.screens import (
     AuthMethodScreen,
+    EnrichmentScreen,
     ConfirmCreateRuleScreen,
     DeployNewScreen,
     EnterExistingHubScreen,
@@ -59,6 +60,15 @@ def _visible_error(screen, label_id: str) -> str:
 async def _pick_radio(pilot, screen, button_id: str) -> None:
     screen.query_one(button_id).value = True
     await pilot.pause()
+
+
+async def _pass_enrichment(app, pilot, enable: bool = True) -> None:
+    """Every flow asks about metadata enrichment right before .env is written."""
+    await wait_until(pilot, lambda: isinstance(app.screen, EnrichmentScreen))
+    await pilot.pause()
+    if not enable:
+        await _pick_radio(pilot, app.screen, "#opt-enrich-off")
+    await pilot.click("#btn-next")
 
 
 @pytest.fixture
@@ -199,9 +209,34 @@ class TestPasteConnection:
             await self._open(app, pilot)
             app.screen.query_one("#inp-conn", Input).value = f"  {CONN}  "
             await pilot.click("#btn-save")
-            await pilot.pause()
-            assert app._exit
+            await _pass_enrichment(app, pilot)
+            await wait_until(pilot, lambda: app._exit)
         assert get_existing_conn_str(env_file) == CONN
+        assert _env_values(env_file)["ENRICHMENT"] == "on"
+
+    async def test_enrichment_can_be_disabled(self, env_file):
+        app = WizardApp(env_file)
+        async with app.run_test(size=(100, 40)) as pilot:
+            await self._open(app, pilot)
+            app.screen.query_one("#inp-conn", Input).value = CONN
+            await pilot.click("#btn-save")
+            await _pass_enrichment(app, pilot, enable=False)
+            await wait_until(pilot, lambda: app._exit)
+        assert _env_values(env_file)["ENRICHMENT"] == "off"
+
+    async def test_enrichment_back_keeps_wizard_open(self, env_file):
+        app = WizardApp(env_file)
+        async with app.run_test(size=(100, 40)) as pilot:
+            await self._open(app, pilot)
+            app.screen.query_one("#inp-conn", Input).value = CONN
+            await pilot.click("#btn-save")
+            await wait_until(pilot, lambda: isinstance(app.screen, EnrichmentScreen))
+            await pilot.pause()
+            await pilot.press("escape")
+            await pilot.pause()
+            assert isinstance(app.screen, PasteConnectionScreen)
+            assert not app._exit
+        assert not env_file.exists()
 
     async def test_back_returns_to_welcome(self, env_file):
         app = WizardApp(env_file)
@@ -246,9 +281,10 @@ class TestEnterExistingHub:
             app.screen.query_one("#inp-ns", Input).value = "lab.servicebus.windows.net"
             app.screen.query_one("#inp-hub", Input).value = "firewall-logs"
             await pilot.click("#btn-save")
-            await pilot.pause()
-            assert app._exit
+            await _pass_enrichment(app, pilot)
+            await wait_until(pilot, lambda: app._exit)
         assert has_entra_config(env_file)
+        assert _env_values(env_file)["ENRICHMENT"] == "on"
         text = env_file.read_text(encoding="utf-8")
         assert "EVENT_HUB_NAMESPACE=lab.servicebus.windows.net" in text
         assert "EVENT_HUB_NAME=firewall-logs" in text
@@ -351,9 +387,11 @@ class TestPickExisting:
             await wait_until(pilot, lambda: isinstance(app.screen, AuthMethodScreen))
             await pilot.pause()
             await pilot.click("#btn-next")  # Entra is the default
+            await _pass_enrichment(app, pilot, enable=False)
             await wait_until(pilot, lambda: app._exit)
         text = env_file.read_text(encoding="utf-8")
         assert "EVENT_HUB_NAMESPACE=ns-a.servicebus.windows.net" in text
+        assert "ENRICHMENT=off" in text
         assert "EVENT_HUB_NAME=firewall-logs" in text
         assert "resolve_sas" not in [c[0] if isinstance(c, tuple) else c for c in fake_ops["calls"]]
 
@@ -367,8 +405,10 @@ class TestPickExisting:
             await pilot.pause()
             await _pick_radio(pilot, app.screen, "#opt-sas")
             await pilot.click("#btn-next")
+            await _pass_enrichment(app, pilot)
             await wait_until(pilot, lambda: app._exit)
         assert get_existing_conn_str(env_file) == CONN
+        assert _env_values(env_file)["ENRICHMENT"] == "on"
         resolve = [c for c in fake_ops["calls"] if isinstance(c, tuple) and c[0] == "resolve_sas"][0]
         assert resolve[1:] == ("s1", "rg-a", "ns-a", "firewall-logs", "az-firewall-watch-listen")
 
@@ -383,6 +423,7 @@ class TestPickExisting:
             await pilot.pause()
             await _pick_radio(pilot, app.screen, "#opt-sas")
             await pilot.click("#btn-next")
+            await _pass_enrichment(app, pilot)
             await wait_until(pilot, lambda: isinstance(app.screen, ConfirmCreateRuleScreen))
             await pilot.pause()
             text = " ".join(str(s.content) for s in app.screen.query(Static))
@@ -405,6 +446,7 @@ class TestPickExisting:
             await pilot.pause()
             await _pick_radio(pilot, app.screen, "#opt-sas")
             await pilot.click("#btn-next")
+            await _pass_enrichment(app, pilot)
             await wait_until(pilot, lambda: isinstance(app.screen, ConfirmCreateRuleScreen))
             await pilot.pause()
             await pilot.click("#btn-confirm")
@@ -422,6 +464,7 @@ class TestPickExisting:
             await pilot.pause()
             await _pick_radio(pilot, app.screen, "#opt-sas")
             await pilot.click("#btn-next")
+            await _pass_enrichment(app, pilot)
             await wait_until(pilot, lambda: bool(_visible_error(app.screen, "#lbl-scan-error")))
             assert "keys list failed" in _visible_error(app.screen, "#lbl-scan-error")
         assert not env_file.exists()
@@ -510,6 +553,7 @@ class TestDeployNew:
         if auth == "sas":
             await _pick_radio(pilot, app.screen, "#opt-sas")
         await pilot.click("#btn-next")
+        await _pass_enrichment(app, pilot, enable=(auth != "entra"))
         await wait_until(pilot, lambda: isinstance(app.screen, DeployNewScreen)
                          and app.screen.query_one(ContentSwitcher).current == "step-summary")
         await pilot.pause()
@@ -524,6 +568,7 @@ class TestDeployNew:
             assert "using existing" in summary
             assert "SAS connection string" in summary
             assert "az-firewall-watch-listen" in summary
+            assert "Enrichment    : on" in summary
 
     async def test_summary_entra_hides_listen_rule(self, env_file, fake_ops):
         app = WizardApp(env_file)
@@ -532,6 +577,7 @@ class TestDeployNew:
             summary = str(app.screen.query_one("#summary-text", Static).content)
             assert "Entra ID" in summary
             assert "Listen rule" not in summary
+            assert "Enrichment    : off" in summary  # _through_summary disables it for entra
 
     async def test_deploy_sas_writes_env_and_exits(self, env_file, fake_ops):
         app = WizardApp(env_file)
@@ -556,6 +602,7 @@ class TestDeployNew:
             await wait_until(pilot, lambda: app._exit)
         assert has_entra_config(env_file)
         assert _env_values(env_file)["EVENT_HUB_NAMESPACE"] == "ehns-fwlogs-gwc-001.servicebus.windows.net"
+        assert _env_values(env_file)["ENRICHMENT"] == "off"
 
     async def test_deploy_with_new_rg_flag(self, env_file, fake_ops):
         app = WizardApp(env_file)
@@ -566,6 +613,7 @@ class TestDeployNew:
             await wait_until(pilot, lambda: isinstance(app.screen, AuthMethodScreen))
             await pilot.pause()
             await pilot.click("#btn-next")
+            await _pass_enrichment(app, pilot)
             await wait_until(pilot, lambda: isinstance(app.screen, DeployNewScreen)
                              and app.screen.query_one(ContentSwitcher).current == "step-summary")
             await pilot.pause()

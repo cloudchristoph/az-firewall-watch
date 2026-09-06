@@ -37,7 +37,17 @@ def has_entra_config(env_file: Path) -> bool:
     return found_ns and found_name
 
 
-def write_env(env_file: Path, conn_str: str) -> None:
+_ENRICHMENT_COMMENT = (
+    "# ENRICHMENT=on reads the firewall, its policy and IP groups via Azure Resource Manager\n"
+    "# (Reader role), may use an Azure CLI token, and caches the result in ~/.az-firewall-watch.\n"
+)
+
+
+def _enrichment_line(enrichment: bool) -> str:
+    return f"ENRICHMENT={'on' if enrichment else 'off'}\n"
+
+
+def write_env(env_file: Path, conn_str: str, enrichment: bool = True) -> None:
     """Write a connection-string-based .env file."""
     ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     env_file.write_text(
@@ -45,12 +55,13 @@ def write_env(env_file: Path, conn_str: str) -> None:
         "# Do NOT commit this file - it contains a shared access key.\n"
         f"EVENT_HUB_CONNECTION_STRING={conn_str}\n"
         "EVENT_HUB_CONSUMER_GROUP=$Default\n"
-        "EVENT_HUB_START_POSITION=latest\n",
+        "EVENT_HUB_START_POSITION=latest\n"
+        + _ENRICHMENT_COMMENT + _enrichment_line(enrichment),
         encoding="utf-8",
     )
 
 
-def write_env_entra(env_file: Path, namespace: str, hub_name: str) -> None:
+def write_env_entra(env_file: Path, namespace: str, hub_name: str, enrichment: bool = True) -> None:
     """Write an Entra ID (passwordless) .env file."""
     ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     env_file.write_text(
@@ -60,6 +71,26 @@ def write_env_entra(env_file: Path, namespace: str, hub_name: str) -> None:
         f"EVENT_HUB_NAMESPACE={namespace}\n"
         f"EVENT_HUB_NAME={hub_name}\n"
         "EVENT_HUB_CONSUMER_GROUP=$Default\n"
-        "EVENT_HUB_START_POSITION=latest\n",
+        "EVENT_HUB_START_POSITION=latest\n"
+        + _ENRICHMENT_COMMENT + _enrichment_line(enrichment),
         encoding="utf-8",
     )
+
+
+def set_env_value(env_file: Path, key: str, value: str) -> None:
+    """Set ``KEY=value`` in .env, replacing an existing line or appending one.
+
+    Comments and other keys are preserved. Creates the file if it is missing.
+    """
+    lines = _read_env_text(env_file).splitlines() if env_file.exists() else []
+    prefix = f"{key}="
+    replaced = False
+    for i, line in enumerate(lines):
+        if line.startswith(prefix):
+            lines[i] = f"{key}={value}"
+            replaced = True
+    if not replaced:
+        if key == "ENRICHMENT":
+            lines.extend(_ENRICHMENT_COMMENT.rstrip("\n").splitlines())
+        lines.append(f"{key}={value}")
+    env_file.write_text("\n".join(lines) + "\n", encoding="utf-8")

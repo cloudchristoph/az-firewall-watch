@@ -186,6 +186,46 @@ class AuthMethodScreen(ModalScreen[str | None]):
             self.dismiss(None)
 
 
+class EnrichmentScreen(ModalScreen[bool | None]):
+    """Asks whether the viewer may read firewall metadata via ARM (default: yes)."""
+
+    def compose(self):
+        with Vertical(classes="wiz-box"):
+            yield Static("Metadata enrichment", classes="wiz-title")
+            yield Static(
+                "Besides reading the Event Hub, the viewer can read the firewall,\n"
+                "its policy and IP groups via Azure Resource Manager to show the\n"
+                "Firewall / Policy / IP Groups tabs and the evaluation trace.\n\n"
+                "This means, in addition to the log stream:\n"
+                "  • read-only ARM requests (Reader role on firewall, policy, IP groups)\n"
+                "  • a token from the Azure CLI as fallback (az account get-access-token)\n"
+                "  • a metadata cache in ~/.az-firewall-watch/cache.json (1 h, mode 0600)\n\n"
+                "Nothing is written to Azure. Saved to .env as ENRICHMENT=on|off.",
+                classes="wiz-info",
+            )
+            with RadioSet(id="enrichment-radio"):
+                yield RadioButton("Enable metadata enrichment (recommended)", id="opt-enrich-on", value=True)
+                yield RadioButton("Disable — Logs tab only, no ARM access", id="opt-enrich-off")
+            with Horizontal(classes="wiz-buttons"):
+                yield Button("Back", id="btn-back", variant="default")
+                yield Button("Next →", id="btn-next", variant="primary")
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "btn-back":
+            self.dismiss(None)
+            return
+        if event.button.id == "btn-next":
+            radio = self.query_one("#enrichment-radio", RadioSet)
+            if radio.pressed_button is None:
+                return
+            self.dismiss(radio.pressed_button.id == "opt-enrich-on")
+
+    def on_key(self, event) -> None:  # type: ignore[override]
+        if event.key in ("escape", "q"):
+            event.stop()
+            self.dismiss(None)
+
+
 class PasteConnectionScreen(_WizardScreen):
     """Option 3 — paste a SAS connection string."""
 
@@ -241,7 +281,14 @@ class PasteConnectionScreen(_WizardScreen):
             err_label.display = True
             return
 
-        write_env(self._wizard_app.env_file, raw)
+        self._finish(raw)
+
+    @work(exclusive=True)
+    async def _finish(self, raw: str) -> None:
+        enrichment = await self.app.push_screen_wait(EnrichmentScreen())
+        if enrichment is None:
+            return
+        write_env(self._wizard_app.env_file, raw, enrichment=enrichment)
         self.app.exit()
 
 
@@ -301,7 +348,14 @@ class EnterExistingHubScreen(_WizardScreen):
             err_label.display = True
             return
 
-        write_env_entra(self._wizard_app.env_file, ns, hub)
+        self._finish(ns, hub)
+
+    @work(exclusive=True)
+    async def _finish(self, ns: str, hub: str) -> None:
+        enrichment = await self.app.push_screen_wait(EnrichmentScreen())
+        if enrichment is None:
+            return
+        write_env_entra(self._wizard_app.env_file, ns, hub, enrichment=enrichment)
         self.app.exit()
 
 
@@ -389,9 +443,12 @@ class PickExistingScreen(_WizardScreen):
         auth_method = await self.app.push_screen_wait(AuthMethodScreen())
         if auth_method is None:
             return
+        enrichment = await self.app.push_screen_wait(EnrichmentScreen())
+        if enrichment is None:
+            return
 
         if auth_method == "entra":
-            write_env_entra(self._wizard_app.env_file, f"{ns}.servicebus.windows.net", eh)
+            write_env_entra(self._wizard_app.env_file, f"{ns}.servicebus.windows.net", eh, enrichment=enrichment)
             self.app.exit()
             return
 
@@ -412,7 +469,7 @@ class PickExistingScreen(_WizardScreen):
                 self.query_one(ContentSwitcher).current = "phase-select"
                 return
             log.write("[green]✓[/] Writing .env…")
-            write_env(self._wizard_app.env_file, conn_str)
+            write_env(self._wizard_app.env_file, conn_str, enrichment=enrichment)
             log.write("[green]✓[/] Done!")
             self.app.exit()
         except Exception as exc:
@@ -436,6 +493,7 @@ class DeployNewScreen(_WizardScreen):
     _diag_name: str
     _auth_method: str
     _current_user_id: str
+    _enrichment: bool
 
     def compose(self):
         with Vertical(classes="wiz-box"):
@@ -503,6 +561,7 @@ class DeployNewScreen(_WizardScreen):
         self._subs = []
         self._firewalls = []
         self._auth_method = "sas"
+        self._enrichment = True
         self._current_user_id = ""
         self.query_one("#lbl-deploy-error", Label).display = False
         self.query_one("#lbl-fw-error", Label).display = False
@@ -646,7 +705,11 @@ class DeployNewScreen(_WizardScreen):
         auth_method = await self.app.push_screen_wait(AuthMethodScreen())
         if auth_method is None:
             return
+        enrichment = await self.app.push_screen_wait(EnrichmentScreen())
+        if enrichment is None:
+            return
         self._auth_method = auth_method
+        self._enrichment = enrichment
         auth_label = (
             "Entra ID" if auth_method == "entra" else "SAS connection string"
         )
@@ -665,6 +728,7 @@ class DeployNewScreen(_WizardScreen):
         rows += [
             f"Send rule     : {self._send_rule}",
             f"Diag setting  : {self._diag_name}",
+            f"Enrichment    : {'on (ARM reads, cache)' if self._enrichment else 'off'}",
         ]
         self.query_one("#summary-text", Static).update("\n".join(rows))
         self.query_one(ContentSwitcher).current = "step-summary"
@@ -700,9 +764,10 @@ class DeployNewScreen(_WizardScreen):
                     self._wizard_app.env_file,
                     f"{self._ns}.servicebus.windows.net",
                     self._eh_name,
+                    enrichment=self._enrichment,
                 )
             else:
-                write_env(self._wizard_app.env_file, conn_str)
+                write_env(self._wizard_app.env_file, conn_str, enrichment=self._enrichment)
             log.write("[green]✓[/] .env written — setup complete!")
             self.app.exit()
         except Exception as exc:

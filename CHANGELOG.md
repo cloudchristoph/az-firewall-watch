@@ -18,7 +18,8 @@ Management-plane enrichment: the viewer reads the firewall, its policy and the r
 - **Metadata segment in the status bar** (`policy Premium · 11 IP groups · fresh`) — the connection status itself is untouched. The title shows the firewall's real, case-preserved name from ARM instead of the upper-cased one from the diagnostic records.
 - **Persistent metadata cache** at `~/.az-firewall-watch/cache.json` (mode `0600`, 1 h TTL so the trace never explains yesterday's rules), falling back to `.azfw-cache.json` next to the binary when the home directory is not writable. `Ctrl+R` bypasses the cache and re-fetches.
 - **ARM access for SAS users too.** The ARM client uses `DefaultAzureCredential` and falls back to a token from the Azure CLI (`az account get-access-token`), so enrichment also works when the Event Hub itself is read with a SAS connection string. Without any ARM access the viewer simply reports *metadata unavailable* and behaves as before.
-- 97 tests for the ARM client, resource parsing, cache, matching logic, orchestration and the tabs.
+- **`ENRICHMENT` feature flag** (default `on`). The setup wizard asks before writing `.env`; `--enrichment` / `--no-enrichment` override it per run. With enrichment off the viewer never leaves the Event Hub: no ARM requests, no Azure CLI token, no cache file, Logs tab only. A `.env` from 0.4.x has no such key, so the viewer shows a one-time notice that says what enrichment does and offers to disable it; the answer is saved to `.env`.
+- 125 tests for the ARM client, resource parsing, cache, matching logic, orchestration, the tabs and the feature flag.
 
 ### Changed
 

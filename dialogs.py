@@ -232,6 +232,71 @@ class DetailDialog(ModalScreen[None]):
             self.app.call_later(self.app.action_trace)  # type: ignore[attr-defined]
 
 
+class EnrichmentNoticeDialog(ModalScreen[bool]):
+    """One-time notice: metadata enrichment is on and reaches beyond the Event Hub.
+
+    Dismisses with ``True`` to keep it enabled, ``False`` to switch it off.
+    """
+
+    DEFAULT_CSS = """
+    EnrichmentNoticeDialog {
+        align: center middle;
+    }
+    EnrichmentNoticeDialog > #dialog {
+        width: 84;
+        max-width: 96%;
+        height: auto;
+        background: $surface;
+        border: thick $warning;
+        padding: 1 2;
+    }
+    EnrichmentNoticeDialog > #dialog > #enr-title {
+        text-style: bold;
+        color: $warning;
+        margin-bottom: 1;
+    }
+    EnrichmentNoticeDialog > #dialog > #enr-body {
+        margin-bottom: 1;
+    }
+    EnrichmentNoticeDialog > #dialog > #enr-hint {
+        color: $text-muted;
+        margin-bottom: 1;
+    }
+    EnrichmentNoticeDialog > #dialog > .btn-row {
+        height: 3;
+    }
+    EnrichmentNoticeDialog > #dialog > .btn-row > Button {
+        width: 1fr;
+    }
+    """
+
+    def compose(self) -> ComposeResult:
+        with Static(id="dialog"):
+            yield Static("Metadata enrichment is ON", id="enr-title")
+            yield Static(
+                "Beyond reading the Event Hub, this viewer will:\n"
+                "• read the firewall, its policy and IP groups via Azure Resource Manager (Reader role)\n"
+                "• use a token from the Azure CLI as fallback (az account get-access-token)\n"
+                "• cache that metadata for one hour in ~/.az-firewall-watch/cache.json\n"
+                "\n"
+                "Nothing is written to Azure. In return you get the Firewall, Policy and "
+                "IP Groups tabs, enriched rows and the evaluation trace (t).",
+                id="enr-body",
+            )
+            yield Static("Saved to .env as ENRICHMENT=on|off — change it there or run with --no-enrichment.", id="enr-hint")
+            with Horizontal(classes="btn-row"):
+                yield Button("Keep enabled  (Enter)", variant="success", id="btn-keep")
+                yield Button("Disable", variant="default", id="btn-disable")
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        self.dismiss(event.button.id == "btn-keep")
+
+    def on_key(self, event: events.Key) -> None:
+        if event.key in ("escape", "q"):
+            event.stop()
+            self.dismiss(True)  # closing means "leave it as it is"
+
+
 class StatusBar(Static):
     """Single-line status bar at the bottom."""
 

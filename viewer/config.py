@@ -1,6 +1,7 @@
 """Constants and configuration helpers for the viewer TUI."""
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 
@@ -44,4 +45,28 @@ CATEGORY_OPTIONS: list[tuple[str, str]] = [
     ("FatFlow", "fatflow"),
 ]
 
-__all__ = ["BASE_DIR", "SRC_DIR", "VERSION", "MAX_ROWS", "TABLE_TRIM_SLACK", "CATEGORY_OPTIONS", "load_env"]
+# ── enrichment flag ───────────────────────────────────────────────────────────
+ENRICHMENT_KEY = "ENRICHMENT"
+_ON_VALUES = ("on", "true", "1", "yes")
+
+
+def enrichment_setting(argv: list[str], environ: "dict[str, str] | os._Environ") -> tuple[bool, bool]:
+    """Resolve the enrichment flag.
+
+    Returns ``(enabled, explicit)``. ``--no-enrichment`` / ``--enrichment`` on
+    the command line win, then ``ENRICHMENT=on|off`` from the environment (or
+    ``.env``). A missing value means *enabled* but *not explicit* — the viewer
+    then shows a one-time notice so the user knows what is switched on.
+    """
+    if "--no-enrichment" in argv:
+        return False, True
+    if "--enrichment" in argv:
+        return True, True
+    raw = (environ.get(ENRICHMENT_KEY) or "").strip().lower()
+    if not raw:
+        return True, False
+    return raw in _ON_VALUES, True
+
+
+__all__ = ["BASE_DIR", "SRC_DIR", "VERSION", "MAX_ROWS", "TABLE_TRIM_SLACK", "CATEGORY_OPTIONS",
+           "ENRICHMENT_KEY", "enrichment_setting", "load_env"]

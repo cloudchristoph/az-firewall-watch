@@ -120,6 +120,15 @@ You have two main options for connecting your firewall logs Event Hub:
 > [!NOTE]
 > The deployment will require permissions to create an Event Hub namespace and hub, and to update Diagnostic Settings on the firewall. Also keep in mind that it can take *up to 10-15 minutes at the first launch* for the Event Hub to be fully provisioned and start receiving logs from the firewall.
 
+#### Metadata enrichment step
+
+Right before `.env` is written, every wizard path asks whether the viewer may
+read the firewall, its policy and IP groups via Azure Resource Manager (see
+[Firewall, Policy and IP Groups tabs](#-firewall-policy-and-ip-groups-tabs)).
+It is **on by default** and saved as `ENRICHMENT=on|off`. Choose *Disable* if
+the viewer must not touch anything beyond the Event Hub — you then get the
+Logs tab only, no ARM requests, no Azure CLI token and no cache file.
+
 ### 🔑 Authentication methods
 
 After picking a hub (Discover, Enter existing, or Deploy new), a follow-up screen asks **how** to authenticate:
@@ -173,6 +182,7 @@ EVENT_HUB_START_POSITION=latest
 | `EVENT_HUB_NAME`              | Event Hub name — for Entra ID auth                                                        | —          |
 | `EVENT_HUB_CONSUMER_GROUP`    | Consumer group                                                                            | `$Default` |
 | `EVENT_HUB_START_POSITION`    | `latest` (only new events) or `earliest` (replay the hub's full retention first); other values are passed to the SDK as a raw offset | `latest`   |
+| `ENRICHMENT`                  | `on` / `off` — metadata enrichment via Azure Resource Manager (tabs, trace, cache). `--enrichment` / `--no-enrichment` override it for one run. If the key is missing, the viewer asks once at start-up and saves the answer | `on`       |
 <!-- markdownlint-enable MD060 -->
 
 > When both `EVENT_HUB_NAMESPACE`/`EVENT_HUB_NAME` and `EVENT_HUB_CONNECTION_STRING` are set, Entra ID is preferred.
@@ -268,6 +278,14 @@ its policy and the IP groups. Without ARM access the status bar says
 (file mode `0600`; falls back to `.azfw-cache.json` next to the binary if the
 home directory is not writable). Press `Ctrl+R` to re-fetch after changing
 rules or IP groups.
+
+**Switching it off.** Enrichment is a feature flag: `ENRICHMENT=off` in `.env`
+(or `--no-enrichment` for a single run) turns everything in this section off —
+no ARM requests, no Azure CLI token, no cache file, Logs tab only; `t` and
+`Ctrl+R` then just say so in the status bar. The wizard asks for this when it
+writes `.env`. A `.env` from an earlier release has no `ENRICHMENT` key, so the
+viewer shows a one-time notice explaining what enrichment does (on by default)
+with a *Disable* button; the choice is saved to `.env`.
 
 ## 🔍 Filters
 

@@ -22,7 +22,9 @@ from textual.widgets import (
     TabPane,
 )
 
-from dialogs import DetailDialog, StatusBar
+from pathlib import Path
+
+from dialogs import DetailDialog, EnrichmentNoticeDialog, StatusBar
 from fw_parser import FirewallDataRow
 from helpers import _category_text, _highlight, _to_local
 
@@ -139,9 +141,15 @@ class FirewallLogApp(App[None]):
     ]
 
     # ── state ──────────────────────────────────────────────────────────────────
-    def __init__(self) -> None:
+    def __init__(self, *, enrichment: bool = True, enrichment_notice: bool = False,
+                 env_file: Path | None = None) -> None:
         super().__init__()
         self.theme = "flexoki"
+        # Management-plane enrichment (ARM reads, CLI token fallback, cache).
+        # Off → Logs tab only, no ARM access at all.
+        self._enrichment = enrichment
+        self._enrichment_notice = enrichment and enrichment_notice
+        self._env_file = env_file
         self._all_rows: list[FirewallDataRow] = []
         self._pending: list[FirewallDataRow] = []
         self._skip_pending: int = 0
@@ -177,15 +185,18 @@ class FirewallLogApp(App[None]):
             yield Input(placeholder="Port",          id="f-port",   classes="filter-input")
             yield Label("Hide DNS")
             yield Switch(value=True, id="f-hide-dns")
-        with TabbedContent(id="main-tabs", initial="tab-logs"):
-            with TabPane("Logs", id="tab-logs"):
-                yield DataTable(zebra_stripes=True, cursor_type="row", id="log-table")
-            with TabPane("Firewall", id="tab-firewall"):
-                yield FirewallView(id="firewall-view")
-            with TabPane("Policy", id="tab-policy"):
-                yield PolicyView(id="policy-view")
-            with TabPane("IP Groups", id="tab-ipgroups"):
-                yield IpGroupsView(id="ipgroups-view")
+        if self._enrichment:
+            with TabbedContent(id="main-tabs", initial="tab-logs"):
+                with TabPane("Logs", id="tab-logs"):
+                    yield DataTable(zebra_stripes=True, cursor_type="row", id="log-table")
+                with TabPane("Firewall", id="tab-firewall"):
+                    yield FirewallView(id="firewall-view")
+                with TabPane("Policy", id="tab-policy"):
+                    yield PolicyView(id="policy-view")
+                with TabPane("IP Groups", id="tab-ipgroups"):
+                    yield IpGroupsView(id="ipgroups-view")
+        else:
+            yield DataTable(zebra_stripes=True, cursor_type="row", id="log-table")
         yield StatusBar(id="status")
         yield Footer()
 
@@ -204,6 +215,45 @@ class FirewallLogApp(App[None]):
         self._start_stream()
         self.set_interval(1.0, self._flush_rows)
         self._check_update()
+        if self._enrichment_notice:
+            self.push_screen(EnrichmentNoticeDialog(), callback=self._on_enrichment_notice)
+
+    # ── enrichment switch ──────────────────────────────────────────────────────
+    def _on_enrichment_notice(self, keep: bool | None) -> None:
+        keep = True if keep is None else keep
+        self._persist_enrichment(keep)
+        if not keep:
+            self._disable_enrichment()
+
+    def _persist_enrichment(self, enabled: bool) -> None:
+        """Remember the decision in .env (only when a .env exists next to us)."""
+        if self._env_file is None or not self._env_file.exists():
+            return
+        try:
+            from setup.services import set_env_value
+            set_env_value(self._env_file, "ENRICHMENT", "on" if enabled else "off")
+        except OSError:
+            pass
+
+    def _disable_enrichment(self) -> None:
+        """Switch enrichment off at runtime: drop the metadata tabs, stop ARM use."""
+        self._enrichment = False
+        self._firewall_id = None
+        self._mgmt_loaded = False
+        self._fw_info = self._policy_info = None
+        self._ip_groups = {}
+        self._subnet_cidrs = []
+        self.workers.cancel_group(self, "mgmt")
+        status = self.query_one("#status", StatusBar)
+        status.meta = "enrichment off"
+        try:
+            tabs = self.query_one("#main-tabs", TabbedContent)
+            for pane in ("tab-firewall", "tab-policy", "tab-ipgroups"):
+                tabs.remove_pane(pane)
+            tabs.active = "tab-logs"
+        except Exception:
+            pass
+        self._refresh_table()
 
     # ── workers ────────────────────────────────────────────────────────────────
     @work(exclusive=True)
@@ -246,6 +296,8 @@ class FirewallLogApp(App[None]):
 
     def _refresh_metadata_views(self) -> None:
         """Refresh Firewall / Policy / IP Groups tabs from current state."""
+        if not self._enrichment:
+            return
         self.query_one("#firewall-view", FirewallView).render_data(
             self._fw_info, self._policy_info, self._subnet_cidrs
         )
@@ -269,6 +321,8 @@ class FirewallLogApp(App[None]):
 
     def request_mgmt_load(self, firewall_id: str) -> None:
         """Called from streaming.on_event when we first see a resourceId."""
+        if not self._enrichment:
+            return
         if self._firewall_id is None:
             self._firewall_id = firewall_id
             self._load_mgmt(firewall_id)
@@ -485,6 +539,8 @@ class FirewallLogApp(App[None]):
         }
 
     def _is_logs_tab_active(self) -> bool:
+        if not self._enrichment:
+            return True
         tabs = self.query_one("#main-tabs", TabbedContent)
         return tabs.active == "tab-logs"
 
@@ -671,6 +727,9 @@ class FirewallLogApp(App[None]):
     def action_trace(self) -> None:
         """Open the evaluation trace for the selected log row."""
         status = self.query_one("#status", StatusBar)
+        if not self._enrichment:
+            status.meta = "trace needs enrichment (ENRICHMENT=on or --enrichment)"
+            return
         row = self._row_index.get(self._selected_rowid or "")
         if row is None:
             # No highlight event yet (cursor never moved): use the cursor row.
@@ -697,6 +756,9 @@ class FirewallLogApp(App[None]):
     def action_refresh_metadata(self) -> None:
         """Force-refresh the firewall / policy / IP-group cache."""
         status = self.query_one("#status", StatusBar)
+        if not self._enrichment:
+            status.meta = "enrichment off (ENRICHMENT=on or --enrichment to enable)"
+            return
         if self._firewall_id is None:
             status.meta = "refresh skipped: no firewall seen yet"
             return

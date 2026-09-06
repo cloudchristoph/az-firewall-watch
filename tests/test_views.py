@@ -477,13 +477,69 @@ async def test_policy_node_selection_updates_details(structured_record, mgmt, fi
         assert not view.focus_rule("nope|nope|nope")
 
 
-async def test_ip_group_detail_dialog(structured_record, mgmt, firewall_id):
+@pytest.mark.parametrize("key", ["escape", "q"])
+async def test_ip_group_detail_dialog_closes_without_reaching_the_app(structured_record, mgmt, firewall_id, key):
     app = FirewallLogApp()
     async with app.run_test(size=(160, 45)) as pilot:
         await pilot.pause()
+        app.query_one("#f-action", Input).value = "deny"
         await app.push_screen(IpGroupDetailDialog(mgmt["snapshot"].ip_groups[G_SPOKES]))
         await pilot.pause(0.2)
         assert "ipgroup-all-spokes" in _text(app.screen) and "10.3.0.0/16" in _text(app.screen)
-        await pilot.press("escape")
-        await pilot.pause(0.2)
+        await pilot.press(key)
+        await pilot.pause(0.3)
         assert not isinstance(app.screen, IpGroupDetailDialog)
+        assert app.is_running and not app._exit                       # q did not quit the app
+        assert app.query_one("#f-action", Input).value == "deny"      # escape did not clear filters
+
+
+def make_inherited_snapshot() -> CachedSnapshot:
+    """Child policy with a parent that references ipgroup-onpremises."""
+    snap = make_snapshot()
+    parent = FirewallPolicyInfo(id="/base", name="fwp-base", sku_tier="Premium", rule_collection_groups=[
+        RuleCollectionGroup(id="/base/net", name="base-net", priority=9000, rule_collections=[
+            RuleCollection(name="base-rc", priority=100, action="Allow", rule_collection_type="Filter", rules=[
+                Rule(name="base-rule", rule_type="NetworkRule", source_ip_groups=[G_ONPREM],
+                     destination_addresses=["*"], destination_ports=["*"]),
+            ]),
+        ]),
+    ])
+    snap.policy.parent = parent
+    return snap
+
+
+async def test_inherited_policy_is_counted_listed_and_navigable(structured_record, mgmt, firewall_id):
+    mgmt["snapshot"] = make_inherited_snapshot()
+    app = FirewallLogApp()
+    async with app.run_test(size=(160, 45)) as pilot:
+        await pilot.pause()
+        await _load(app, pilot, firewall_id)
+        # usage counts include the parent rule (onprem: allow-onprem + base-rule)
+        ipg = app.query_one("#ipg-table", DataTable)
+        rows = {ipg.get_cell_at((i, 0)): ipg.get_cell_at((i, 3)) for i in range(ipg.row_count)}
+        assert rows == {"ipgroup-all-spokes": "2", "ipgroup-onpremises": "2"}
+        # policy tree shows the parent group first, marked with its origin
+        tree = app.query_one("#policy-tree", Tree)
+        assert [n.label.plain for n in tree.root.children] == ["[9000] base-net  · fwp-base", "[2000] rcg-net"]
+        assert app.query_one("#policy-view", PolicyView).focus_rule("base-net|base-rc|base-rule")
+        # related rules of the onprem group include the inherited one
+        app.query_one("#main-tabs", TabbedContent).active = "tab-ipgroups"
+        await pilot.pause()
+        ipg.focus()
+        ipg.move_cursor(row=1, animate=False)
+        await pilot.press("enter")
+        await pilot.pause()
+        rules = app.query_one("#ipg-rules", DataTable)
+        assert [rules.get_cell_at((i, 2)) for i in range(rules.row_count)] == ["base-rule", "allow-onprem"]
+
+
+async def test_policy_details_escape_markup(structured_record, mgmt, firewall_id):
+    app = FirewallLogApp()
+    async with app.run_test(size=(160, 45)) as pilot:
+        await pilot.pause()
+        await _load(app, pilot, firewall_id)
+        view = app.query_one("#policy-view", PolicyView)
+        assert view.focus_rule("rcg-net|rc-web|allow-web")
+        await pilot.pause()
+        details = str(app.query_one("#policy-details", Static).content)
+        assert "ipgroup-all-spokes: (10.3.0.0/16)" in details   # parentheses, no bracket markup

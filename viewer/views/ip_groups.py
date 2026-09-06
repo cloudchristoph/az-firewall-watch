@@ -1,6 +1,8 @@
 """IP Groups metadata tab view."""
 from __future__ import annotations
 
+from rich.markup import escape
+from textual import events
 from textual.containers import Horizontal
 from textual.app import ComposeResult
 from textual.message import Message
@@ -49,8 +51,11 @@ class IpGroupDetailDialog(ModalScreen[None]):
     def on_button_pressed(self, _event: Button.Pressed) -> None:
         self.dismiss()
 
-    def on_key(self, event) -> None:  # type: ignore[override]
+    def on_key(self, event: events.Key) -> None:
         if event.key in ("escape", "q"):
+            # Stop the key here, otherwise it bubbles on to the app's own
+            # q / escape bindings once the modal is gone.
+            event.stop()
             self.dismiss()
 
 
@@ -161,13 +166,13 @@ class IpGroupsView(Static):
         if len(group.ip_addresses) > 20:
             values += "\n…"
         details.update("\n".join([
-            f"[b]{group.name}[/b]",
+            f"[b]{escape(group.name)}[/b]",
             "",
-            f"[dim]Location[/]    {group.location or '-'}",
+            f"[dim]Location[/]    {escape(group.location) or '-'}",
             f"[dim]Entries[/]     {len(group.ip_addresses)}",
             "",
             "[dim]Values[/]",
-            values,
+            escape(values),
         ]))
 
         self._render_related_rules(group_id=key)
@@ -181,7 +186,8 @@ class IpGroupsView(Static):
             table.add_row("-", "-", "No policy loaded", "-", key="__empty_rules__")
             return
 
-        for g in sorted(self._policy.rule_collection_groups, key=lambda x: x.priority):
+        # includes inherited (parent) policy groups, in evaluation order
+        for _policy_name, g in self._policy.all_groups():
             for rc in sorted(g.rule_collections, key=lambda x: x.priority):
                 for r in rc.rules:
                     directions: list[str] = []

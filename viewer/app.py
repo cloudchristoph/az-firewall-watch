@@ -259,7 +259,7 @@ class FirewallLogApp(App[None]):
         if self._policy_info is None:
             return {}
         out: dict[str, int] = {}
-        for g in self._policy_info.rule_collection_groups:
+        for _policy_name, g in self._policy_info.all_groups():  # parent chain included
             for rc in g.rule_collections:
                 for r in rc.rules:
                     for gid in r.source_ip_groups + r.destination_ip_groups:

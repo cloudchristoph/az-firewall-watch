@@ -1,6 +1,7 @@
 """Policy metadata tab view."""
 from __future__ import annotations
 
+from rich.markup import escape
 from textual.containers import Horizontal
 from textual.app import ComposeResult
 from textual.widgets import Static, Tree
@@ -75,9 +76,11 @@ class PolicyView(Static):
             "policy": policy,
         }
 
-        for g in sorted(policy.rule_collection_groups, key=lambda x: x.priority):
+        # Inherited (parent) groups first, exactly as the firewall evaluates them.
+        for policy_name, g in policy.all_groups():
+            origin = f"  · {escape(policy_name)}" if policy.parent is not None and policy_name != policy.name else ""
             g_node = tree.root.add(
-                f"[{g.priority}] {g.name}",
+                f"[{g.priority}] {escape(g.name)}{origin}",
                 data={"kind": "rcg", "rcg": g},
             )
             for rc in sorted(g.rule_collections, key=lambda x: x.priority):
@@ -199,18 +202,21 @@ class PolicyView(Static):
 
         src_groups = self._render_group_values(rule.source_ip_groups, ip_groups)
         dst_groups = self._render_group_values(rule.destination_ip_groups, ip_groups)
+        def j(values: list[str]) -> str:
+            return escape(", ".join(values)) if values else "-"
+
         return "\n".join([
-            f"[b]Rule: {rule.name}[/b]",
+            f"[b]Rule: {escape(rule.name)}[/b]",
             "",
-            f"[dim]RCG[/]            {rcg.name if rcg else '-'}",
-            f"[dim]Collection[/]     {rc.name if rc else '-'}",
+            f"[dim]RCG[/]            {escape(rcg.name) if rcg else '-'}",
+            f"[dim]Collection[/]     {escape(rc.name) if rc else '-'}",
             f"[dim]Category[/]       {_rule_category(rule, rc) if rc else '-'}",
-            f"[dim]Protocols[/]      {', '.join(rule.protocols) if rule.protocols else '-'}",
-            f"[dim]Dest ports[/]     {', '.join(rule.destination_ports) if rule.destination_ports else '-'}",
+            f"[dim]Protocols[/]      {j(rule.protocols)}",
+            f"[dim]Dest ports[/]     {j(rule.destination_ports)}",
             "",
-            f"[dim]Source addrs[/]   {', '.join(rule.source_addresses) if rule.source_addresses else '-'}",
-            f"[dim]Target addrs[/]   {', '.join(rule.destination_addresses) if rule.destination_addresses else '-'}",
-            f"[dim]Target FQDNs[/]   {', '.join(rule.destination_fqdns) if rule.destination_fqdns else '-'}",
+            f"[dim]Source addrs[/]   {j(rule.source_addresses)}",
+            f"[dim]Target addrs[/]   {j(rule.destination_addresses)}",
+            f"[dim]Target FQDNs[/]   {j(rule.destination_fqdns)}",
             "",
             f"[dim]Source groups[/]  {src_groups}",
             f"[dim]Target groups[/]  {dst_groups}",
@@ -224,10 +230,11 @@ class PolicyView(Static):
         for gid in group_ids:
             grp = ip_groups.get(gid)
             if grp is None:
-                out.append(f"{gid} (unresolved)")
+                out.append(f"{escape(gid)} (unresolved)")
                 continue
             preview = ", ".join(grp.ip_addresses[:5])
             if len(grp.ip_addresses) > 5:
                 preview += ", …"
-            out.append(f"{grp.name}: [{preview}]" if preview else grp.name)
+            # Parentheses, not brackets: this string is rendered as Rich markup.
+            out.append(f"{escape(grp.name)}: ({escape(preview)})" if preview else escape(grp.name))
         return "\n                  ".join(out)

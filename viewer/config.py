@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import os
 import sys
+from collections.abc import Mapping
 from pathlib import Path
 
 from helpers import load_env  # re-exported for main.py
@@ -50,7 +51,7 @@ ENRICHMENT_KEY = "ENRICHMENT"
 _ON_VALUES = ("on", "true", "1", "yes")
 
 
-def enrichment_setting(argv: list[str], environ: "dict[str, str] | os._Environ") -> tuple[bool, bool]:
+def enrichment_setting(argv: list[str], environ: Mapping[str, str]) -> tuple[bool, bool]:
     """Resolve the enrichment flag.
 
     Returns ``(enabled, explicit)``. ``--no-enrichment`` / ``--enrichment`` on

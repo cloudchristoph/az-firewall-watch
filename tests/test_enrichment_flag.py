@@ -84,6 +84,13 @@ def test_set_env_value_appends_to_pre_flag_env(tmp_path: Path):
     assert "# ENRICHMENT=on reads" in text
 
 
+def test_set_env_value_collapses_duplicates(tmp_path: Path):
+    env = tmp_path / ".env"
+    env.write_text("A=1\nENRICHMENT=on\nB=2\nENRICHMENT=off\n", encoding="utf-8")
+    set_env_value(env, "ENRICHMENT", "off")
+    assert env.read_text(encoding="utf-8") == "A=1\nENRICHMENT=off\nB=2\n"
+
+
 def test_set_env_value_creates_missing_file(tmp_path: Path):
     env = tmp_path / ".env"
     set_env_value(env, "FOO", "bar")

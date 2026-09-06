@@ -23,7 +23,7 @@ from ..trace import (
 
 _ICON = {MATCH: "[green]✓[/]", MISS: "[red]✗[/]", UNKNOWN: "[yellow]?[/]", NA: "[dim]–[/]"}
 _PASS_TITLE = {"dnat": "Pass 1 · DNAT", "network": "Pass 2 · Network", "application": "Pass 3 · Application"}
-LEGEND = "[green]✓[/] match   [red]✗[/] miss   [yellow]?[/] cannot evaluate   [dim]–[/] not in log      Enter open rule · a toggle full tree · Esc/q/t close"
+LEGEND = "[green]✓[/] match   [red]✗[/] miss   [yellow]?[/] cannot evaluate   [dim]–[/] not in log      Enter: open rule · a: toggle full tree · Esc/q/t: close"
 
 
 class TraceScreen(ModalScreen[str | None]):

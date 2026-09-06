@@ -85,10 +85,16 @@ def set_env_value(env_file: Path, key: str, value: str) -> None:
     lines = _read_env_text(env_file).splitlines() if env_file.exists() else []
     prefix = f"{key}="
     replaced = False
-    for i, line in enumerate(lines):
+    kept: list[str] = []
+    for line in lines:
         if line.startswith(prefix):
-            lines[i] = f"{key}={value}"
+            if replaced:
+                continue  # drop duplicates (e.g. from manual edits) so the key is unambiguous
+            kept.append(f"{key}={value}")
             replaced = True
+        else:
+            kept.append(line)
+    lines = kept
     if not replaced:
         if key == "ENRICHMENT":
             lines.extend(_ENRICHMENT_COMMENT.rstrip("\n").splitlines())

@@ -26,8 +26,8 @@ LEGEND = "[green]✓[/] match   [red]✗[/] miss   [yellow]?[/] cannot evaluate 
 
 
 class TraceScreen(ModalScreen[str | None]):
-    """Dismisses with a rule ref (``rcg|rc|rule``) when a rule node is
-    selected, else ``None``."""
+    """Dismisses with a rule ref (``policy|rcg|rc|rule``, the same key the
+    Policy tab uses) when a rule node is selected, else ``None``."""
 
     DEFAULT_CSS = """
     TraceScreen {

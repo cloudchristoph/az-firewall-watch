@@ -141,7 +141,7 @@ class PolicyView(Static):
             details.update(self._rule_summary(g, rc, r, ip_groups))
 
     def focus_rule(self, rule_ref: str) -> bool:
-        """Focus a rule node by stable rule_ref (rcg|rc|rule)."""
+        """Focus a rule node by its stable ref ``policy|rcg|rc|rule`` (see ``_rule_ref``)."""
         tree = self.query_one("#policy-tree", Tree)
         node = self._rule_ref_to_node.get(rule_ref)
         if node is None:

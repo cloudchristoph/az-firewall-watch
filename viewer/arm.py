@@ -129,7 +129,12 @@ class ArmClient:
                     raise ArmError(resp.status, code, message)
                 if not text:
                     return {}
-                return json.loads(text)
+                try:
+                    return json.loads(text)
+                except json.JSONDecodeError as exc:
+                    # A 2xx with a non-JSON body (proxy / gateway HTML) must
+                    # surface as an ArmError like every other failure.
+                    raise ArmError(resp.status, "InvalidResponse", text[:200]) from exc
         except aiohttp.ClientError as exc:
             raise ArmError(0, "Transport", str(exc)) from exc
 

@@ -7,8 +7,8 @@ from typing import Iterable
 from .azure_resources import FirewallPolicyInfo, IpGroupInfo, Rule, RuleCollection, RuleCollectionGroup
 
 
-def _parse_networks(cidrs: Iterable[str]) -> list[ipaddress._BaseNetwork]:
-    nets: list[ipaddress._BaseNetwork] = []
+def _parse_networks(cidrs: Iterable[str]) -> list[ipaddress.IPv4Network | ipaddress.IPv6Network]:
+    nets: list[ipaddress.IPv4Network | ipaddress.IPv6Network] = []
     for c in cidrs:
         try:
             nets.append(ipaddress.ip_network(c, strict=False))
@@ -59,7 +59,7 @@ def find_matching_ip_groups(ip: str, ip_groups: dict[str, IpGroupInfo]) -> list[
     return matches
 
 
-def _ip_in_any(ip: ipaddress._BaseAddress,
+def _ip_in_any(ip: ipaddress.IPv4Address | ipaddress.IPv6Address,
                addresses: Iterable[str],
                ip_group_ids: Iterable[str],
                ip_groups: dict[str, IpGroupInfo]) -> bool:

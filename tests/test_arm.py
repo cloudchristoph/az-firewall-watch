@@ -128,6 +128,15 @@ async def test_http_error_raises_arm_error():
     assert exc.value.status == 403 and exc.value.code == "AuthorizationFailed"
 
 
+async def test_non_json_success_body_raises_arm_error():
+    """A gateway may answer 200 with HTML; that must not leak a JSONDecodeError."""
+    session = FakeSession({ARM + FW: (200, "<html>maintenance</html>")})
+    with pytest.raises(ArmError) as exc:
+        await ArmClient(FakeCredential(), session).get(FW, "v")
+    assert exc.value.status == 200 and exc.value.code == "InvalidResponse"
+    assert "maintenance" in exc.value.message
+
+
 async def test_transport_error_raises_arm_error():
     session = FakeSession({ARM + FW: aiohttp.ClientConnectionError("dns")})
     with pytest.raises(ArmError) as exc:

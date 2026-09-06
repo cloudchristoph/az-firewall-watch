@@ -95,6 +95,16 @@ def _s(props: dict, key: str) -> str:
     return str(v) if v is not None else ""
 
 
+def _format_mbps(rate: str) -> str:
+    if not rate:
+        return "-"
+    try:
+        value = float(rate)
+    except ValueError:
+        return f"{rate} Mbps"
+    return f"{value:.1f} Mbps" if value >= 1 else f"{value:.3f} Mbps"
+
+
 def _port(props: dict, key: str) -> str:
     """Port fields render as '-' when absent (e.g. ICMP has no ports)."""
     return _s(props, key) or "-"
@@ -276,12 +286,11 @@ def _parse_structured(record: dict, category: str, time: str, resource_id: str =
         )
 
     if category == "AZFWFatFlow":
-        # Top-talker flows; FlowRate is in Mbit/s.
+        # Top-talker flows; FlowRate is Mbit/s and arrives as a string with
+        # float noise ("3.2930000000000001", "0.024"). Sub-Mbit flows are
+        # common in practice, so keep three decimals below 1 Mbit/s.
         rate = _s(props, "FlowRate")
-        try:
-            rate_txt = f"{float(rate):.1f} Mbps"
-        except ValueError:
-            rate_txt = f"{rate} Mbps" if rate else "-"
+        rate_txt = _format_mbps(rate)
         return FirewallDataRow(
             rowid=_next_id(),
             time=time,

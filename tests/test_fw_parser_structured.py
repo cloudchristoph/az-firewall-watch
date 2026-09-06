@@ -165,20 +165,34 @@ def test_flow_trace_without_flag(structured_record):
     assert row.action == "-"
 
 
-def test_fat_flow_shows_rate_in_mbps(structured_record):
+def test_fat_flow_real_record(structured_record):
+    """Verbatim lab record: FlowRate is a string with float noise, ports are ints."""
     row = parse_record(structured_record(
-        "AZFWFatFlow",
-        Protocol="TCP", SourceIp="10.0.1.4", SourcePort=51000,
-        DestinationIp="10.0.2.5", DestinationPort=443, FlowRate=12.3456,
+        "AZFWFatFlow", time="2026-09-06T08:18:44.905695+00:00",
+        Protocol="TCP", SourceIp="146.75.118.114", SourcePort=443,
+        DestinationIp="10.2.0.6", DestinationPort=13590, FlowRate="3.2930000000000001",
     ))
     assert row.category == "FatFlow"
-    assert row.action == "12.3 Mbps"
+    assert row.action == "3.3 Mbps"
+    assert (row.sourceip, row.srcport, row.targetip, row.targetport) == ("146.75.118.114", "443", "10.2.0.6", "13590")
     assert row.moreinfo == "Top flow by bandwidth"
 
 
-def test_fat_flow_with_unparseable_rate(structured_record):
-    assert parse_record(structured_record("AZFWFatFlow", FlowRate="lots")).action == "lots Mbps"
-    assert parse_record(structured_record("AZFWFatFlow")).action == "-"
+@pytest.mark.parametrize(
+    "raw, expected",
+    [
+        (12.3456, "12.3 Mbps"),
+        ("0.311", "0.311 Mbps"),                 # sub-Mbit flows are common → 3 decimals
+        ("0.024", "0.024 Mbps"),
+        ("0.0080000000000000002", "0.008 Mbps"),
+        ("1", "1.0 Mbps"),
+        ("lots", "lots Mbps"),
+        (None, "-"),
+    ],
+)
+def test_fat_flow_rate_formatting(structured_record, raw, expected):
+    props = {} if raw is None else {"FlowRate": raw}
+    assert parse_record(structured_record("AZFWFatFlow", **props)).action == expected
 
 
 def test_missing_properties_are_empty_strings_not_none(structured_record):

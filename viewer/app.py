@@ -9,7 +9,17 @@ from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal
 from textual.screen import Screen
-from textual.widgets import DataTable, Footer, Header, Input, Label, Select, Switch
+from textual.widgets import (
+    DataTable,
+    Footer,
+    Header,
+    Input,
+    Label,
+    Select,
+    Switch,
+    TabbedContent,
+    TabPane,
+)
 
 from dialogs import DetailDialog, StatusBar
 from fw_parser import FirewallDataRow
@@ -20,6 +30,7 @@ from .config import CATEGORY_OPTIONS, MAX_ROWS, VERSION
 from .management import load_management_data
 from .streaming import run_stream
 from .updates import check_for_update
+from .views import FirewallView, IpGroupsView, PolicyView
 
 
 class FirewallLogApp(App[None]):
@@ -124,7 +135,15 @@ class FirewallLogApp(App[None]):
             yield Input(placeholder="Port",          id="f-port",   classes="filter-input")
             yield Label("Hide DNS")
             yield Switch(value=True, id="f-hide-dns")
-        yield DataTable(zebra_stripes=True, cursor_type="row", id="log-table")
+        with TabbedContent(id="main-tabs", initial="tab-logs"):
+            with TabPane("Logs", id="tab-logs"):
+                yield DataTable(zebra_stripes=True, cursor_type="row", id="log-table")
+            with TabPane("Firewall", id="tab-firewall"):
+                yield FirewallView(id="firewall-view")
+            with TabPane("Policy", id="tab-policy"):
+                yield PolicyView(id="policy-view")
+            with TabPane("IP Groups", id="tab-ipgroups"):
+                yield IpGroupsView(id="ipgroups-view")
         yield StatusBar(id="status")
         yield Footer()
 
@@ -135,6 +154,9 @@ class FirewallLogApp(App[None]):
             "Source", "Dest / FQDN", "Port",
             "Action", "Rule Info",
         )
+        # Initial state: Logs tab is active, filters must be visible.
+        self.query_one("#filter-bar", Horizontal).display = True
+        self._refresh_metadata_views()
         self._start_stream()
         self.set_interval(1.0, self._flush_rows)
         self._check_update()
@@ -169,6 +191,7 @@ class FirewallLogApp(App[None]):
             f"Live  (policy {tier}, {len(snap.ip_groups)} IP groups, "
             f"cache age {age_min}m)"
         )
+        self._refresh_metadata_views()
         self._refresh_table()
 
     def _apply_mgmt_data(self) -> None:
@@ -190,6 +213,29 @@ class FirewallLogApp(App[None]):
                 select.value = current
         except Exception:
             pass
+
+    def _refresh_metadata_views(self) -> None:
+        """Refresh Firewall / Policy / IP Groups tabs from current state."""
+        self.query_one("#firewall-view", FirewallView).render_data(
+            self._fw_info, self._policy_info, self._subnet_cidrs
+        )
+        self.query_one("#policy-view", PolicyView).render_data(self._policy_info, self._ip_groups)
+        self.query_one("#ipgroups-view", IpGroupsView).render_data(
+            self._ip_groups,
+            self._ip_group_usage_counts(),
+            self._policy_info,
+        )
+
+    def _ip_group_usage_counts(self) -> dict[str, int]:
+        if self._policy_info is None:
+            return {}
+        out: dict[str, int] = {}
+        for g in self._policy_info.rule_collection_groups:
+            for rc in g.rule_collections:
+                for r in rc.rules:
+                    for gid in r.source_ip_groups + r.destination_ip_groups:
+                        out[gid] = out.get(gid, 0) + 1
+        return out
 
     def request_mgmt_load(self, firewall_id: str) -> None:
         """Called from streaming.on_event when we first see a resourceId."""
@@ -341,6 +387,10 @@ class FirewallLogApp(App[None]):
             "hide_dns": self.query_one("#f-hide-dns", Switch).value,
         }
 
+    def _is_logs_tab_active(self) -> bool:
+        tabs = self.query_one("#main-tabs", TabbedContent)
+        return tabs.active == "tab-logs"
+
     @staticmethod
     def _matches(row: FirewallDataRow, f: dict) -> bool:
         if f["hide_dns"] and row.category.lower() == "dnsquery":               return False
@@ -355,10 +405,14 @@ class FirewallLogApp(App[None]):
     # ── events ─────────────────────────────────────────────────────────────────
     @on(Input.Changed, ".filter-input")
     def on_filter_changed(self, _event: Input.Changed) -> None:
+        if not self._is_logs_tab_active():
+            return
         self._refresh_table()
 
     @on(Select.Changed, "#f-cat")
     def on_category_changed(self, event: Select.Changed) -> None:
+        if not self._is_logs_tab_active():
+            return
         # If the user explicitly picks DnsQuery, disable the hide-DNS toggle so
         # they actually see those rows.
         if isinstance(event.value, str) and event.value == "dnsquery":
@@ -367,16 +421,37 @@ class FirewallLogApp(App[None]):
 
     @on(Switch.Changed, "#f-hide-dns")
     def on_hide_dns_changed(self, _event: Switch.Changed) -> None:
+        if not self._is_logs_tab_active():
+            return
         self._refresh_table()
+
+    @on(TabbedContent.TabActivated, "#main-tabs")
+    def on_tab_activated(self, event: TabbedContent.TabActivated) -> None:
+        logs_active = self._is_logs_tab_active()
+        self.query_one("#filter-bar", Horizontal).display = logs_active
+        if logs_active:
+            self._refresh_table()
+        else:
+            self.query_one("#status", StatusBar).visible_count = -1
+
+    @on(IpGroupsView.JumpToPolicyRule)
+    def on_ipgroup_jump_to_policy(self, event: IpGroupsView.JumpToPolicyRule) -> None:
+        tabs = self.query_one("#main-tabs", TabbedContent)
+        tabs.active = "tab-policy"
+        self.query_one("#policy-view", PolicyView).focus_rule(event.rule_ref)
 
     @on(DataTable.RowHighlighted)
     def on_row_highlighted(self, event: DataTable.RowHighlighted) -> None:
+        if event.data_table.id != "log-table" or not self._is_logs_tab_active():
+            return
         key = event.row_key.value if event.row_key else None
         if key is not None:
             self._selected_rowid = key
 
     @on(DataTable.RowSelected)
     def on_row_selected(self, event: DataTable.RowSelected) -> None:
+        if event.data_table.id != "log-table" or not self._is_logs_tab_active():
+            return
         rowid = event.row_key.value
         if rowid is None:
             return
@@ -425,6 +500,7 @@ class FirewallLogApp(App[None]):
         self.query_one("#status", StatusBar).paused = self._paused
 
     def action_clear_logs(self) -> None:
+        self._ensure_logs_tab()
         self._all_rows = []
         self._pending = []
         self._selected_rowid = None
@@ -436,6 +512,7 @@ class FirewallLogApp(App[None]):
         status.visible_count = -1
 
     def action_clear_filters(self) -> None:
+        self._ensure_logs_tab()
         for fid in ("#f-src", "#f-dst", "#f-action", "#f-proto", "#f-port"):
             self.query_one(fid, Input).value = ""
         self.query_one("#f-cat", Select).clear()
@@ -445,7 +522,13 @@ class FirewallLogApp(App[None]):
         self._refresh_table()
 
     def action_focus_filter(self) -> None:
+        self._ensure_logs_tab()
         self.query_one("#f-src", Input).focus()
+
+    def _ensure_logs_tab(self) -> None:
+        tabs = self.query_one("#main-tabs", TabbedContent)
+        if tabs.active != "tab-logs":
+            tabs.active = "tab-logs"
 
     def action_refresh_metadata(self) -> None:
         """Force-refresh the firewall / policy / IP-group cache."""

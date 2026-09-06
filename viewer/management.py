@@ -17,7 +17,7 @@ from .azure_resources import (
     fetch_all_subnet_cidrs,
     fetch_firewall,
     fetch_ip_groups,
-    fetch_policy,
+    fetch_policy_chain as fetch_policy,  # policy plus inherited parent chain
 )
 from .cache import CachedSnapshot, invalidate, load, save
 

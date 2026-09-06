@@ -16,6 +16,7 @@ from viewer.azure_resources import FirewallInfo, FirewallPolicyInfo, IpGroupInfo
 from viewer.cache import CachedSnapshot
 from viewer.views import FirewallView, IpGroupsView, PolicyView
 from viewer.views.ip_groups import IpGroupDetailDialog
+from viewer.views.trace_screen import TraceScreen
 
 pytestmark = pytest.mark.usefixtures("no_eventhub_env", "no_update_check")
 
@@ -212,6 +213,142 @@ async def test_detail_dialog_shows_enrichment(structured_record, mgmt, firewall_
         assert "Rule Action" in text and "Allow" in text
         assert "Policy SKU" in text and "Premium" in text
         assert "Dst IP Groups" not in text  # 1.1.1.1 is in no group
+
+
+async def test_detail_dialog_shows_logged_rule_definition(structured_record, mgmt, firewall_id):
+    app = FirewallLogApp()
+    async with app.run_test(size=(160, 45)) as pilot:
+        await pilot.pause()
+        await _load(app, pilot, firewall_id)
+        row = _net(structured_record, "10.3.5.4", "1.1.1.1")
+        enr = app._compute_enrichment(row)
+        assert enr["rule_priority"] == "RCG:2000 » RC:100"
+        assert enr["rule_action"] == "Allow"
+        assert enr["rule_definition"] == "TCP  443  from ipgroup-all-spokes  to *"
+        assert enr["trace_hint"].startswith("press t")
+        renamed = parse_record(structured_record(
+            "AZFWNetworkRule", SourceIp="10.3.5.4", DestinationIp="1.1.1.1", Action="Allow",
+            Policy="fwp-hub-premium-gwc", RuleCollectionGroup="rcg-net", RuleCollection="rc-web", Rule="gone",
+        ))
+        assert "not in loaded policy" in app._compute_enrichment(renamed)["rule_definition"]
+
+
+# ── evaluation trace ─────────────────────────────────────────────────────────
+
+async def _open_trace(app: FirewallLogApp, pilot, row) -> TraceScreen:
+    app._pending.append(row)
+    await app._flush_rows()
+    await pilot.pause()
+    tbl = app.query_one("#log-table", DataTable)
+    tbl.focus()
+    tbl.move_cursor(row=0, animate=False)
+    await pilot.pause()
+    await pilot.press("t")
+    await wait_until(pilot, lambda: isinstance(app.screen, TraceScreen))
+    await pilot.pause(0.2)
+    return app.screen
+
+
+def _tree_labels(tree: Tree) -> list[str]:
+    out: list[str] = []
+
+    def walk(node):
+        out.append(node.label.plain)
+        for child in node.children:
+            walk(child)
+
+    walk(tree.root)
+    return out
+
+
+async def test_trace_requires_selection_and_metadata(structured_record, mgmt, firewall_id):
+    app = FirewallLogApp()
+    async with app.run_test(size=(160, 45)) as pilot:
+        await pilot.pause()
+        status = app.query_one("#status", StatusBar)
+        await pilot.press("t")
+        await pilot.pause()
+        assert status.meta == "trace: select a log row first"
+        row = _net(structured_record, "10.3.5.4", "1.1.1.1")
+        app._pending.append(row)
+        await app._flush_rows()
+        await pilot.pause()
+        tbl = app.query_one("#log-table", DataTable)
+        tbl.focus()
+        tbl.move_cursor(row=0, animate=False)
+        await pilot.pause()
+        await pilot.press("t")
+        await pilot.pause()
+        assert status.meta == "trace needs policy metadata (not loaded)"
+        assert not isinstance(app.screen, TraceScreen)
+
+
+async def test_trace_screen_shows_logged_match_and_closes(structured_record, mgmt, firewall_id):
+    app = FirewallLogApp()
+    async with app.run_test(size=(160, 45)) as pilot:
+        await pilot.pause()
+        await _load(app, pilot, firewall_id)
+        screen = await _open_trace(app, pilot, _net(structured_record, "10.3.5.4", "1.1.1.1"))
+        labels = _tree_labels(screen.query_one("#trace-tree", Tree))
+        joined = "\n".join(labels)
+        assert "Threat Intelligence   mode Alert" in joined
+        assert "Pass 1 · DNAT rules   no collections" in joined
+        assert "[2000] rcg-net » [100] rc-web (Allow)" in joined
+        assert "allow-web" in joined and "← logged match" in joined
+        assert "Pass 3 · Application rules   not evaluated" in joined
+        assert "✓ Allow by rcg-net » rc-web » allow-web" in joined
+        assert "10.3.5.4 → 1.1.1.1:443 TCP" in _text(screen)
+        await pilot.press("escape")
+        await pilot.pause(0.2)
+        assert not isinstance(app.screen, TraceScreen)
+
+
+async def test_trace_screen_enter_jumps_to_policy_rule(structured_record, mgmt, firewall_id):
+    app = FirewallLogApp()
+    async with app.run_test(size=(160, 45)) as pilot:
+        await pilot.pause()
+        await _load(app, pilot, firewall_id)
+        screen = await _open_trace(app, pilot, _net(structured_record, "10.3.5.4", "1.1.1.1"))
+        tree = screen.query_one("#trace-tree", Tree)
+        assert tree.cursor_node is not None and "allow-web" in tree.cursor_node.label.plain  # pre-selected
+        await pilot.press("enter")
+        await wait_until(pilot, lambda: not isinstance(app.screen, TraceScreen))
+        await pilot.pause()
+        assert app.query_one("#main-tabs", TabbedContent).active == "tab-policy"
+        policy_tree = app.query_one("#policy-tree", Tree)
+        assert policy_tree.cursor_node is not None and policy_tree.cursor_node.label.plain == "allow-web"
+
+
+async def test_trace_for_no_rule_matched_row_shows_near_miss(structured_record, mgmt, firewall_id):
+    app = FirewallLogApp()
+    async with app.run_test(size=(160, 45)) as pilot:
+        await pilot.pause()
+        await _load(app, pilot, firewall_id)
+        row = parse_record(structured_record(
+            "AZFWNetworkRule", Protocol="TCP", SourceIp="10.3.5.4", SourcePort=1, DestinationIp="1.1.1.1",
+            DestinationPort=8443, Action="Deny", ActionReason="No rule matched. Proceeding with default action.",
+        ))
+        screen = await _open_trace(app, pilot, row)
+        joined = "\n".join(_tree_labels(screen.query_one("#trace-tree", Tree)))
+        assert "port: 8443 not in 443" in joined
+        assert "skipped — protocol TCP is not HTTP, HTTPS or MSSQL" in joined
+        assert "default action: Deny" in joined
+
+
+async def test_detail_dialog_t_opens_trace(structured_record, mgmt, firewall_id):
+    app = FirewallLogApp()
+    async with app.run_test(size=(160, 45)) as pilot:
+        await pilot.pause()
+        await _load(app, pilot, firewall_id)
+        app._pending.append(_net(structured_record, "10.3.5.4", "1.1.1.1"))
+        await app._flush_rows()
+        await pilot.pause()
+        app.query_one("#log-table", DataTable).focus()
+        await pilot.press("enter")
+        await wait_until(pilot, lambda: isinstance(app.screen, DetailDialog))
+        await pilot.pause(0.2)
+        await pilot.press("t")
+        await wait_until(pilot, lambda: isinstance(app.screen, TraceScreen))
 
 
 def test_compute_enrichment_without_metadata(structured_record):

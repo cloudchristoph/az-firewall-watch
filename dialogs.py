@@ -201,12 +201,18 @@ class DetailDialog(ModalScreen[None]):
                     yield self._field("Src IP Groups", ", ".join(enr["source_ip_groups"]))
                 if enr.get("dest_ip_groups"):
                     yield self._field("Dst IP Groups", ", ".join(enr["dest_ip_groups"]))
+                if enr.get("rule_policy"):
+                    yield self._field("Rule Policy  ", enr["rule_policy"])
                 if enr.get("rule_priority"):
                     yield self._field("Rule Priority", enr["rule_priority"])
                 if enr.get("rule_action"):
                     yield self._field("Rule Action  ", enr["rule_action"])
+                if enr.get("rule_definition"):
+                    yield self._field("Rule Def.    ", enr["rule_definition"])
                 if enr.get("policy_sku_tier"):
                     yield self._field("Policy SKU   ", enr["policy_sku_tier"])
+                if enr.get("trace_hint"):
+                    yield Static(f"[dim]{enr['trace_hint']}[/]", markup=True, classes="detail-row")
 
             yield Button("Close  (Esc)", variant="primary", id="btn-close")
 
@@ -219,6 +225,11 @@ class DetailDialog(ModalScreen[None]):
             # on to the App and trigger its own q / escape bindings.
             event.stop()
             self.dismiss()
+        elif event.key == "t" and self._enrichment.get("trace_hint"):
+            # Close the dialog and let the app open the trace for this row.
+            event.stop()
+            self.dismiss()
+            self.app.call_later(self.app.action_trace)  # type: ignore[attr-defined]
 
 
 class StatusBar(Static):

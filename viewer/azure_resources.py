@@ -29,7 +29,7 @@ class IpGroupInfo:
 @dataclass
 class Rule:
     name: str
-    rule_type: str = ""
+    rule_type: str = ""                     # NetworkRule | ApplicationRule | NatRule
     source_addresses: list[str] = field(default_factory=list)
     source_ip_groups: list[str] = field(default_factory=list)
     destination_addresses: list[str] = field(default_factory=list)
@@ -37,6 +37,19 @@ class Rule:
     destination_fqdns: list[str] = field(default_factory=list)
     destination_ports: list[str] = field(default_factory=list)
     protocols: list[str] = field(default_factory=list)
+    # application-rule extras the trace cannot evaluate locally (reported as "unknown")
+    fqdn_tags: list[str] = field(default_factory=list)
+    web_categories: list[str] = field(default_factory=list)
+    target_urls: list[str] = field(default_factory=list)
+    # DNAT extras
+    translated_address: str = ""
+    translated_fqdn: str = ""
+    translated_port: str = ""
+
+    @property
+    def kind(self) -> str:
+        """``dnat`` | ``network`` | ``application`` derived from the ARM ruleType."""
+        return _rule_kind(self.rule_type)
 
 
 @dataclass
@@ -46,6 +59,29 @@ class RuleCollection:
     action: str = ""
     rule_collection_type: str = ""
     rules: list[Rule] = field(default_factory=list)
+
+    @property
+    def kind(self) -> str:
+        """``dnat`` | ``network`` | ``application``.
+
+        NAT collections have their own ARM type; filter collections are typed
+        by their (homogeneous) rules.
+        """
+        if "nat" in (self.rule_collection_type or "").lower():
+            return "dnat"
+        for r in self.rules:
+            if r.rule_type:
+                return r.kind
+        return "network"
+
+
+def _rule_kind(rule_type: str) -> str:
+    t = (rule_type or "").lower()
+    if "nat" in t:
+        return "dnat"
+    if "application" in t:
+        return "application"
+    return "network"
 
 
 @dataclass
@@ -64,6 +100,19 @@ class FirewallPolicyInfo:
     threat_intel_mode: str = ""
     base_policy_id: str = ""
     rule_collection_groups: list[RuleCollectionGroup] = field(default_factory=list)
+    # Inherited (parent) policy, if any. Its groups are always evaluated
+    # before this policy's groups, per rule type.
+    parent: "FirewallPolicyInfo | None" = None
+
+    def all_groups(self) -> list[tuple[str, RuleCollectionGroup]]:
+        """Groups in firewall evaluation order within one rule-type pass:
+        parent policy first (by priority), then this policy (by priority).
+        Returns ``(policy_name, group)`` tuples."""
+        out: list[tuple[str, RuleCollectionGroup]] = []
+        if self.parent is not None:
+            out.extend(self.parent.all_groups())
+        out.extend((self.name, g) for g in sorted(self.rule_collection_groups, key=lambda g: g.priority))
+        return out
 
 
 @dataclass
@@ -189,6 +238,12 @@ def _parse_rule(raw: dict) -> Rule:
         destination_fqdns=list(raw.get("destinationFqdns") or []),
         destination_ports=ports,
         protocols=protocols,
+        fqdn_tags=list(raw.get("fqdnTags") or []),
+        web_categories=list(raw.get("webCategories") or []),
+        target_urls=list(raw.get("targetUrls") or []),
+        translated_address=str(raw.get("translatedAddress") or ""),
+        translated_fqdn=str(raw.get("translatedFqdn") or ""),
+        translated_port=str(raw.get("translatedPort") or ""),
     )
 
 
@@ -238,15 +293,34 @@ async def fetch_policy(arm: ArmClient, policy_id: str) -> FirewallPolicyInfo:
 
 
 def collect_ip_group_ids(policy: FirewallPolicyInfo) -> list[str]:
+    """All IP-group IDs referenced by *policy* and its parent chain."""
     seen: set[str] = set()
-    for g in policy.rule_collection_groups:
+    for _policy_name, g in policy.all_groups():
         for rc in g.rule_collections:
             for r in rc.rules:
-                for i in r.source_ip_groups:
-                    seen.add(i)
-                for i in r.destination_ip_groups:
-                    seen.add(i)
+                seen.update(r.source_ip_groups)
+                seen.update(r.destination_ip_groups)
     return sorted(seen)
+
+
+async def fetch_policy_chain(arm: ArmClient, policy_id: str, max_depth: int = 4) -> FirewallPolicyInfo:
+    """Fetch a policy and, best effort, its parent chain (``basePolicy``).
+
+    A parent that cannot be read (RBAC, deleted) is left as ``None``; the
+    child is still returned so the viewer degrades gracefully.
+    """
+    policy = await fetch_policy(arm, policy_id)
+    current = policy
+    depth = 0
+    while current.base_policy_id and depth < max_depth:
+        try:
+            parent = await fetch_policy(arm, current.base_policy_id)
+        except ArmError:
+            break
+        current.parent = parent
+        current = parent
+        depth += 1
+    return policy
 
 
 async def fetch_ip_group(arm: ArmClient, ip_group_id: str) -> IpGroupInfo:
@@ -282,6 +356,6 @@ __all__ = [
     "FirewallPolicyInfo", "FirewallInfo",
     "parse_resource_id",
     "fetch_firewall", "fetch_subnet_cidrs", "fetch_all_subnet_cidrs",
-    "fetch_policy", "fetch_ip_group", "fetch_ip_groups",
+    "fetch_policy", "fetch_policy_chain", "fetch_ip_group", "fetch_ip_groups",
     "collect_ip_group_ids",
 ]

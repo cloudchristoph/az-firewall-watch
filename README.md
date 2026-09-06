@@ -190,6 +190,7 @@ EVENT_HUB_START_POSITION=latest
 | `Tab`        | Move between filter inputs            |
 | `Enter`      | Open detail view for the selected row (`Escape` or `q` closes it) |
 | `c`          | Clear all rows from the table         |
+| `t`          | Open the evaluation trace for the selected row (needs metadata) |
 | `Ctrl` + `r` | Re-fetch firewall / policy / IP-group metadata (bypasses the cache) |
 
 The status bar at the bottom shows the connection state, total events received,
@@ -218,9 +219,43 @@ Azure Resource Manager (ARM):
 The metadata also enriches the **Logs** tab: addresses inside the firewall's
 own subnets are rendered as `AzFw.<last octet>` so traffic from the firewall
 instances themselves (DNS proxy, probes) stands out, and the row detail dialog
-lists the IP groups that contain source and destination, the matching rule's
-priorities and action, and the policy SKU tier. The status bar shows a short
-summary (`policy Premium · 11 IP groups · fresh`).
+lists the IP groups that contain source and destination, the definition and
+priorities of the rule the firewall logged (looked up by name, never guessed),
+and the policy SKU tier. The status bar shows a short summary
+(`policy Premium · 11 IP groups · fresh`).
+
+### Evaluation trace (`t`)
+
+Press `t` on a log row to see the path that flow took through the policy,
+in the order Azure Firewall actually uses: Threat Intelligence first, then
+three passes over all rule collection groups — DNAT, Network, Application —
+each in inherited-policy-first, then priority order, stopping at the first
+match. The Application pass is only run for HTTP, HTTPS and MSSQL flows.
+
+```text
+Policy evaluation
+├─ Threat Intelligence   mode Alert — no hit
+├─ Pass 1 · DNAT rules   no collections of this type
+├─ Pass 2 · Network rules
+│  ├─ ✗ [2000] cclab-network-rule-collection-group » [100] priority-demo-net-rules (Deny)
+│  │   └─ ✗ deny-bad   ✓ source  ✗ destination  ✓ port  ✓ protocol
+│  ├─ ✓ [2000] cclab-network-rule-collection-group » [200] azure-monitor-access (Allow)
+│  │   ├─ ? allow-azure-monitor   ✓ source  ? destination  ✓ port  ✓ protocol
+│  │   └─ ✓ allow-web   ✓ source  ✓ destination  ✓ port  ✓ protocol   ← logged match
+│  └─ evaluation stops here — rule matched
+├─ Pass 3 · Application rules   not evaluated — a rule already matched
+└─ ✓ Allow by cclab-network-rule-collection-group » azure-monitor-access » allow-web
+```
+
+Everything before the logged rule was really evaluated and rejected by the
+firewall; *why* is computed locally per criterion. `?` marks criteria that
+cannot be evaluated here — service tags such as `AzureMonitor`, FQDNs in
+network rules, FQDN tags, web categories, target URLs, and IP groups your
+identity cannot read. For `Deny · no rule matched` rows the whole path is
+computed and the near misses show which criterion failed (for example
+`port: 8443 not in 443`). `Enter` on a rule opens it in the Policy tab. The
+trace explains the *cached* policy; if the logged rule is missing from it, a
+warning suggests `Ctrl+R`.
 
 **How it authenticates.** The ARM client uses `DefaultAzureCredential` (Azure
 CLI login, managed identity, environment credentials, …) and falls back to a
@@ -229,7 +264,7 @@ with a SAS connection string. Your identity needs **Reader** on the firewall,
 its policy and the IP groups. Without ARM access the status bar says
 *metadata unavailable* and the viewer works exactly as before.
 
-**Cache.** Metadata is cached for 24 hours in `~/.az-firewall-watch/cache.json`
+**Cache.** Metadata is cached for one hour in `~/.az-firewall-watch/cache.json`
 (file mode `0600`; falls back to `.azfw-cache.json` next to the binary if the
 home directory is not writable). Press `Ctrl+R` to re-fetch after changing
 rules or IP groups.

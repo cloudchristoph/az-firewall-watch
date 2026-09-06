@@ -19,8 +19,10 @@ from .azure_resources import (
 from .config import BASE_DIR
 
 
-DEFAULT_TTL_SECONDS = 24 * 60 * 60
-_CACHE_VERSION = 1
+# One hour: the evaluation trace explains the *cached* policy, so a long TTL
+# would explain yesterday's rules. Ctrl+R refreshes on demand.
+DEFAULT_TTL_SECONDS = 60 * 60
+_CACHE_VERSION = 2  # v2: nested parent policy, extra rule fields
 
 
 @dataclass
@@ -123,38 +125,44 @@ def _serialize(snap: CachedSnapshot) -> dict[str, Any]:
     }
 
 
+def _hydrate_policy(pol_raw: dict[str, Any] | None) -> FirewallPolicyInfo | None:
+    if not pol_raw:
+        return None
+    rcg_list: list[RuleCollectionGroup] = []
+    for g in pol_raw.get("rule_collection_groups") or []:
+        rcs: list[RuleCollection] = []
+        for rc in g.get("rule_collections") or []:
+            # tolerate cache entries written by older versions (missing keys)
+            rules = [Rule(**{k: v for k, v in r.items() if k in Rule.__dataclass_fields__})
+                     for r in (rc.get("rules") or [])]
+            rcs.append(RuleCollection(
+                name=rc.get("name", ""),
+                priority=int(rc.get("priority") or 0),
+                action=rc.get("action", ""),
+                rule_collection_type=rc.get("rule_collection_type", ""),
+                rules=rules,
+            ))
+        rcg_list.append(RuleCollectionGroup(
+            id=g.get("id", ""),
+            name=g.get("name", ""),
+            priority=int(g.get("priority") or 0),
+            rule_collections=rcs,
+        ))
+    return FirewallPolicyInfo(
+        id=pol_raw.get("id", ""),
+        name=pol_raw.get("name", ""),
+        sku_tier=pol_raw.get("sku_tier", ""),
+        threat_intel_mode=pol_raw.get("threat_intel_mode", ""),
+        base_policy_id=pol_raw.get("base_policy_id", ""),
+        rule_collection_groups=rcg_list,
+        parent=_hydrate_policy(pol_raw.get("parent")),
+    )
+
+
 def _hydrate(entry: dict[str, Any]) -> CachedSnapshot:
     fw_raw = entry["firewall"]
     fw = FirewallInfo(**fw_raw)
-    pol_raw = entry.get("policy")
-    policy: FirewallPolicyInfo | None = None
-    if pol_raw:
-        rcg_list: list[RuleCollectionGroup] = []
-        for g in pol_raw.get("rule_collection_groups") or []:
-            rcs: list[RuleCollection] = []
-            for rc in g.get("rule_collections") or []:
-                rules = [Rule(**r) for r in (rc.get("rules") or [])]
-                rcs.append(RuleCollection(
-                    name=rc.get("name", ""),
-                    priority=int(rc.get("priority") or 0),
-                    action=rc.get("action", ""),
-                    rule_collection_type=rc.get("rule_collection_type", ""),
-                    rules=rules,
-                ))
-            rcg_list.append(RuleCollectionGroup(
-                id=g.get("id", ""),
-                name=g.get("name", ""),
-                priority=int(g.get("priority") or 0),
-                rule_collections=rcs,
-            ))
-        policy = FirewallPolicyInfo(
-            id=pol_raw.get("id", ""),
-            name=pol_raw.get("name", ""),
-            sku_tier=pol_raw.get("sku_tier", ""),
-            threat_intel_mode=pol_raw.get("threat_intel_mode", ""),
-            base_policy_id=pol_raw.get("base_policy_id", ""),
-            rule_collection_groups=rcg_list,
-        )
+    policy = _hydrate_policy(entry.get("policy"))
     groups = {k: IpGroupInfo(**v) for k, v in (entry.get("ip_groups") or {}).items()}
     return CachedSnapshot(
         firewall=fw,

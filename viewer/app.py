@@ -237,10 +237,10 @@ class FirewallLogApp(App[None]):
             # resourceId only gave us an upper-cased one.
             self.sub_title = snap.firewall.name
             self._fw_name_set = True
-        tier = snap.policy.sku_tier if snap.policy else "?"
+        policy_txt = f"policy {snap.policy.sku_tier or 'unknown tier'}" if snap.policy else "no policy attached"
         age_min = int(snap.age_seconds() // 60)
         age = "fresh" if age_min < 1 else f"cache {age_min}m"
-        status.meta = f"policy {tier} · {len(snap.ip_groups)} IP groups · {age}"
+        status.meta = f"{policy_txt} · {len(snap.ip_groups)} IP groups · {age}"
         self._refresh_metadata_views()
         self._refresh_table()
 

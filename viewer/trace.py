@@ -93,7 +93,9 @@ class CollectionTrace:
 
     @property
     def rule_ref_prefix(self) -> str:
-        return f"{self.group.name}|{self.collection.name}|"
+        # policy|group|collection| — the policy name disambiguates inherited chains
+        # where a parent and child reuse group/collection/rule names.
+        return f"{self.policy_name}|{self.group.name}|{self.collection.name}|"
 
 
 @dataclass

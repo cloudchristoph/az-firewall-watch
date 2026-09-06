@@ -198,7 +198,7 @@ class IpGroupsView(Static):
                     if not directions:
                         continue
 
-                    rule_ref = f"{g.name}|{rc.name}|{r.name}"
+                    rule_ref = f"{_policy_name}|{g.name}|{rc.name}|{r.name}"  # same key as PolicyView
                     self._rule_index[rule_ref] = {
                         "rcg": g.name,
                         "rc": rc.name,

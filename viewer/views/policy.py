@@ -91,7 +91,7 @@ class PolicyView(Static):
                     data={"kind": "rc", "rcg": g, "rc": rc},
                 )
                 for r in rc.rules:
-                    rule_ref = self._rule_ref(g.name, rc.name, r.name)
+                    rule_ref = self._rule_ref(policy_name, g.name, rc.name, r.name)
                     node = rc_node.add_leaf(
                         escape(r.name),
                         data={"kind": "rule", "rcg": g, "rc": rc, "rule": r, "rule_ref": rule_ref},
@@ -166,8 +166,9 @@ class PolicyView(Static):
             return False
 
     @staticmethod
-    def _rule_ref(rcg_name: str, rc_name: str, rule_name: str) -> str:
-        return f"{rcg_name}|{rc_name}|{rule_name}"
+    def _rule_ref(policy_name: str, rcg_name: str, rc_name: str, rule_name: str) -> str:
+        """Stable key ``policy|rcg|rc|rule`` shared with the trace and IP-group views."""
+        return f"{policy_name}|{rcg_name}|{rc_name}|{rule_name}"
 
     def _current_ip_groups(self) -> dict[str, IpGroupInfo]:
         root_data = self.query_one("#policy-tree", Tree).root.data

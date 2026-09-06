@@ -507,7 +507,7 @@ async def test_policy_node_selection_updates_details(structured_record, mgmt, fi
         app.query_one("#main-tabs", TabbedContent).active = "tab-policy"
         await pilot.pause()
         view = app.query_one("#policy-view", PolicyView)
-        assert view.focus_rule("rcg-net|rc-web|allow-web")
+        assert view.focus_rule("fwp-hub-premium-gwc|rcg-net|rc-web|allow-web")
         await pilot.pause()
         details = str(app.query_one("#policy-details", Static).content)
         assert "Rule: allow-web" in details
@@ -560,7 +560,8 @@ async def test_inherited_policy_is_counted_listed_and_navigable(structured_recor
         # policy tree shows the parent group first, marked with its origin
         tree = app.query_one("#policy-tree", Tree)
         assert [n.label.plain for n in tree.root.children] == ["[9000] base-net  · fwp-base", "[2000] rcg-net"]
-        assert app.query_one("#policy-view", PolicyView).focus_rule("base-net|base-rc|base-rule")
+        assert app.query_one("#policy-view", PolicyView).focus_rule("fwp-base|base-net|base-rc|base-rule")
+        assert not app.query_one("#policy-view", PolicyView).focus_rule("base-net|base-rc|base-rule")  # policy is part of the key
         # related rules of the onprem group include the inherited one
         app.query_one("#main-tabs", TabbedContent).active = "tab-ipgroups"
         await pilot.pause()
@@ -578,7 +579,7 @@ async def test_policy_details_escape_markup(structured_record, mgmt, firewall_id
         await pilot.pause()
         await _load(app, pilot, firewall_id)
         view = app.query_one("#policy-view", PolicyView)
-        assert view.focus_rule("rcg-net|rc-web|allow-web")
+        assert view.focus_rule("fwp-hub-premium-gwc|rcg-net|rc-web|allow-web")
         await pilot.pause()
         details = str(app.query_one("#policy-details", Static).content)
         assert "ipgroup-all-spokes: (10.3.0.0/16)" in details   # parentheses, no bracket markup

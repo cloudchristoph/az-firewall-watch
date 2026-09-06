@@ -1,7 +1,6 @@
 """Constants and configuration helpers for the viewer TUI."""
 from __future__ import annotations
 
-import os
 import sys
 from collections.abc import Mapping
 from pathlib import Path

@@ -160,13 +160,17 @@ class PolicyView(Static):
 
     @staticmethod
     def _policy_summary(policy: FirewallPolicyInfo) -> str:
+        own = len(policy.rule_collection_groups)
+        inherited = len(policy.all_groups()) - own
+        rcg_count = f"{own}" if not inherited else f"{own} own + {inherited} inherited"
+        base = escape(policy.parent.name) if policy.parent is not None else (escape(policy.base_policy_id) or "-")
         return "\n".join([
-            f"[b]{policy.name}[/b]",
+            f"[b]{escape(policy.name)}[/b]",
             "",
-            f"[dim]SKU[/]            {policy.sku_tier or '-'}",
-            f"[dim]ThreatIntel[/]    {policy.threat_intel_mode or '-'}",
-            f"[dim]Base policy[/]    {policy.base_policy_id or '-'}",
-            f"[dim]RCG count[/]      {len(policy.rule_collection_groups)}",
+            f"[dim]SKU[/]            {escape(policy.sku_tier) or '-'}",
+            f"[dim]ThreatIntel[/]    {escape(policy.threat_intel_mode) or '-'}",
+            f"[dim]Base policy[/]    {base}",
+            f"[dim]RCG count[/]      {rcg_count}",
         ])
 
     @staticmethod

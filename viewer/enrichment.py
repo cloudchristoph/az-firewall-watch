@@ -2,19 +2,26 @@
 from __future__ import annotations
 
 import ipaddress
+from functools import lru_cache
 from typing import Iterable
 
 from .azure_resources import IpGroupInfo
 
 
-def _parse_networks(cidrs: Iterable[str]) -> list[ipaddress.IPv4Network | ipaddress.IPv6Network]:
+@lru_cache(maxsize=32)
+def _parsed_networks(cidrs: tuple[str, ...]) -> tuple[ipaddress.IPv4Network | ipaddress.IPv6Network, ...]:
+    """Parse once per distinct CIDR list — resolve_fw_instance runs per table row."""
     nets: list[ipaddress.IPv4Network | ipaddress.IPv6Network] = []
     for c in cidrs:
         try:
             nets.append(ipaddress.ip_network(c, strict=False))
         except ValueError:
             continue
-    return nets
+    return tuple(nets)
+
+
+def _parse_networks(cidrs: Iterable[str]) -> tuple[ipaddress.IPv4Network | ipaddress.IPv6Network, ...]:
+    return _parsed_networks(tuple(cidrs))
 
 
 def resolve_fw_instance(ip: str, subnet_cidrs: Iterable[str]) -> str | None:

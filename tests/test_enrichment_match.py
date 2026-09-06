@@ -53,6 +53,18 @@ def test_resolve_fw_instance_ignores_invalid_cidrs():
     assert resolve_fw_instance("10.2.0.6", ["nope", "10.2.0.0/26"]) == "AzFw.6"
 
 
+def test_parsed_networks_are_cached_per_cidr_list():
+    """resolve_fw_instance runs per table row; the CIDR parsing must not (Copilot review)."""
+    from viewer.enrichment import _parse_networks, _parsed_networks
+
+    _parsed_networks.cache_clear()
+    first = _parse_networks(["10.2.0.0/26", "bad", "10.2.0.64/26"])
+    second = _parse_networks(["10.2.0.0/26", "bad", "10.2.0.64/26"])
+    assert first is second and len(first) == 2
+    assert _parsed_networks.cache_info().hits == 1
+    assert _parse_networks(["10.2.0.0/26"]) is not first
+
+
 # ── IP groups ────────────────────────────────────────────────────────────────
 
 def test_find_matching_ip_groups_returns_all_containing_groups():

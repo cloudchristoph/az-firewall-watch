@@ -96,7 +96,11 @@ class PolicyView(Static):
                         data={"kind": "rule", "rcg": g, "rc": rc, "rule": r, "rule_ref": rule_ref},
                     )
                     self._rule_ref_to_node[rule_ref] = node
-        tree.root.expand_all()
+        # Expand only the groups; collections and rules open on demand (large
+        # policies have thousands of rule nodes).
+        tree.root.expand()
+        for g_node in tree.root.children:
+            g_node.expand()
         details.update(self._policy_summary(policy))
 
         # stash current ip-group map for detail rendering
@@ -142,8 +146,20 @@ class PolicyView(Static):
         if node is None:
             return False
         try:
-            tree.select_node(node)
-            node.expand()
+            # open the ancestors first — the tree is collapsed below group level
+            ancestor = node.parent
+            while ancestor is not None:
+                ancestor.expand()
+                ancestor = ancestor.parent
+
+            # The tree rebuilds its line index after the next refresh; only then
+            # can the cursor land on a node that was hidden a moment ago.
+            def _go(target=node) -> None:
+                tree.move_cursor(target)
+                tree.select_node(target)
+                tree.scroll_to_node(target)
+
+            self.call_after_refresh(_go)
             return True
         except Exception:
             return False

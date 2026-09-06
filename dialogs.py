@@ -229,6 +229,7 @@ class StatusBar(Static):
     visible_count: reactive[int] = reactive(-1)  # -1 = no filter active
     skipped: reactive[int] = reactive(0)
     paused: reactive[bool] = reactive(False)
+    meta: reactive[str] = reactive("")  # management-plane metadata summary
 
     def render(self) -> str:  # type: ignore[override]
         icon = "⏸ PAUSED" if self.paused else "▶ LIVE"
@@ -237,9 +238,10 @@ class StatusBar(Static):
             events_part = f"Events (filtered): {self.visible_count}/{self.total}"
         else:
             events_part = f"Events: {self.total}"
+        meta_part = f"   │   {self.meta}" if self.meta else ""
         return (
             f" {icon}   {self.status}   │   "
-            f"{events_part}{skipped_part} "
+            f"{events_part}{skipped_part}{meta_part} "
         )
 
     def watch_paused(self, paused: bool) -> None:

@@ -95,6 +95,13 @@ class FirewallLogApp(App[None]):
         margin: 0 1;
     }
 
+    TabbedContent {
+        height: 1fr;
+    }
+    TabPane {
+        height: 1fr;
+        padding: 0;
+    }
     DataTable {
         height: 1fr;
     }
@@ -185,8 +192,10 @@ class FirewallLogApp(App[None]):
             "Source", "Dest / FQDN", "Port",
             "Action", "Rule Info",
         )
-        # Initial state: Logs tab is active, filters must be visible.
+        # Initial state: Logs tab is active, filters must be visible, and the
+        # table has focus so single-key bindings (f, c, arrows) work at once.
         self.query_one("#filter-bar", Horizontal).display = True
+        tbl.focus()
         self._refresh_metadata_views()
         self._start_stream()
         self.set_interval(1.0, self._flush_rows)
@@ -204,46 +213,27 @@ class FirewallLogApp(App[None]):
     @work(exclusive=True, group="mgmt")
     async def _load_mgmt(self, firewall_id: str, *, force: bool = False) -> None:
         """Background fetch of firewall / policy / IP-groups metadata."""
+        status = self.query_one("#status", StatusBar)
         snap = await load_management_data(firewall_id, force=force)
         if snap is None:
-            self.query_one("#status", StatusBar).status = (
-                "Live  (metadata unavailable \u2014 check ARM access)"
-            )
+            status.meta = "metadata unavailable (no ARM access)"
             return
         self._fw_info = snap.firewall
         self._policy_info = snap.policy
         self._ip_groups = snap.ip_groups
         self._subnet_cidrs = snap.subnet_cidrs
         self._mgmt_loaded = True
-        self._apply_mgmt_data()
-        age_min = int(snap.age_seconds() // 60)
+        if snap.firewall.name:
+            # ARM knows the real (case-preserved) name; the diagnostics
+            # resourceId only gave us an upper-cased one.
+            self.sub_title = snap.firewall.name
+            self._fw_name_set = True
         tier = snap.policy.sku_tier if snap.policy else "?"
-        self.query_one("#status", StatusBar).status = (
-            f"Live  (policy {tier}, {len(snap.ip_groups)} IP groups, "
-            f"cache age {age_min}m)"
-        )
+        age_min = int(snap.age_seconds() // 60)
+        age = "fresh" if age_min < 1 else f"cache {age_min}m"
+        status.meta = f"policy {tier} · {len(snap.ip_groups)} IP groups · {age}"
         self._refresh_metadata_views()
         self._refresh_table()
-
-    def _apply_mgmt_data(self) -> None:
-        """React to newly loaded management data: SKU-gated category dropdown."""
-        if self._policy_info is None:
-            return
-        tier = (self._policy_info.sku_tier or "").lower()
-        if tier in ("standard", "basic"):
-            hidden = {"threatintel", "idps"}
-            opts = [(label, value) for label, value in CATEGORY_OPTIONS
-                    if value not in hidden]
-        else:
-            opts = list(CATEGORY_OPTIONS)
-        select = self.query_one("#f-cat", Select)
-        current = select.value
-        try:
-            select.set_options(opts)
-            if isinstance(current, str) and any(v == current for _, v in opts):
-                select.value = current
-        except Exception:
-            pass
 
     def _refresh_metadata_views(self) -> None:
         """Refresh Firewall / Policy / IP Groups tabs from current state."""
@@ -630,12 +620,11 @@ class FirewallLogApp(App[None]):
 
     def action_refresh_metadata(self) -> None:
         """Force-refresh the firewall / policy / IP-group cache."""
+        status = self.query_one("#status", StatusBar)
         if self._firewall_id is None:
-            self.query_one("#status", StatusBar).status = (
-                "Refresh skipped \u2014 no firewall resource ID seen yet"
-            )
+            status.meta = "refresh skipped: no firewall seen yet"
             return
-        self.query_one("#status", StatusBar).status = "Refreshing metadata\u2026"
+        status.meta = "refreshing metadata…"
         self._load_mgmt(self._firewall_id, force=True)
 
     def get_system_commands(self, screen: Screen):  # type: ignore[override]

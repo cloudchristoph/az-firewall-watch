@@ -336,6 +336,21 @@ and headless runs of both the viewer and the setup wizard via Textual's
 test pilot with the Azure CLI mocked out. No Azure connection is required. The
 same suite runs in CI on every push and pull request.
 
+**Live integration tests** (optional, never run in CI) exercise the real ARM
+round trip and a real Event Hub. They are skipped unless you point them at
+your environment; only read operations are made, and the metadata cache is
+redirected to a temporary directory:
+
+```bash
+AZFW_LIVE_FIREWALL_ID=/subscriptions/<sub>/resourceGroups/<rg>/providers/Microsoft.Network/azureFirewalls/<fw> \
+AZFW_LIVE_EVENTHUB_NAMESPACE=<ns>.servicebus.windows.net \
+AZFW_LIVE_EVENTHUB_NAME=firewall-logs \
+pytest tests/live -m live
+```
+
+Your identity needs Reader on the firewall, its policy and IP groups, and the
+*Azure Event Hubs Data Receiver* role on the hub.
+
 ### 💰 Cost considerations
 
 An Event Hub for firewall logs is typically inexpensive:

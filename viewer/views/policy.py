@@ -63,6 +63,7 @@ class PolicyView(Static):
         if policy is None:
             tree.root.set_label("Policy data unavailable")
             tree.root.remove_children()
+            tree.root.data = None  # no stale policy details on the root node
             tree.root.expand()
             details.update("Policy data unavailable")
             return

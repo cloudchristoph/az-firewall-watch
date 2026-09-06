@@ -422,6 +422,20 @@ async def test_views_show_placeholders_before_metadata(firewall_id):
         assert ipg.row_count == 1 and ipg.get_cell_at((0, 0)) == "No IP groups loaded"
 
 
+async def test_policy_view_clears_root_data_when_policy_disappears(structured_record, mgmt, firewall_id):
+    """Copilot review: after a refresh without policy, the root node must not keep the old details."""
+    app = FirewallLogApp()
+    async with app.run_test(size=(160, 45)) as pilot:
+        await pilot.pause()
+        await _load(app, pilot, firewall_id)
+        tree = app.query_one("#policy-tree", Tree)
+        assert isinstance(tree.root.data, dict) and tree.root.data["kind"] == "policy"
+        app.query_one("#policy-view", PolicyView).render_data(None, {})
+        await pilot.pause()
+        assert tree.root.data is None
+        assert tree.root.label.plain == "Policy data unavailable" and not tree.root.children
+
+
 async def test_views_render_metadata(structured_record, mgmt, firewall_id):
     app = FirewallLogApp()
     async with app.run_test(size=(160, 45)) as pilot:

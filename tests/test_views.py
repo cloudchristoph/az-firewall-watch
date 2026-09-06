@@ -508,9 +508,9 @@ async def test_policy_node_selection_updates_details(structured_record, mgmt, fi
         await pilot.pause()
         view = app.query_one("#policy-view", PolicyView)
         assert view.focus_rule("fwp-hub-premium-gwc|rcg-net|rc-web|allow-web")
-        await pilot.pause()
+        # the cursor move and selection happen after the next refresh (slow on Windows CI)
+        await wait_until(pilot, lambda: "Rule: allow-web" in str(app.query_one("#policy-details", Static).content))
         details = str(app.query_one("#policy-details", Static).content)
-        assert "Rule: allow-web" in details
         assert "ipgroup-all-spokes" in details and "10.3.0.0/16" in details
         assert "443" in details
         assert not view.focus_rule("nope|nope|nope")

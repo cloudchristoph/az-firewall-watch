@@ -85,6 +85,22 @@ def test_version_mismatch_is_ignored_and_reset(cache_file):
     assert json.loads(cache_file.read_text())["_version"] == cache._CACHE_VERSION
 
 
+@pytest.mark.parametrize("content", [
+    "[]",                                                       # valid JSON, wrong shape
+    "42",
+    json.dumps({"_version": cache._CACHE_VERSION, "entries": []}),   # entries not a mapping
+    json.dumps({"_version": cache._CACHE_VERSION, "entries": {FW_ID: "x"}}),  # entry not a dict
+])
+def test_malformed_but_valid_json_is_a_miss_and_reset(cache_file, content):
+    cache_file.write_text(content)
+    assert cache.load(FW_ID) is None
+    cache.invalidate(FW_ID)  # must not raise
+    cache.save(FW_ID, _snapshot())  # resets the store instead of crashing the refresh
+    assert cache.load(FW_ID) is not None
+    data = json.loads(cache_file.read_text())
+    assert data["_version"] == cache._CACHE_VERSION and list(data["entries"]) == [FW_ID]
+
+
 def test_ttl(cache_file):
     old = _snapshot(fetched_at=time.time() - cache.DEFAULT_TTL_SECONDS - 5)
     assert not old.is_fresh()

@@ -55,19 +55,33 @@ def cache_path() -> Path:
         return BASE_DIR / ".azfw-cache.json"
 
 
+def _empty_store() -> dict[str, Any]:
+    return {"_version": _CACHE_VERSION, "entries": {}}
+
+
+def _read_store(path: Path) -> dict[str, Any] | None:
+    """Read the cache file; ``None`` when unreadable, the wrong version, or not
+    dict-shaped (valid JSON that is a list, or ``entries`` that is not a mapping)."""
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    if not isinstance(data, dict) or data.get("_version") != _CACHE_VERSION:
+        return None
+    if not isinstance(data.get("entries"), dict):
+        return None
+    return data
+
+
 def load(firewall_id: str) -> CachedSnapshot | None:
     path = cache_path()
     if not path.exists():
         return None
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
+    data = _read_store(path)
+    if data is None:
         return None
-    if data.get("_version") != _CACHE_VERSION:
-        return None
-    entries = data.get("entries") or {}
-    entry = entries.get(firewall_id)
-    if not entry:
+    entry = data["entries"].get(firewall_id)
+    if not isinstance(entry, dict):
         return None
     try:
         return _hydrate(entry)
@@ -78,15 +92,9 @@ def load(firewall_id: str) -> CachedSnapshot | None:
 
 def save(firewall_id: str, snapshot: CachedSnapshot) -> None:
     path = cache_path()
-    existing: dict[str, Any] = {"_version": _CACHE_VERSION, "entries": {}}
-    if path.exists():
-        try:
-            existing = json.loads(path.read_text(encoding="utf-8"))
-            if existing.get("_version") != _CACHE_VERSION:
-                existing = {"_version": _CACHE_VERSION, "entries": {}}
-        except (OSError, json.JSONDecodeError):
-            existing = {"_version": _CACHE_VERSION, "entries": {}}
-    existing.setdefault("entries", {})[firewall_id] = _serialize(snapshot)
+    # A malformed or outdated file is reset rather than allowed to break a refresh.
+    existing = (_read_store(path) if path.exists() else None) or _empty_store()
+    existing["entries"][firewall_id] = _serialize(snapshot)
     # Create the temp file private from the start (0600) so the cache is never
     # world-readable, not even for the instant before os.replace().
     tmp = path.with_suffix(path.suffix + ".tmp")
@@ -104,11 +112,10 @@ def invalidate(firewall_id: str) -> None:
     path = cache_path()
     if not path.exists():
         return
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return
-    entries = data.get("entries") or {}
+    data = _read_store(path)
+    if data is None:
+        return  # nothing usable to invalidate
+    entries = data["entries"]
     if firewall_id in entries:
         del entries[firewall_id]
         path.write_text(json.dumps(data, indent=2, default=_json_default), encoding="utf-8")

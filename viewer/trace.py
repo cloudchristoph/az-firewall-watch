@@ -37,6 +37,11 @@ class Flow:
     dst_ip: str = ""
     dst_fqdn: str = ""
     dst_port: str = ""
+    action: str = ""        # the action the firewall logged (used for rows decided outside the rules)
+
+    @property
+    def threat_intel(self) -> bool:
+        return self.category.lower() == "threatintel"
 
     @property
     def app_capable(self) -> bool:
@@ -275,7 +280,9 @@ def nearest_rules(trace: "Trace", limit: int = 3) -> list[RuleTrace]:
     """Closest non-matching rules across all evaluated collections (for 'no rule matched')."""
     rules = [r for p in trace.passes if p.evaluated for c in p.collections if c.evaluated
              for r in c.rules if not r.logged]
-    rules.sort(key=lambda r: (-rule_score(r), r.verdict != UNKNOWN))
+    # Highest score first; on ties prefer a definite miss (actionable) over an
+    # unknown we cannot evaluate locally.
+    rules.sort(key=lambda r: (-rule_score(r), r.verdict == UNKNOWN))
     return rules[:limit]
 
 
@@ -314,10 +321,18 @@ def build_trace(flow: Flow, policy: FirewallPolicyInfo, ip_groups: dict[str, IpG
         )
         logged = None
 
-    if flow.category.lower() == "threatintel":
-        threat_intel = "hit — logged as ThreatIntel"
-    else:
-        threat_intel = f"mode {policy.threat_intel_mode or 'Off'} — no hit"
+    if flow.threat_intel:
+        # Threat Intelligence runs before any rule; a ThreatIntel row means the
+        # decision was made there. In Alert mode the rules still run afterwards
+        # for the same packet, but that produces its own log row.
+        threat_intel = f"hit — {flow.action or 'logged'} by Threat Intelligence (mode {policy.threat_intel_mode or '?'})"
+        passes = [PassTrace(kind=kind, evaluated=False,
+                            note="not evaluated — Threat Intelligence decided before rule processing")
+                  for kind in PASS_ORDER]
+        return Trace(flow=flow, logged=None, threat_intel=threat_intel, passes=passes,
+                     infrastructure=None, outcome=f"{flow.action or 'handled'} by Threat Intelligence",
+                     warnings=warnings)
+    threat_intel = f"mode {policy.threat_intel_mode or 'Off'} — no hit"
 
     passes: list[PassTrace] = []
     stopped = False

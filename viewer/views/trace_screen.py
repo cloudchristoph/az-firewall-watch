@@ -71,7 +71,12 @@ class TraceScreen(ModalScreen[str | None]):
     def compose(self) -> ComposeResult:
         t = self._trace
         f = t.flow
-        icon = "[green]✓[/]" if t.matched_rule else "[red]✗[/]"
+        if t.matched_rule:
+            icon = "[green]✓[/]"
+        elif f.threat_intel:
+            icon = "[magenta]![/]"
+        else:
+            icon = "[red]✗[/]"
         with Static(id="dialog"):
             # Everything dynamic (names, FQDNs, outcome) is escaped: labels are Rich markup.
             yield Static(
@@ -105,6 +110,8 @@ class TraceScreen(ModalScreen[str | None]):
             root.add_leaf(f"Infrastructure rule collection   [dim]{escape(t.infrastructure)}[/]")
         if t.matched_rule is not None:
             root.add_leaf("[green]✓[/] evaluation stopped at the logged rule")
+        elif t.flow.threat_intel:
+            root.add_leaf(f"[magenta]![/] {escape(t.outcome)}")
         else:
             root.add_leaf(f"[red]✗[/] {escape(t.outcome)}")
         root.expand()

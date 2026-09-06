@@ -567,6 +567,7 @@ class FirewallLogApp(App[None]):
             dst_ip="" if is_fqdn else row.targetip,
             dst_fqdn=row.targetip if is_fqdn else "",
             dst_port=row.targetport,
+            action=row.action if row.action != "-" else "",
         )
 
     @staticmethod

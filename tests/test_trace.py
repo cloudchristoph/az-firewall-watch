@@ -257,10 +257,27 @@ def test_trace_stale_cache_warning_when_logged_rule_missing():
     assert t.matched_rule is None
 
 
-def test_trace_threat_intel_hit():
-    flow = Flow(category="ThreatIntel", protocol="TCP", src_ip="10.3.5.4", dst_ip="1.1.1.1", dst_port="80")
+def test_trace_threat_intel_hit_short_circuits_rule_processing():
+    """Copilot review: a ThreatIntel row was decided before the rules ran — no default-deny story."""
+    flow = Flow(category="ThreatIntel", protocol="TCP", src_ip="10.3.5.4", dst_ip="1.1.1.1", dst_port="80", action="Deny")
     t = build_trace(flow, LAB, GROUPS, None)
-    assert t.threat_intel.startswith("hit")
+    assert t.threat_intel.startswith("hit — Deny by Threat Intelligence")
+    assert all(not p.evaluated and "Threat Intelligence decided" in p.note for p in t.passes)
+    assert t.infrastructure is None
+    assert t.outcome == "Deny by Threat Intelligence"
+    assert t.matched_rule is None and t.warnings == []
+
+
+def test_nearest_rules_prefers_definite_misses_on_score_ties():
+    from viewer.trace import nearest_rules
+
+    pol = policy(rcg("g", 100, rc("c", 100, "Allow",
+                                   net("unknown-dst", destination_addresses=["AzureMonitor"], destination_ports=["443"]),
+                                   net("miss-dst", destination_addresses=["203.0.113.0/24"], destination_ports=["443"]))))
+    t = build_trace(TCP443, pol, GROUPS, None)   # both score 3; one is unknown (service tag), one a definite miss
+    ranked = nearest_rules(t)
+    assert [r.verdict for r in ranked] == [MISS, UNKNOWN]
+    assert [r.rule.name for r in ranked] == ["miss-dst", "unknown-dst"]
 
 
 def test_ranking_helpers_pick_the_closest_rule_and_its_problem():

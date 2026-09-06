@@ -67,3 +67,14 @@ def no_eventhub_env(monkeypatch: pytest.MonkeyPatch) -> None:
         "EVENT_HUB_START_POSITION",
     ):
         monkeypatch.delenv(key, raising=False)
+
+
+@pytest.fixture(autouse=True)
+def no_management_plane(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Never touch ARM from the viewer in tests; enrichment tests patch this explicitly."""
+    import viewer.app as app_module
+
+    async def _none(*_a: Any, **_kw: Any) -> None:
+        return None
+
+    monkeypatch.setattr(app_module, "load_management_data", _none)

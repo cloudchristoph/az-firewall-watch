@@ -3,3 +3,6 @@ testpaths = ["tests"]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
 addopts = "-q"
+markers = [
+    "live: optional integration tests against a real Azure environment (skipped unless AZFW_LIVE_* env vars are set)",
+]

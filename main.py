@@ -11,6 +11,12 @@ Key bindings
   c        Clear all rows
   Escape   Clear all filter inputs
   f        Focus the Source-IP filter
+  t        Evaluation trace for the selected row (needs enrichment)
+
+Options
+  --reconfigure     redo the setup wizard
+  --enrichment      force metadata enrichment on for this run
+  --no-enrichment   force it off (no ARM access, no cache, Logs tab only)
 """
 from __future__ import annotations
 
@@ -18,7 +24,7 @@ import os
 import sys
 
 from viewer import FirewallLogApp
-from viewer.config import BASE_DIR, load_env
+from viewer.config import BASE_DIR, enrichment_setting, load_env
 
 
 def _maybe_run_wizard() -> None:
@@ -36,7 +42,12 @@ def _maybe_run_wizard() -> None:
 def main() -> None:
     load_env(BASE_DIR / ".env")
     _maybe_run_wizard()
-    FirewallLogApp().run()
+    enabled, explicit = enrichment_setting(sys.argv, os.environ)
+    FirewallLogApp(
+        enrichment=enabled,
+        enrichment_notice=enabled and not explicit,  # nobody decided yet → say what is on
+        env_file=BASE_DIR / ".env",
+    ).run()
 
 
 if __name__ == "__main__":

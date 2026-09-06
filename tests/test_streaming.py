@@ -147,7 +147,9 @@ async def wait_until(pilot, cond: Callable[[], bool], timeout: float = 5.0) -> N
 async def wait_for_dialog(pilot, app, cls, timeout: float = 5.0) -> None:
     """Wait until *cls* is the active screen and its widgets are composed."""
     await wait_until(pilot, lambda: isinstance(app.screen, cls), timeout)
-    await wait_until(pilot, lambda: len(list(app.screen.query(Static))) > 0, timeout)
+    # The '#dialog' container is itself a Static with empty content and mounts
+    # before its children; wait for a child with text (flaky on slow CI runners).
+    await wait_until(pilot, lambda: any(str(s.content).strip() for s in app.screen.query(Static)), timeout)
 
 
 def _records(firewall_id: str, n: int = 2) -> list[dict]:

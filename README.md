@@ -1,6 +1,6 @@
 # 🔥 Azure Firewall Watch
 
-Azure Firewall Watch is a terminal UI for **live log monitoring of Azure Firewall**. It streams logs from an Event Hub in real time and lets you filter and inspect them directly in your terminal.
+Azure Firewall Watch is a terminal UI for **live log monitoring of Azure Firewall**. It streams logs from an Event Hub in real time and lets you filter and inspect them directly in your terminal. With access to Azure Resource Manager it also shows the firewall's policy and IP groups and explains which rule a log row matched.
 
 Built by [CloudChristoph](https://github.com/cloudchristoph).
 
@@ -120,6 +120,15 @@ You have two main options for connecting your firewall logs Event Hub:
 > [!NOTE]
 > The deployment will require permissions to create an Event Hub namespace and hub, and to update Diagnostic Settings on the firewall. Also keep in mind that it can take *up to 10-15 minutes at the first launch* for the Event Hub to be fully provisioned and start receiving logs from the firewall.
 
+#### Metadata enrichment step
+
+Right before `.env` is written, every wizard path asks whether the viewer may
+read the firewall, its policy and IP groups via Azure Resource Manager (see
+[Firewall, Policy and IP Groups tabs](#-firewall-policy-and-ip-groups-tabs)).
+It is **on by default** and saved as `ENRICHMENT=on|off`. Choose *Disable* if
+the viewer must not touch anything beyond the Event Hub — you then get the
+Logs tab only, no ARM requests, no Azure CLI token and no cache file.
+
 ### 🔑 Authentication methods
 
 After picking a hub (Discover, Enter existing, or Deploy new), a follow-up screen asks **how** to authenticate:
@@ -173,6 +182,7 @@ EVENT_HUB_START_POSITION=latest
 | `EVENT_HUB_NAME`              | Event Hub name — for Entra ID auth                                                        | —          |
 | `EVENT_HUB_CONSUMER_GROUP`    | Consumer group                                                                            | `$Default` |
 | `EVENT_HUB_START_POSITION`    | `latest` (only new events) or `earliest` (replay the hub's full retention first); other values are passed to the SDK as a raw offset | `latest`   |
+| `ENRICHMENT`                  | `on` / `off` — metadata enrichment via Azure Resource Manager (tabs, trace, cache). `--enrichment` / `--no-enrichment` override it for one run. If the key is missing, the viewer asks once at start-up and saves the answer | `on`       |
 <!-- markdownlint-enable MD060 -->
 
 > When both `EVENT_HUB_NAMESPACE`/`EVENT_HUB_NAME` and `EVENT_HUB_CONNECTION_STRING` are set, Entra ID is preferred.
@@ -190,6 +200,8 @@ EVENT_HUB_START_POSITION=latest
 | `Tab`        | Move between filter inputs            |
 | `Enter`      | Open detail view for the selected row (`Escape` or `q` closes it) |
 | `c`          | Clear all rows from the table         |
+| `t`          | Open the evaluation trace for the selected row (needs metadata) |
+| `Ctrl` + `r` | Re-fetch firewall / policy / IP-group metadata (bypasses the cache) |
 
 The status bar at the bottom shows the connection state, total events received,
 the currently visible count when a filter is active, and how many records were
@@ -199,6 +211,81 @@ If an established connection drops, the app reconnects on its own with a
 capped backoff (up to 60 s between attempts) and reports the countdown in the
 status bar. Only the very first connection gives up after three attempts, and
 authentication errors stop immediately with a hint.
+
+## 🧭 Firewall, Policy and IP Groups tabs
+
+Next to the **Logs** tab the viewer shows what it learned about the firewall from
+Azure Resource Manager (ARM):
+
+- **Firewall** — name, resource group, location, SKU, policy, private IPs and
+  the firewall subnets.
+- **Policy** — a tree of rule collection groups → rule collections → rules,
+  ordered by priority, with a detail pane (sources, destinations, ports,
+  protocols, IP groups resolved to their addresses).
+- **IP Groups** — every IP group the policy references, how many rules use it,
+  and for the selected group the rules that reference it. `Enter` on a rule
+  jumps to it in the Policy tab.
+
+The metadata also enriches the **Logs** tab: addresses inside the firewall's
+own subnets are rendered as `AzFw.<last octet>` so traffic from the firewall
+instances themselves (DNS proxy, probes) stands out, and the row detail dialog
+lists the IP groups that contain source and destination, the definition and
+priorities of the rule the firewall logged (looked up by name, never guessed),
+and the policy SKU tier. The status bar shows a short summary
+(`policy Premium · 11 IP groups · fresh`).
+
+### Evaluation trace (`t`)
+
+Press `t` on a log row to see the path that flow took through the policy,
+in the order Azure Firewall actually uses: Threat Intelligence first, then
+three passes over all rule collection groups — DNAT, Network, Application —
+each in inherited-policy-first, then priority order, stopping at the first
+match. The Application pass is only run for HTTP, HTTPS and MSSQL flows.
+
+```text
+Policy evaluation
+├─ Threat Intelligence   mode Alert — no hit
+├─ Pass 1 · DNAT rules   no collections of this type
+├─ Pass 2 · Network rules
+│  ├─ ✗ [2000] cclab-network-rule-collection-group » [100] priority-demo-net-rules (Deny)
+│  │   └─ ✗ deny-bad   ✓ source  ✗ destination  ✓ port  ✓ protocol
+│  ├─ ✓ [2000] cclab-network-rule-collection-group » [200] azure-monitor-access (Allow)
+│  │   ├─ ? allow-azure-monitor   ✓ source  ? destination  ✓ port  ✓ protocol
+│  │   └─ ✓ allow-web   ✓ source  ✓ destination  ✓ port  ✓ protocol   ← logged match
+│  └─ evaluation stops here — rule matched
+├─ Pass 3 · Application rules   not evaluated — a rule already matched
+└─ ✓ Allow by cclab-network-rule-collection-group » azure-monitor-access » allow-web
+```
+
+Everything before the logged rule was really evaluated and rejected by the
+firewall; *why* is computed locally per criterion. `?` marks criteria that
+cannot be evaluated here — service tags such as `AzureMonitor`, FQDNs in
+network rules, FQDN tags, web categories, target URLs, and IP groups your
+identity cannot read. For `Deny · no rule matched` rows the whole path is
+computed and the near misses show which criterion failed (for example
+`port: 8443 not in 443`). `Enter` on a rule opens it in the Policy tab. The
+trace explains the *cached* policy; if the logged rule is missing from it, a
+warning suggests `Ctrl+R`.
+
+**How it authenticates.** The ARM client uses `DefaultAzureCredential` (Azure
+CLI login, managed identity, environment credentials, …) and falls back to a
+token from the Azure CLI, so this also works when the Event Hub itself is read
+with a SAS connection string. Your identity needs **Reader** on the firewall,
+its policy and the IP groups. Without ARM access the status bar says
+*metadata unavailable* and the viewer works exactly as before.
+
+**Cache.** Metadata is cached for one hour in `~/.az-firewall-watch/cache.json`
+(file mode `0600`; falls back to `.azfw-cache.json` next to the binary if the
+home directory is not writable). Press `Ctrl+R` to re-fetch after changing
+rules or IP groups.
+
+**Switching it off.** Enrichment is a feature flag: `ENRICHMENT=off` in `.env`
+(or `--no-enrichment` for a single run) turns everything in this section off —
+no ARM requests, no Azure CLI token, no cache file, Logs tab only; `t` and
+`Ctrl+R` then just say so in the status bar. The wizard asks for this when it
+writes `.env`. A `.env` from an earlier release has no `ENRICHMENT` key, so the
+viewer shows a one-time notice explaining what enrichment does (on by default)
+with a *Disable* button; the choice is saved to `.env`.
 
 ## 🔍 Filters
 
@@ -250,7 +337,7 @@ display name regardless of which diagnostic mode is enabled.
 | IDPS           | `AZFWIdpsSignature`                                                                               |
 | ThreatIntel    | `AZFWThreatIntel`                                                                                 |
 | FlowTrace      | `AZFWFlowTrace` — TCP flow flags (`SYN-ACK`, `FIN`, `RST`, `INVALID`, …) in the Action column; requires flow-trace logging on the firewall |
-| FatFlow        | `AZFWFatFlow` — top flows by bandwidth, rate in Mbit/s in the Action column; requires fat-flow logging on the firewall |
+| FatFlow        | `AZFWFatFlow` — top flows by bandwidth, rate in Mbit/s in the Action column (sampled every 3 min; rates well below 1 Mbit/s do appear); requires fat-flow logging on the firewall. Most records describe the return direction, i.e. `<internet>:443 → <firewall instance>:<SNAT port>`, so the spoke client often shows up only as destination or not at all |
 
 Unknown or non-firewall categories (for example the Policy Analytics
 `*Aggregation` logs) are counted in the status bar as *skipped* rather than
@@ -297,9 +384,25 @@ pytest
 
 The suite covers the log parser (structured and legacy formats), the filter
 logic, the Event Hub streaming worker (against a fake client), the update
-check, and headless runs of both the viewer and the setup wizard via Textual's
+check, the ARM client and metadata enrichment (against canned ARM payloads),
+and headless runs of both the viewer and the setup wizard via Textual's
 test pilot with the Azure CLI mocked out. No Azure connection is required. The
 same suite runs in CI on every push and pull request.
+
+**Live integration tests** (optional, never run in CI) exercise the real ARM
+round trip and a real Event Hub. They are skipped unless you point them at
+your environment; only read operations are made, and the metadata cache is
+redirected to a temporary directory:
+
+```bash
+AZFW_LIVE_FIREWALL_ID=/subscriptions/<sub>/resourceGroups/<rg>/providers/Microsoft.Network/azureFirewalls/<fw> \
+AZFW_LIVE_EVENTHUB_NAMESPACE=<ns>.servicebus.windows.net \
+AZFW_LIVE_EVENTHUB_NAME=firewall-logs \
+pytest tests/live -m live
+```
+
+Your identity needs Reader on the firewall, its policy and IP groups, and the
+*Azure Event Hubs Data Receiver* role on the hub.
 
 ### 💰 Cost considerations
 

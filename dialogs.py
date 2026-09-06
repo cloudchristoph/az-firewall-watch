@@ -154,9 +154,10 @@ class DetailDialog(ModalScreen[None]):
     }
     """
 
-    def __init__(self, row: FirewallDataRow) -> None:
+    def __init__(self, row: FirewallDataRow, *, enrichment: dict | None = None) -> None:
         super().__init__()
         self._row = row
+        self._enrichment: dict = enrichment or {}
 
     @staticmethod
     def _field(label: str, value: str) -> Static:
@@ -189,6 +190,30 @@ class DetailDialog(ModalScreen[None]):
             if row.moreinfo:
                 yield self._field("More Info    ", row.moreinfo)
 
+            enr = self._enrichment
+            if enr:
+                yield Static("")  # blank spacer
+                if enr.get("source_fw_instance"):
+                    yield self._field("Source (FW)  ", enr["source_fw_instance"])
+                if enr.get("dest_fw_instance"):
+                    yield self._field("Dest   (FW)  ", enr["dest_fw_instance"])
+                if enr.get("source_ip_groups"):
+                    yield self._field("Src IP Groups", ", ".join(enr["source_ip_groups"]))
+                if enr.get("dest_ip_groups"):
+                    yield self._field("Dst IP Groups", ", ".join(enr["dest_ip_groups"]))
+                if enr.get("rule_policy"):
+                    yield self._field("Rule Policy  ", enr["rule_policy"])
+                if enr.get("rule_priority"):
+                    yield self._field("Rule Priority", enr["rule_priority"])
+                if enr.get("rule_action"):
+                    yield self._field("Rule Action  ", enr["rule_action"])
+                if enr.get("rule_definition"):
+                    yield self._field("Rule Def.    ", enr["rule_definition"])
+                if enr.get("policy_sku_tier"):
+                    yield self._field("Policy SKU   ", enr["policy_sku_tier"])
+                if enr.get("trace_hint"):
+                    yield Static(f"[dim]{enr['trace_hint']}[/]", markup=True, classes="detail-row")
+
             yield Button("Close  (Esc)", variant="primary", id="btn-close")
 
     def on_button_pressed(self, _event: Button.Pressed) -> None:
@@ -200,6 +225,76 @@ class DetailDialog(ModalScreen[None]):
             # on to the App and trigger its own q / escape bindings.
             event.stop()
             self.dismiss()
+        elif event.key == "t" and self._enrichment.get("trace_hint"):
+            # Close the dialog and let the app open the trace for this row.
+            event.stop()
+            self.dismiss()
+            self.app.call_later(self.app.action_trace)  # type: ignore[attr-defined]
+
+
+class EnrichmentNoticeDialog(ModalScreen[bool]):
+    """One-time notice: metadata enrichment is on and reaches beyond the Event Hub.
+
+    Dismisses with ``True`` to keep it enabled, ``False`` to switch it off.
+    """
+
+    DEFAULT_CSS = """
+    EnrichmentNoticeDialog {
+        align: center middle;
+    }
+    EnrichmentNoticeDialog > #dialog {
+        width: 84;
+        max-width: 96%;
+        height: auto;
+        background: $surface;
+        border: thick $warning;
+        padding: 1 2;
+    }
+    EnrichmentNoticeDialog > #dialog > #enr-title {
+        text-style: bold;
+        color: $warning;
+        margin-bottom: 1;
+    }
+    EnrichmentNoticeDialog > #dialog > #enr-body {
+        margin-bottom: 1;
+    }
+    EnrichmentNoticeDialog > #dialog > #enr-hint {
+        color: $text-muted;
+        margin-bottom: 1;
+    }
+    EnrichmentNoticeDialog > #dialog > .btn-row {
+        height: 3;
+    }
+    EnrichmentNoticeDialog > #dialog > .btn-row > Button {
+        width: 1fr;
+    }
+    """
+
+    def compose(self) -> ComposeResult:
+        with Static(id="dialog"):
+            yield Static("Metadata enrichment is ON", id="enr-title")
+            yield Static(
+                "Beyond reading the Event Hub, this viewer will:\n"
+                "• read the firewall, its policy and IP groups via Azure Resource Manager (Reader role)\n"
+                "• use a token from the Azure CLI as fallback (az account get-access-token)\n"
+                "• cache that metadata for one hour in ~/.az-firewall-watch/cache.json\n"
+                "\n"
+                "Nothing is written to Azure. In return you get the Firewall, Policy and "
+                "IP Groups tabs, enriched rows and the evaluation trace (t).",
+                id="enr-body",
+            )
+            yield Static("Saved to .env as ENRICHMENT=on|off — change it there or run with --no-enrichment.", id="enr-hint")
+            with Horizontal(classes="btn-row"):
+                yield Button("Keep enabled  (Enter)", variant="success", id="btn-keep")
+                yield Button("Disable", variant="default", id="btn-disable")
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        self.dismiss(event.button.id == "btn-keep")
+
+    def on_key(self, event: events.Key) -> None:
+        if event.key in ("escape", "q"):
+            event.stop()
+            self.dismiss(True)  # closing means "leave it as it is"
 
 
 class StatusBar(Static):
@@ -210,6 +305,7 @@ class StatusBar(Static):
     visible_count: reactive[int] = reactive(-1)  # -1 = no filter active
     skipped: reactive[int] = reactive(0)
     paused: reactive[bool] = reactive(False)
+    meta: reactive[str] = reactive("")  # management-plane metadata summary
 
     def render(self) -> str:  # type: ignore[override]
         icon = "⏸ PAUSED" if self.paused else "▶ LIVE"
@@ -218,9 +314,10 @@ class StatusBar(Static):
             events_part = f"Events (filtered): {self.visible_count}/{self.total}"
         else:
             events_part = f"Events: {self.total}"
+        meta_part = f"   │   {self.meta}" if self.meta else ""
         return (
             f" {icon}   {self.status}   │   "
-            f"{events_part}{skipped_part} "
+            f"{events_part}{skipped_part}{meta_part} "
         )
 
     def watch_paused(self, paused: bool) -> None:

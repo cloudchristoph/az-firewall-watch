@@ -43,9 +43,9 @@ class IpGroupDetailDialog(ModalScreen[None]):
 
     def compose(self) -> ComposeResult:
         with Static(id="dialog"):
-            yield Static(f"[b]{self._group.name}[/b] ({len(self._group.ip_addresses)} entries)", markup=True)
+            yield Static(f"[b]{escape(self._group.name)}[/b] ({len(self._group.ip_addresses)} entries)", markup=True)
             items = "\n".join(self._group.ip_addresses) if self._group.ip_addresses else "(empty)"
-            yield Static(items, id="items")
+            yield Static(escape(items), id="items", markup=True)
             yield Button("Close", variant="primary", id="btn-close")
 
     def on_button_pressed(self, _event: Button.Pressed) -> None:

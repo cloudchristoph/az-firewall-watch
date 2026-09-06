@@ -1,6 +1,7 @@
 """Firewall metadata tab view."""
 from __future__ import annotations
 
+from rich.markup import escape
 from textual.app import ComposeResult
 from textual.widgets import Static
 
@@ -32,17 +33,20 @@ class FirewallView(Static):
             content.update("Waiting for first firewall event…")
             return
 
+        def v(value: str) -> str:
+            return escape(value) if value else "-"
+
         lines = [
-            f"[b]{firewall.name}[/b]",
+            f"[b]{escape(firewall.name)}[/b]",
             "",
-            f"[dim]Resource group[/]  {firewall.resource_group or '-'}",
-            f"[dim]Subscription  [/]  {firewall.subscription_id or '-'}",
-            f"[dim]Location      [/]  {firewall.location or '-'}",
-            f"[dim]SKU tier      [/]  {(policy.sku_tier if policy else firewall.sku_tier) or '-'}",
-            f"[dim]Policy        [/]  {(policy.name if policy else firewall.policy_id) or '-'}",
+            f"[dim]Resource group[/]  {v(firewall.resource_group)}",
+            f"[dim]Subscription  [/]  {v(firewall.subscription_id)}",
+            f"[dim]Location      [/]  {v(firewall.location)}",
+            f"[dim]SKU tier      [/]  {v((policy.sku_tier if policy else firewall.sku_tier))}",
+            f"[dim]Policy        [/]  {v((policy.name if policy else firewall.policy_id))}",
             "",
-            f"[dim]Private IPs   [/]  {', '.join(firewall.private_ips) if firewall.private_ips else '-'}",
-            f"[dim]Subnet CIDRs  [/]  {', '.join(subnet_cidrs) if subnet_cidrs else '-'}",
-            f"[dim]Subnet IDs    [/]  {', '.join(firewall.subnet_ids) if firewall.subnet_ids else '-'}",
+            f"[dim]Private IPs   [/]  {v(', '.join(firewall.private_ips))}",
+            f"[dim]Subnet CIDRs  [/]  {v(', '.join(subnet_cidrs))}",
+            f"[dim]Subnet IDs    [/]  {v(', '.join(firewall.subnet_ids))}",
         ]
         content.update("\n".join(lines))

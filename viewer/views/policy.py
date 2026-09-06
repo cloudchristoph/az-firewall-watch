@@ -178,9 +178,9 @@ class PolicyView(Static):
         if rcg is None:
             return "RCG details unavailable"
         return "\n".join([
-            f"[b]Rule Collection Group[/b]",
+            "[b]Rule Collection Group[/b]",
             "",
-            f"[dim]Name[/]           {rcg.name}",
+            f"[dim]Name[/]           {escape(rcg.name)}",
             f"[dim]Priority[/]       {rcg.priority}",
             f"[dim]Collections[/]    {len(rcg.rule_collections)}",
         ])
@@ -190,13 +190,13 @@ class PolicyView(Static):
         if rc is None:
             return "Rule collection details unavailable"
         return "\n".join([
-            f"[b]Rule Collection[/b]",
+            "[b]Rule Collection[/b]",
             "",
-            f"[dim]RCG[/]            {rcg.name if rcg else '-'}",
-            f"[dim]Name[/]           {rc.name}",
+            f"[dim]RCG[/]            {escape(rcg.name) if rcg else '-'}",
+            f"[dim]Name[/]           {escape(rc.name)}",
             f"[dim]Priority[/]       {rc.priority}",
-            f"[dim]Action[/]         {rc.action or '-'}",
-            f"[dim]Type[/]           {rc.rule_collection_type or '-'}",
+            f"[dim]Action[/]         {escape(rc.action) or '-'}",
+            f"[dim]Type[/]           {escape(rc.rule_collection_type) or '-'}",
             f"[dim]Rules[/]          {len(rc.rules)}",
         ])
 

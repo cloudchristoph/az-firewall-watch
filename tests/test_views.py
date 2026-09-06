@@ -309,7 +309,7 @@ async def test_trace_screen_shows_logged_match_and_closes(structured_record, mgm
         assert "evaluation stopped at the logged rule" in joined
         header = _text(screen)
         assert "10.3.5.4 → 1.1.1.1:443 TCP" in header and "Allow by rcg-net » rc-web » allow-web" in header
-        assert "Enter open rule · a expand all" in header
+        assert "Enter open rule · a toggle full tree" in header
         # path view: the missed collection before the match is one collapsed line with the reason
         deny = next(n for n in _tree_nodes(tree) if n.label.plain.startswith("✗ [50] rc-deny"))
         assert "1 rule · nearest miss: destination" in deny.label.plain

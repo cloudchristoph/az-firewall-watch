@@ -2,7 +2,8 @@
 
 Default is the *path view*: only the branch leading to the logged rule (or,
 for "no rule matched", the nearest misses) is expanded; everything else is a
-single collapsed line with a short reason. ``a`` expands everything.
+single collapsed line with a short reason. ``a`` toggles between this path
+view and a fully expanded tree.
 """
 from __future__ import annotations
 
@@ -22,7 +23,7 @@ from ..trace import (
 
 _ICON = {MATCH: "[green]✓[/]", MISS: "[red]✗[/]", UNKNOWN: "[yellow]?[/]", NA: "[dim]–[/]"}
 _PASS_TITLE = {"dnat": "Pass 1 · DNAT", "network": "Pass 2 · Network", "application": "Pass 3 · Application"}
-LEGEND = "[green]✓[/] match   [red]✗[/] miss   [yellow]?[/] cannot evaluate   [dim]–[/] not in log      Enter open rule · a expand all · Esc/q/t close"
+LEGEND = "[green]✓[/] match   [red]✗[/] miss   [yellow]?[/] cannot evaluate   [dim]–[/] not in log      Enter open rule · a toggle full tree · Esc/q/t close"
 
 
 class TraceScreen(ModalScreen[str | None]):

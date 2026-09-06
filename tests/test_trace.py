@@ -77,6 +77,17 @@ def test_evaluate_rule_port_and_protocol_miss():
     assert checks["protocol"].result == MISS and "TCP not in UDP" in checks["protocol"].detail
 
 
+@pytest.mark.parametrize("l7", ["HTTPS", "HTTP/1.1", "MSSQL"])
+def test_network_rule_sees_application_flows_as_tcp(l7):
+    """A lab flow logged as HTTPS by an app rule was wrongly reported as 'HTTPS not in TCP'."""
+    flow = Flow(category="AppRule", protocol=l7, src_ip="10.3.5.4", dst_fqdn="www.bing.com", dst_port="443")
+    r = evaluate_rule(net("r", destination_addresses=["*"], protocols=["TCP"]), flow, GROUPS)
+    proto = next(c for c in r.checks if c.name == "protocol")
+    assert proto.result == MATCH and proto.detail == f"TCP ({l7})"
+    r_udp = evaluate_rule(net("r", protocols=["UDP"]), flow, GROUPS)
+    assert next(c for c in r_udp.checks if c.name == "protocol").detail == "TCP not in UDP"
+
+
 def test_service_tag_and_unloaded_group_are_unknown():
     r = evaluate_rule(net("r", destination_addresses=["AzureMonitor"], source_ip_groups=["/g/missing"], source_addresses=[]), TCP443, GROUPS)
     assert r.verdict == UNKNOWN

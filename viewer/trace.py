@@ -173,10 +173,13 @@ def _protocol_check(rule: Rule, flow: Flow) -> Check:
             if proto.startswith(rp):      # HTTP/1.1 vs Http, HTTPS vs Https
                 return Check("protocol", MATCH, rp)
         return Check("protocol", MISS, f"{flow.protocol} not in {', '.join(rule.protocols)}")
+    # Network / DNAT rules see layer 4: an application-rule log line says
+    # HTTPS or HTTP/1.1, but on the wire that is TCP.
+    l4 = "TCP" if proto.startswith(APP_PROTOCOLS) else proto
     for rp in rule_protos:
-        if rp == "ANY" or rp == proto:
-            return Check("protocol", MATCH, rp)
-    return Check("protocol", MISS, f"{flow.protocol} not in {', '.join(rule.protocols)}")
+        if rp == "ANY" or rp == l4:
+            return Check("protocol", MATCH, f"{rp} ({flow.protocol})" if l4 != proto else rp)
+    return Check("protocol", MISS, f"{l4} not in {', '.join(rule.protocols)}")
 
 
 def _port_check(rule: Rule, flow: Flow) -> Check:

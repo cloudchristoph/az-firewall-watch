@@ -3,20 +3,13 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-from dotenv import load_dotenv
 from textual.app import App
 from textual.binding import Binding
 
+from helpers import load_env
+
 from .screens import WelcomeScreen
 from .services import get_existing_conn_str, has_entra_config
-
-
-def _load_env(path: Path, override: bool = False) -> None:
-    """Load a .env file, falling back to latin-1 if UTF-8 decoding fails."""
-    try:
-        load_dotenv(path, encoding="utf-8", override=override)
-    except UnicodeDecodeError:
-        load_dotenv(path, encoding="latin-1", override=override)
 
 
 class WizardApp(App[None]):
@@ -111,7 +104,7 @@ def run_wizard(base_dir: Path, reconfigure: bool = False) -> None:
     if not reconfigure and (get_existing_conn_str(env_file) or has_entra_config(env_file)):
         return
 
-    _load_env(env_file)
+    load_env(env_file)
     WizardApp(env_file).run()
 
 

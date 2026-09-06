@@ -2,14 +2,33 @@ from __future__ import annotations
 
 import re
 from datetime import datetime
+from pathlib import Path
 
+from dotenv import load_dotenv
 from rich.text import Text
+
+
+def load_env(path: Path, override: bool = False) -> None:
+    """Load a .env file, falling back to latin-1 if the file is not valid UTF-8."""
+    try:
+        load_dotenv(path, encoding="utf-8", override=override)
+    except UnicodeDecodeError:
+        load_dotenv(path, encoding="latin-1", override=override)
+
+
+# Azure emits 7-digit fractional seconds; Python < 3.11 only parses exactly 3 or 6.
+_FRACTION_RE = re.compile(r"\.(\d+)")
+
+
+def _normalise_fraction(match: "re.Match[str]") -> str:
+    return "." + match.group(1)[:6].ljust(6, "0")
 
 
 def _to_local(ts: str) -> str:
     """Convert a UTC ISO-8601 timestamp to the local system timezone."""
     try:
-        dt = datetime.fromisoformat(ts.replace("Z", "+00:00"))
+        normalised = _FRACTION_RE.sub(_normalise_fraction, ts.replace("Z", "+00:00"), count=1)
+        dt = datetime.fromisoformat(normalised)
         return dt.astimezone().strftime("%Y-%m-%d %H:%M:%S")
     except (ValueError, TypeError):
         return ts[:19]
@@ -28,6 +47,9 @@ _CATEGORY_STYLES: dict[str, str] = {
     "apprule":     "bright_blue",
     "natrule":     "yellow",
     "dnsquery":    "dark_orange3",
+    "dnsfailure":  "bold dark_orange3",
+    "flowtrace":   "bright_black",
+    "fatflow":     "bold cyan",
     "idps":        "bold red",
     "threatintel": "bold magenta",
 }

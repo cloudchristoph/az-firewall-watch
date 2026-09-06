@@ -19,7 +19,7 @@ Azure Firewall
             └─▶ Event Hub  ◀─── az-firewall-watch (streams in real time)
 ```
 
-1. **Diagnostic Settings** on your Azure Firewall forward structured log categories (NetworkRule, AppRule, IDPS, …) to an Event Hub namespace.  
+1. **Diagnostic Settings** on your Azure Firewall forward the structured log categories (NetworkRule, AppRule, DnsQuery, IDPS, …) to an Event Hub namespace. The legacy `AzureFirewall*` categories work too.  
    → [Configure Azure Firewall diagnostics](https://learn.microsoft.com/en-us/azure/firewall/monitor-firewall#enable-structured-logs)
 
 2. **Event Hub** buffers the events (default retention: 1 day) so az-firewall-watch can consume them live.  
@@ -115,7 +115,7 @@ You have two main options for connecting your firewall logs Event Hub:
 <!-- markdownlint-disable MD060 -->
 | Option                                            | What it does                                                                                                                                                             | Azure CLI required |
 | ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------ |
-| **Deploy new Event Hub and Diagnostics settings** | Discovers your Azure Firewall, creates a Basic-tier Event Hub namespace + `firewall-logs` hub, and wires up Diagnostic Settings to forward the structured log categories | ✅                  |
+| **Deploy new Event Hub and Diagnostics settings** | Discovers your Azure Firewall, creates a Basic-tier Event Hub namespace + `firewall-logs` hub, and wires up Diagnostic Settings for exactly the log categories the viewer displays (no Policy Analytics aggregation logs) | ✅                  |
 
 > [!NOTE]
 > The deployment will require permissions to create an Event Hub namespace and hub, and to update Diagnostic Settings on the firewall. Also keep in mind that it can take *up to 10-15 minutes at the first launch* for the Event Hub to be fully provisioned and start receiving logs from the firewall.
@@ -172,7 +172,7 @@ EVENT_HUB_START_POSITION=latest
 | `EVENT_HUB_NAMESPACE`         | Fully qualified namespace (e.g. `mynamespace.servicebus.windows.net`) — for Entra ID auth | —          |
 | `EVENT_HUB_NAME`              | Event Hub name — for Entra ID auth                                                        | —          |
 | `EVENT_HUB_CONSUMER_GROUP`    | Consumer group                                                                            | `$Default` |
-| `EVENT_HUB_START_POSITION`    | `latest` (live only) or `earliest` (read full retention)                                  | `latest`   |
+| `EVENT_HUB_START_POSITION`    | `latest` (only new events) or `earliest` (replay the hub's full retention first); other values are passed to the SDK as a raw offset | `latest`   |
 <!-- markdownlint-enable MD060 -->
 
 > When both `EVENT_HUB_NAMESPACE`/`EVENT_HUB_NAME` and `EVENT_HUB_CONNECTION_STRING` are set, Entra ID is preferred.
@@ -188,12 +188,17 @@ EVENT_HUB_START_POSITION=latest
 | `Escape`     | Clear all filter inputs               |
 | `f`          | Jump focus to the filters             |
 | `Tab`        | Move between filter inputs            |
-| `Enter`      | Open detail view for the selected row |
+| `Enter`      | Open detail view for the selected row (`Escape` or `q` closes it) |
 | `c`          | Clear all rows from the table         |
 
 The status bar at the bottom shows the connection state, total events received,
 the currently visible count when a filter is active, and how many records were
 skipped (e.g. unknown categories).
+
+If an established connection drops, the app reconnects on its own with a
+capped backoff (up to 60 s between attempts) and reports the countdown in the
+status bar. Only the very first connection gives up after three attempts, and
+authentication errors stop immediately with a hint.
 
 ## 🔍 Filters
 
@@ -204,8 +209,8 @@ All filters are **case-insensitive substring matches** applied instantly as you 
 | ----------- | -------------------------------------------------------------------------------------- |
 | Source IP   | `sourceip` field                                                                       |
 | Dest / FQDN | `targetip` / FQDN field                                                                |
-| Action      | `allow`, `deny`, `dnat`, `alert`, `resolvefail`, DNS RCODEs (`noerror`, `nxdomain`, …) |
-| Category    | `NetworkRule`, `AppRule`, `DnsQuery`, `NATRule`, `IDPS`, `ThreatIntel`                 |
+| Action      | `allow`, `deny`, `dnat`, `alert`, `resolvefail`, DNS RCODEs (`noerror`, `nxdomain`, …), flow flags (`rst`, `invalid`, …), `mbps` |
+| Category    | `NetworkRule`, `AppRule`, `NATRule`, `DnsQuery`, `DnsFailure`, `IDPS`, `ThreatIntel`, `FlowTrace`, `FatFlow` |
 | Protocol    | `TCP`, `UDP`, `HTTPS`, `HTTP`, DNS query types (`A`, `AAAA`, `MX`, …)                  |
 | Port        | Destination port (e.g. `443`, `80`, `53`)                                              |
 <!-- markdownlint-enable MD060 -->
@@ -214,7 +219,8 @@ All filters are **case-insensitive substring matches** applied instantly as you 
 
 DNS proxy traffic can dominate the log volume on busy firewalls. A **Hide DNS**
 switch sits at the end of the filter bar and is **on by default**, so `DnsQuery`
-rows are filtered out until you explicitly want to see them.
+rows are filtered out until you explicitly want to see them. `DnsFailure` rows
+(the firewall failing to resolve an FQDN from a rule) stay visible regardless.
 
 The toggle is smart:
 
@@ -234,17 +240,34 @@ formats produced by Azure Firewall are parsed. Legacy `AzureFirewallDnsProxy`
 entries are normalised into the `DnsQuery` category so you only deal with one
 display name regardless of which diagnostic mode is enabled.
 
-| Category shown | Azure category (structured / legacy)                                                                                   |
-| -------------- | ---------------------------------------------------------------------------------------------------------------------- |
-| NetworkRule    | `AZFWNetworkRule` / `AzureFirewallNetworkRule`                                                                         |
-| AppRule        | `AZFWApplicationRule` / `AzureFirewallApplicationRule` / `AZFWFqdnResolveFailure` (rendered with action `ResolveFail`) |
-| NATRule        | `AZFWNatRule` / `AzureFirewallNatRuleLog`                                                                              |
-| DnsQuery       | `AZFWDnsQuery` / `AzureFirewallDnsProxy`                                                                               |
-| IDPS           | `AZFWIdpsSignature`                                                                                                    |
-| ThreatIntel    | `AZFWThreatIntel`                                                                                                      |
+| Category shown | Azure category (structured / legacy)                                                              |
+| -------------- | ------------------------------------------------------------------------------------------------- |
+| NetworkRule    | `AZFWNetworkRule` / `AzureFirewallNetworkRule`                                                    |
+| AppRule        | `AZFWApplicationRule` / `AzureFirewallApplicationRule`                                            |
+| NATRule        | `AZFWNatRule` / `AzureFirewallNatRuleLog`                                                         |
+| DnsQuery       | `AZFWDnsQuery` / `AzureFirewallDnsProxy`                                                          |
+| DnsFailure     | `AZFWFqdnResolveFailure` / legacy `AzureFirewallDNSResolutionFailureLog` — the firewall could not resolve an FQDN used in a network or DNAT rule; action `ResolveFail`, FQDN and error shown |
+| IDPS           | `AZFWIdpsSignature`                                                                               |
+| ThreatIntel    | `AZFWThreatIntel`                                                                                 |
+| FlowTrace      | `AZFWFlowTrace` — TCP flow flags (`SYN-ACK`, `FIN`, `RST`, `INVALID`, …) in the Action column; requires flow-trace logging on the firewall |
+| FatFlow        | `AZFWFatFlow` — top flows by bandwidth, rate in Mbit/s in the Action column; requires fat-flow logging on the firewall |
 
-Unknown or non-firewall categories are counted in the status bar as *skipped*
-rather than displayed.
+Unknown or non-firewall categories (for example the Policy Analytics
+`*Aggregation` logs) are counted in the status bar as *skipped* rather than
+displayed.
+
+`FlowTrace` and `FatFlow` only produce data when the corresponding logging is
+switched on at the firewall, in addition to the diagnostic-setting category:
+
+```bash
+# Top flows (fat flow) — flows above 1 Mbit/s, sampled every 3 minutes
+az network firewall update --ids <firewall-resource-id> --enable-fat-flow-logging true
+```
+
+Flow trace requires the preview feature `AFWEnableTcpConnectionLogging` to be
+registered on the subscription first — see
+[Azure Firewall flow trace logs](https://learn.microsoft.com/azure/firewall/monitor-firewall-reference#flow-trace).
+Both are meant for troubleshooting; leave them off during normal operation.
 
 ## 🔨 Building locally
 
@@ -259,10 +282,24 @@ pyinstaller \
   --hidden-import azure.eventhub.aio \
   --hidden-import azure.eventhub._transport._pyamqp_transport \
   --add-data "fw_parser.py:." \
+  --add-data "version.txt:." \
   main.py
 
 # Binary is at dist/az-firewall-watch  (or dist/az-firewall-watch.exe on Windows)
 ```
+
+### 🧪 Running tests
+
+```bash
+pip install -r requirements.txt -r requirements-dev.txt
+pytest
+```
+
+The suite covers the log parser (structured and legacy formats), the filter
+logic, the Event Hub streaming worker (against a fake client), the update
+check, and headless runs of both the viewer and the setup wizard via Textual's
+test pilot with the Azure CLI mocked out. No Azure connection is required. The
+same suite runs in CI on every push and pull request.
 
 ### 💰 Cost considerations
 

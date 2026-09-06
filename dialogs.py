@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from textual import events
 from textual.app import ComposeResult
 from textual.containers import Horizontal
 from textual.reactive import reactive
@@ -70,8 +71,9 @@ class ConnectingDialog(ModalScreen[None]):
     def on_button_pressed(self, event: Button.Pressed) -> None:
         self.app.exit()
 
-    def on_key(self, event) -> None:  # type: ignore[override]
+    def on_key(self, event: events.Key) -> None:
         if event.key in ("q", "escape"):
+            event.stop()
             self.app.exit()
 
 
@@ -119,8 +121,9 @@ class ErrorDialog(ModalScreen[None]):
     def on_button_pressed(self, event: Button.Pressed) -> None:
         self.app.exit()
 
-    def on_key(self, event) -> None:  # type: ignore[override]
+    def on_key(self, event: events.Key) -> None:
         if event.key in ("q", "escape"):
+            event.stop()
             self.app.exit()
 
 
@@ -210,8 +213,11 @@ class DetailDialog(ModalScreen[None]):
     def on_button_pressed(self, _event: Button.Pressed) -> None:
         self.dismiss()
 
-    def on_key(self, event) -> None:  # type: ignore[override]
+    def on_key(self, event: events.Key) -> None:
         if event.key in ("q", "escape"):
+            # Stop the key here: once the modal is gone the event would bubble
+            # on to the App and trigger its own q / escape bindings.
+            event.stop()
             self.dismiss()
 
 
@@ -300,6 +306,7 @@ class UpdateDialog(ModalScreen[None]):
                 pass
         self.dismiss()
 
-    def on_key(self, event) -> None:
+    def on_key(self, event: events.Key) -> None:
         if event.key in ("escape", "q"):
+            event.stop()
             self.dismiss()

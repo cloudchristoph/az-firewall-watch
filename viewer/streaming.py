@@ -25,9 +25,13 @@ _AUTH_KEYWORDS = (
     "unauthorized", "authentication", "forbidden",
     "401", "403", "invalid signature", "saskey",
 )
-# Exponential backoff delays in seconds between the three attempts.
+# Initial connection: three attempts with these delays, then an error dialog
+# (a first-time failure is most likely a configuration problem).
 _BACKOFF = [2, 5, 10]
 _MAX_ATTEMPTS = 3
+# After a connection has been established once, a drop is treated as
+# transient: reconnect indefinitely, backing off up to the last delay.
+_RECONNECT_BACKOFF = [2, 5, 10, 30, 60]
 
 
 async def _verify_data_plane_access(credential, eh_namespace: str) -> None:
@@ -104,6 +108,45 @@ async def _verify_data_plane_access(credential, eh_namespace: str) -> None:
         )
 
 
+def resolve_start_position(value: str | None) -> str:
+    """Map EVENT_HUB_START_POSITION to the SDK's starting_position.
+
+    ``latest`` → ``"@latest"`` (only new events), ``earliest`` → ``"-1"``
+    (beginning of retention), both case-insensitive and also accepted in the
+    SDK spellings ``@latest`` / ``@earliest``; anything else is passed through
+    unchanged so a raw offset or sequence number can be used. An empty or
+    missing value means ``latest``.
+    """
+    raw = (value or "").strip()
+    normalised = raw.lower()
+    if normalised in ("", "latest", "@latest"):
+        return "@latest"
+    if normalised in ("earliest", "@earliest", "-1"):
+        return "-1"
+    return raw
+
+
+async def _remove_splash(app: "FirewallLogApp") -> None:
+    """Remove the ConnectingDialog from the screen stack.
+
+    An UpdateDialog may sit on top of the splash; it is re-pushed afterwards
+    so it stays visible. Screen-stack errors are ignored because the stack may
+    already be torn down when the worker is cancelled during app shutdown.
+    """
+    from textual.app import ScreenStackError
+
+    try:
+        if isinstance(app.screen, UpdateDialog):
+            upd_tag, upd_url = app.screen._latest, app.screen._url
+            app.pop_screen()   # remove UpdateDialog
+            app.pop_screen()   # remove ConnectingDialog
+            await app.push_screen(UpdateDialog(upd_tag, upd_url))
+        else:
+            app.pop_screen()   # remove ConnectingDialog
+    except ScreenStackError:
+        pass
+
+
 def _error_hint(exc: Exception, use_entra: bool) -> str:
     if isinstance(exc, PermissionError):
         return (
@@ -135,7 +178,7 @@ async def run_stream(app: "FirewallLogApp") -> None:
     eh_name = os.environ.get("EVENT_HUB_NAME", "")
     consumer_group = os.environ.get("EVENT_HUB_CONSUMER_GROUP", "$Default")
     start_pos = os.environ.get("EVENT_HUB_START_POSITION", "latest")
-    position = "@latest" if start_pos == "latest" else "@earliest"
+    position = resolve_start_position(start_pos)
     use_entra = bool(eh_namespace and eh_name)
 
     status = app.query_one("#status", StatusBar)
@@ -157,6 +200,7 @@ async def run_stream(app: "FirewallLogApp") -> None:
 
     attempt = 0
     last_exc: Exception | None = None
+    connected_once = False  # switches to endless reconnects after first success
 
     # Show the connecting splash and keep a flag so we know when to dismiss it.
     _dialog = ConnectingDialog(namespace, hub)
@@ -164,9 +208,9 @@ async def run_stream(app: "FirewallLogApp") -> None:
     _splash_shown = True
     _credential = None  # track credential for cleanup on error
 
-    while attempt < _MAX_ATTEMPTS:
-        app.sub_title = "Live Log Monitor  |  connecting..."
-        status.status = "Connecting to Event Hub…"
+    while connected_once or attempt < _MAX_ATTEMPTS:
+        app.sub_title = "Live Log Monitor  |  " + ("reconnecting..." if connected_once else "connecting...")
+        status.status = "Reconnecting to Event Hub…" if connected_once else "Connecting to Event Hub…"
 
         try:
             # Build the client — prefer Entra ID when namespace+hub are set.
@@ -219,6 +263,7 @@ async def run_stream(app: "FirewallLogApp") -> None:
                             pass  # ARM check unavailable — proceed optimistically
 
                     attempt = 0  # reset backoff counter after a successful connect
+                    connected_once = True
                     if _splash_shown:
                         _dialog.show_waiting()
                     status.status = "Connected"
@@ -237,7 +282,10 @@ async def run_stream(app: "FirewallLogApp") -> None:
                             if not app._fw_name_set:
                                 rid: str = rec.get("resourceId", "")
                                 if "/AZUREFIREWALLS/" in rid.upper():
-                                    app.sub_title = rid.split("/")[-1]
+                                    # Diagnostic resourceIds are upper-cased by Azure; the
+                                    # real name is lost. Lower-case is right for the usual
+                                    # kebab-case firewall names.
+                                    app.sub_title = rid.split("/")[-1].lower()
                                     app._fw_name_set = True
                                     app.request_mgmt_load(rid)
                             row = parse_record(rec)
@@ -250,16 +298,7 @@ async def run_stream(app: "FirewallLogApp") -> None:
                                 has_real = True
                         if has_real and _splash_shown:
                             _splash_shown = False
-                            if isinstance(app.screen, UpdateDialog):
-                                # UpdateDialog is on top of ConnectingDialog.
-                                # Save its state, pop both, re-push UpdateDialog.
-                                upd_tag = app.screen._latest
-                                upd_url = app.screen._url
-                                app.pop_screen()   # remove UpdateDialog
-                                app.pop_screen()   # remove ConnectingDialog
-                                await app.push_screen(UpdateDialog(upd_tag, upd_url))
-                            else:
-                                app.pop_screen()   # remove ConnectingDialog
+                            await _remove_splash(app)
 
                     await client.receive(on_event=on_event, starting_position=position)
             finally:
@@ -269,9 +308,8 @@ async def run_stream(app: "FirewallLogApp") -> None:
 
         except asyncio.CancelledError:
             if _splash_shown:
-                if isinstance(app.screen, UpdateDialog):
-                    app.pop_screen()   # remove UpdateDialog
-                app.pop_screen()       # remove ConnectingDialog
+                _splash_shown = False
+                await _remove_splash(app)
             status.status = "Streaming stopped"
             return
 
@@ -287,6 +325,19 @@ async def run_stream(app: "FirewallLogApp") -> None:
                 break
 
             attempt += 1
+            if connected_once:
+                # Lost an established connection: keep trying, capped backoff.
+                delay = _RECONNECT_BACKOFF[min(attempt, len(_RECONNECT_BACKOFF)) - 1]
+                app.sub_title = "Live Log Monitor  |  connection lost"
+                for remaining in range(delay, 0, -1):
+                    status.status = (
+                        f"Connection lost: {exc}"
+                        f"  — reconnect attempt {attempt}"
+                        f" in {remaining}s…"
+                    )
+                    await asyncio.sleep(1)
+                continue
+
             if attempt >= _MAX_ATTEMPTS:
                 break
 
@@ -315,7 +366,6 @@ async def run_stream(app: "FirewallLogApp") -> None:
             )
         status.status = f"Failed after {_MAX_ATTEMPTS} attempts — see dialog"
         if _splash_shown:
-            if isinstance(app.screen, UpdateDialog):
-                app.pop_screen()   # remove UpdateDialog
-            app.pop_screen()       # remove ConnectingDialog
+            _splash_shown = False
+            await _remove_splash(app)
         await app.push_screen(ErrorDialog(str(last_exc), hint))

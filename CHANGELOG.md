@@ -27,6 +27,45 @@ This release introduces Azure management-plane enrichment. The viewer now reads 
 
 - _(none yet)_
 
+## [0.4.1] - 2026-09-05
+
+Patch release for three findings from the GitHub Copilot review of 0.4.0.
+
+### Fixed
+
+- Legacy `AzureFirewallDNSResolutionFailureLog` messages without an `Error …` part crashed the parser and were counted as parse errors.
+- The row index used by the detail dialog grew without bound when a restrictive filter kept rows out of the table for a long session; it now only holds rows that are actually in the table.
+- `EVENT_HUB_START_POSITION` is case-insensitive (`LATEST`, `Earliest`), and any other value is passed to the SDK unchanged so a raw offset or sequence number can be used.
+
+## [0.4.0] - 2026-09-05
+
+New log categories (`FlowTrace`, `FatFlow`, `DnsFailure`), automatic reconnects, a much cheaper table refresh, a full test suite with CI, and a batch of bugs the tests and a lab firewall surfaced — including `earliest` never delivering events and `Escape`/`q` misbehaving in dialogs.
+
+### Added
+
+- **`FlowTrace` and `FatFlow` categories.** `AZFWFlowTrace` rows show the TCP flag (`SYN-ACK`, `FIN`, `RST`, `INVALID`, …) in the Action column with the log reason as rule info; `AZFWFatFlow` rows show the flow rate in Mbit/s. Both need the corresponding logging enabled on the firewall and the category in the diagnostic setting.
+- **`DnsFailure` category** for FQDN resolution failures (`AZFWFqdnResolveFailure` and legacy `AzureFirewallDNSResolutionFailureLog`). These were shown as `AppRule`; they are the firewall's own DNS lookups for FQDNs in network/DNAT rules failing, so they now have their own category that the *Hide DNS* toggle does not suppress.
+- **Test suite** (`tests/`, pytest) covering the structured and legacy log parser, the filter logic, rendering helpers, the Event Hub streaming worker (fake client), the GitHub update check, the dialogs, and headless Textual runs of the viewer and the whole setup wizard with the Azure CLI mocked out. Run with `pytest` after installing `requirements-dev.txt`.
+- **CI workflow** `.github/workflows/test.yml` that runs the suite on Linux (Python 3.10–3.13), Windows and macOS for every push and pull request.
+
+### Changed
+
+- **Wizard deployment enables only the categories the viewer displays** (`VIEWER_CATEGORIES`): the three `*Aggregation` categories for Policy Analytics and `AZFWDnsAdditional` are skipped, with a note in the deployment log, since they would only add Event Hub volume.
+- **Firewall name in the title bar is lower-cased.** Azure upper-cases resource IDs in diagnostic records, so `FW-HUB-GWC` becomes `fw-hub-gwc`, which matches the usual kebab-case naming.
+- **Endless reconnect after a connection drop.** Once a connection has been established, a later failure (network blip, Event Hub maintenance, link detach) no longer ends in the error dialog after three attempts. The viewer keeps reconnecting with a capped backoff (2 s → 5 s → 10 s → 30 s → 60 s) and shows *Connection lost … reconnect attempt N in Ns* in the status bar until it is back. The three-attempt limit still applies to the initial connection, and authentication errors still stop immediately.
+- **Incremental table updates.** New events are appended to the table and re-ordered in place instead of clearing and re-adding every row each second. With 5,000 visible rows a tick dropped from ~330 ms to ~45 ms (Python + render). The buffer merge is now O(n) instead of a full re-sort. Full rebuilds still happen on filter changes, when a second firewall policy appears (rule-info rendering changes), and periodically to trim the table back to the row limit.
+- `load_env` (UTF-8 with latin-1 fallback) now lives once in `helpers.py`; the wizard and the viewer share it.
+
+### Fixed
+
+- **`EVENT_HUB_START_POSITION=earliest` delivered nothing.** The SDK expects `"-1"` for the beginning of the stream; the app passed `"@earliest"`, which the SDK treated as a raw offset that matched no event. Found while testing against a lab firewall.
+- **Legacy `AzureFirewallDNSResolutionFailureLog` records** (category `AzureFirewallNetworkRule`) were counted as parse errors. They are now rendered like their structured counterpart `AZFWFqdnResolveFailure`: category `DnsFailure`, action `ResolveFail`, with FQDN, error text and the policy » rule collection group » rule collection » rule path.
+- **Parser consistency.** Structured `AZFWDnsQuery` names no longer carry the trailing dot (`ifconfig.me.` → `ifconfig.me`, matching the legacy parser), and rows without ports (ICMP) show `-` instead of an empty port.
+- **Deployment fallback categories** no longer list the non-existent `AZFWDnsProxy`; `AZFWFqdnResolveFailure` is included instead.
+- **`Escape` now closes dialogs.** The app-level *Clear Filters* binding was registered with priority, which Textual resolves before modal screens — so `Escape` never reached the Detail, Update, Error or Connecting dialog. The binding is now a regular one; it still clears the filters from the main screen, including while a filter input is focused.
+- **Local time on Python 3.10.** Azure timestamps carry seven fractional-second digits, which `datetime.fromisoformat` only accepts from Python 3.11 on; on 3.10 the Time column silently fell back to the raw UTC string. Fractions are now trimmed before parsing.
+- **`q` inside the detail dialog no longer quits the app.** After the dialog closed, the key event bubbled on to the app's quit binding. Dialog key handlers now stop the event. Likewise `Escape` in a dialog no longer clears the filters underneath.
+
 ## [0.3.0] - 2026-05-30
 
 This release adds passwordless Entra ID authentication, better Azure Firewall log parsing, a more polished live viewer experience, and a full Textual setup wizard.
@@ -108,7 +147,10 @@ This release adds passwordless Entra ID authentication, better Azure Firewall lo
 
 [Full diff](https://github.com/cloudchristoph/az-firewall-watch/commits/v0.1.0)
 
-[Unreleased]: https://github.com/cloudchristoph/az-firewall-watch/compare/v0.2.1...HEAD
+[Unreleased]: https://github.com/cloudchristoph/az-firewall-watch/compare/v0.4.1...HEAD
+[0.4.1]: https://github.com/cloudchristoph/az-firewall-watch/compare/v0.4.0...v0.4.1
+[0.4.0]: https://github.com/cloudchristoph/az-firewall-watch/compare/v0.3.0...v0.4.0
+[0.3.0]: https://github.com/cloudchristoph/az-firewall-watch/releases/tag/v0.3.0
 [0.2.1]: https://github.com/cloudchristoph/az-firewall-watch/releases/tag/v0.2.1
 [0.2.0]: https://github.com/cloudchristoph/az-firewall-watch/releases/tag/v0.2.0
 [0.1.0]: https://github.com/cloudchristoph/az-firewall-watch/releases/tag/v0.1.0

@@ -15,6 +15,15 @@ from .utils import az_async, find_az
 
 # (sub_id, sub_name, resource_group, namespace, event_hub)
 HubItem = tuple[str, str, str, str, str]
+
+# Structured log categories the viewer understands. Only these are enabled in
+# the diagnostic setting the wizard creates — the *Aggregation categories
+# (Policy Analytics) and AZFWDnsAdditional would only add Event Hub volume.
+VIEWER_CATEGORIES: tuple[str, ...] = (
+    "AZFWNetworkRule", "AZFWApplicationRule", "AZFWNatRule",
+    "AZFWThreatIntel", "AZFWIdpsSignature", "AZFWDnsQuery",
+    "AZFWFqdnResolveFailure", "AZFWFlowTrace", "AZFWFatFlow",
+)
 Log = Callable[[Any], Any]
 
 
@@ -396,12 +405,12 @@ async def deploy_new_hub(
     available_cats: list[str] = []
     if cats_result.returncode == 0 and cats_result.stdout.strip():
         all_cats: list[str] = json.loads(cats_result.stdout) or []
-        available_cats = [c for c in all_cats if c.startswith("AZFW")]
+        available_cats = [c for c in VIEWER_CATEGORIES if c in all_cats]
+        unknown = [c for c in all_cats if c.startswith("AZFW") and c not in VIEWER_CATEGORIES]
+        if unknown:
+            log(f"[cyan]i[/] Not enabling categories the viewer does not display: {', '.join(unknown)}")
     if not available_cats:
-        available_cats = [
-            "AZFWNetworkRule", "AZFWApplicationRule", "AZFWNatRule",
-            "AZFWThreatIntel", "AZFWIdpsSignature", "AZFWDnsQuery", "AZFWDnsProxy",
-        ]
+        available_cats = list(VIEWER_CATEGORIES)
     diag_logs = json.dumps([{"category": c, "enabled": True} for c in available_cats])
 
     log(f"[cyan]i[/] Configuring diagnostic settings '{diag_name}'…")

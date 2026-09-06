@@ -3,16 +3,24 @@ Azure Firewall log parser.
 
 Supports both the legacy (properties.msg) format and the structured log format
 (AZFWNetworkRule, AZFWApplicationRule, AZFWNatRule, AZFWDnsQuery,
-AZFWIdpsSignature, AZFWThreatIntel).
+AZFWIdpsSignature, AZFWThreatIntel, AZFWFqdnResolveFailure, AZFWFlowTrace,
+AZFWFatFlow).
 
 Ported from azure-firewall-mon/firewall-mon-app/src/app/services/event-hub-source.service.ts
 """
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from typing import Optional
 
 _counter = 0
+
+# Legacy "AzureFirewallDNSResolutionFailureLog" message head (before " Rule Collection: ").
+_RESOLVE_FAIL_RE = re.compile(
+    r"Failed to resolve FQDN (?P<fqdn>\S+?)\.?(?:\s+Error\s+(?P<error>.*))?$",
+    re.DOTALL,
+)
 
 
 def _next_id() -> str:
@@ -64,7 +72,7 @@ def parse_record(record: dict) -> Optional[FirewallDataRow]:
     structured = {
         "AZFWNetworkRule", "AZFWApplicationRule", "AZFWNatRule",
         "AZFWDnsQuery", "AZFWIdpsSignature", "AZFWThreatIntel",
-        "AZFWFqdnResolveFailure",
+        "AZFWFqdnResolveFailure", "AZFWFlowTrace", "AZFWFatFlow",
     }
     if category in structured:
         return _parse_structured(record, category, time, resource_id)
@@ -87,6 +95,11 @@ def _s(props: dict, key: str) -> str:
     return str(v) if v is not None else ""
 
 
+def _port(props: dict, key: str) -> str:
+    """Port fields render as '-' when absent (e.g. ICMP has no ports)."""
+    return _s(props, key) or "-"
+
+
 def _parse_structured(record: dict, category: str, time: str, resource_id: str = "") -> FirewallDataRow:
     props: dict = record.get("properties", {})
 
@@ -97,8 +110,8 @@ def _parse_structured(record: dict, category: str, time: str, resource_id: str =
             category="DnsQuery",
             protocol=_s(props, "QueryType"),        # A/AAAA/MX/… → Proto column
             sourceip=_s(props, "SourceIp"),
-            srcport=_s(props, "SourcePort"),
-            targetip=_s(props, "QueryName"),        # queried hostname → Dest/FQDN column
+            srcport=_port(props, "SourcePort"),
+            targetip=_s(props, "QueryName").rstrip("."),  # hostname without trailing dot, like legacy
             targetport="53",                        # DNS is always port 53
             action=_s(props, "ResponseCode") or "Request",  # NOERROR/NXDOMAIN/… → Action column
             moreinfo=_s(props, "ErrorMessage"),
@@ -118,9 +131,9 @@ def _parse_structured(record: dict, category: str, time: str, resource_id: str =
             category="AppRule",
             protocol=_s(props, "Protocol"),
             sourceip=_s(props, "SourceIp"),
-            srcport=_s(props, "SourcePort"),
+            srcport=_port(props, "SourcePort"),
             targetip=_s(props, "Fqdn"),
-            targetport=_s(props, "DestinationPort"),
+            targetport=_port(props, "DestinationPort"),
             action=_s(props, "Action"),
             policy=full_policy,
             moreinfo=_s(props, "TargetUrl"),
@@ -146,9 +159,9 @@ def _parse_structured(record: dict, category: str, time: str, resource_id: str =
             category="NetworkRule",
             protocol=_s(props, "Protocol"),
             sourceip=_s(props, "SourceIp"),
-            srcport=_s(props, "SourcePort"),
+            srcport=_port(props, "SourcePort"),
             targetip=_s(props, "DestinationIp"),
-            targetport=_s(props, "DestinationPort"),
+            targetport=_port(props, "DestinationPort"),
             action=_s(props, "Action"),
             policy=full_policy,
             resource_id=resource_id,
@@ -173,9 +186,9 @@ def _parse_structured(record: dict, category: str, time: str, resource_id: str =
             category="NATRule",
             protocol=_s(props, "Protocol"),
             sourceip=_s(props, "SourceIp"),
-            srcport=_s(props, "SourcePort"),
+            srcport=_port(props, "SourcePort"),
             targetip=_s(props, "TranslatedIp"),
-            targetport=_s(props, "TranslatedPort"),
+            targetport=_port(props, "TranslatedPort"),
             action="DNAT",
             policy=full_policy,
             resource_id=resource_id,
@@ -192,9 +205,9 @@ def _parse_structured(record: dict, category: str, time: str, resource_id: str =
             category="IDPS",
             protocol=_s(props, "Protocol"),
             sourceip=_s(props, "SourceIp"),
-            srcport=_s(props, "SourcePort"),
+            srcport=_port(props, "SourcePort"),
             targetip=_s(props, "DestinationIp"),
-            targetport=_s(props, "DestinationPort"),
+            targetport=_port(props, "DestinationPort"),
             action=_s(props, "Action"),
             moreinfo=(
                 f"SEV:{_s(props, 'Severity')} "
@@ -212,9 +225,9 @@ def _parse_structured(record: dict, category: str, time: str, resource_id: str =
             category="ThreatIntel",
             protocol=_s(props, "Protocol"),
             sourceip=_s(props, "SourceIp"),
-            srcport=_s(props, "SourcePort"),
+            srcport=_port(props, "SourcePort"),
             targetip=_s(props, "DestinationIp"),
-            targetport=_s(props, "DestinationPort"),
+            targetport=_port(props, "DestinationPort"),
             action=_s(props, "Action"),
             moreinfo=_s(props, "ThreatDescription"),
             resource_id=resource_id,
@@ -226,10 +239,13 @@ def _parse_structured(record: dict, category: str, time: str, resource_id: str =
         rc = _s(props, "RuleCollection")
         rule = _s(props, "Rule")
         policy = "»".join(filter(None, [fw_policy, rcg, rc, rule]))
+        # The firewall's own DNS resolution of an FQDN used in a network/DNAT
+        # rule failed — a DNS failure, but not a client DNS-proxy query, so it
+        # gets its own category (and is not affected by the Hide-DNS toggle).
         return FirewallDataRow(
             rowid=_next_id(),
             time=time,
-            category="AppRule",
+            category="DnsFailure",
             targetip=_s(props, "Fqdn"),
             action="ResolveFail",
             policy=policy,
@@ -239,6 +255,45 @@ def _parse_structured(record: dict, category: str, time: str, resource_id: str =
             rule_collection_group=rcg,
             rule_collection=rc,
             rule_name=rule,
+        )
+
+    if category == "AZFWFlowTrace":
+        # Flag: FIN / FIN-ACK / SYN-ACK / RST / INVALID …; Action/ActionReason
+        # describe why the flow was logged (e.g. "Additional TCP Log").
+        reason = " ".join(filter(None, [_s(props, "Action"), _s(props, "ActionReason")]))
+        return FirewallDataRow(
+            rowid=_next_id(),
+            time=time,
+            category="FlowTrace",
+            protocol=_s(props, "Protocol"),
+            sourceip=_s(props, "SourceIp"),
+            srcport=_port(props, "SourcePort"),
+            targetip=_s(props, "DestinationIp"),
+            targetport=_port(props, "DestinationPort"),
+            action=_s(props, "Flag") or "-",
+            moreinfo=reason,
+            resource_id=resource_id,
+        )
+
+    if category == "AZFWFatFlow":
+        # Top-talker flows; FlowRate is in Mbit/s.
+        rate = _s(props, "FlowRate")
+        try:
+            rate_txt = f"{float(rate):.1f} Mbps"
+        except ValueError:
+            rate_txt = f"{rate} Mbps" if rate else "-"
+        return FirewallDataRow(
+            rowid=_next_id(),
+            time=time,
+            category="FatFlow",
+            protocol=_s(props, "Protocol"),
+            sourceip=_s(props, "SourceIp"),
+            srcport=_port(props, "SourcePort"),
+            targetip=_s(props, "DestinationIp"),
+            targetport=_port(props, "DestinationPort"),
+            action=rate_txt,
+            moreinfo="Top flow by bandwidth",
+            resource_id=resource_id,
         )
 
     return FirewallDataRow(rowid=_next_id(), time=time, category=f"SKIP:{category}")
@@ -351,6 +406,32 @@ def _parse_legacy(record: dict, op_name: str, time: str) -> FirewallDataRow:
                 policy=policy,
                 moreinfo=moreinfo,
                 fw_policy=policy_name,
+                rule_collection_group=rcg,
+                rule_collection=rc,
+                rule_name=rule_name,
+            )
+
+        if op_name == "AzureFirewallDNSResolutionFailureLog":
+            # "Failed to resolve FQDN example.com. Error lookup example.com on 127.0.0.53:53: ...;
+            #  DNS resolution returned no IPv4 IPs. Rule Collection: policy:rcg:rc. Rule: r"
+            # Legacy counterpart of AZFWFqdnResolveFailure — rendered the same way.
+            head, _, tail = msg.partition(" Rule Collection: ")
+            m = _RESOLVE_FAIL_RE.match(head)
+            fqdn = m.group("fqdn") if m else "-"
+            error = ((m.group("error") or "") if m else head).rstrip(".")
+            rc_path, _, rule_part = tail.partition(". Rule: ")
+            segments = rc_path.split(":")  # policy:rcg:rc (older firewalls may omit parts)
+            fw_policy, rcg, rc = (segments + ["", "", ""])[:3] if len(segments) >= 3 else ("", "", rc_path)
+            rule_name = rule_part.rstrip(".")
+            return FirewallDataRow(
+                rowid=_next_id(),
+                time=time,
+                category="DnsFailure",
+                targetip=fqdn,
+                action="ResolveFail",
+                policy="»".join(filter(None, [fw_policy, rcg, rc, rule_name])),
+                moreinfo=error,
+                fw_policy=fw_policy,
                 rule_collection_group=rcg,
                 rule_collection=rc,
                 rule_name=rule_name,

@@ -1,6 +1,7 @@
 """Top-level Textual app for az-firewall-watch."""
 from __future__ import annotations
 
+import heapq
 import re
 
 from rich.text import Text
@@ -26,11 +27,34 @@ from fw_parser import FirewallDataRow
 from helpers import _category_text, _highlight, _to_local
 
 from .azure_resources import FirewallInfo, FirewallPolicyInfo, IpGroupInfo
-from .config import CATEGORY_OPTIONS, MAX_ROWS, VERSION
+from .config import CATEGORY_OPTIONS, MAX_ROWS, TABLE_TRIM_SLACK, VERSION
 from .management import load_management_data
 from .streaming import run_stream
 from .updates import check_for_update
 from .views import FirewallView, IpGroupsView, PolicyView
+
+
+class TimeCell(Text):
+    """Time column cell: renders local time but remembers the ISO timestamp.
+
+    DataTable.sort() only sees cell values, so the full-precision timestamp
+    travels with the cell to keep newest-first ordering exact within a second.
+    """
+
+    __slots__ = ("iso",)
+
+    def __init__(self, iso: str) -> None:
+        super().__init__(_to_local(iso))
+        self.iso = iso
+
+
+def _row_time(row: FirewallDataRow) -> str:
+    return row.time
+
+
+def _time_cell_key(cells: tuple) -> str:
+    first = cells[0]
+    return first.iso if isinstance(first, TimeCell) else str(first)
 
 
 class FirewallLogApp(App[None]):
@@ -92,7 +116,12 @@ class FirewallLogApp(App[None]):
         Binding("ctrl+q", "quit", "Quit", priority=True, show=True),
         Binding("ctrl+p", "toggle_pause", "Pause/Resume", show=True),
         Binding("c", "clear_logs", "Clear"),
-        Binding("escape", "clear_filters", "Clear Filters", priority=True),
+        # Deliberately NOT a priority binding: priority bindings are resolved
+        # from the App downwards and ignore modal screens, which would swallow
+        # Escape before any dialog (Detail, Update, Error, Connecting) sees it.
+        # The regular chain (focused widget → screen → app) stops at a modal and
+        # still reaches this binding from the filter inputs on the main screen.
+        Binding("escape", "clear_filters", "Clear Filters"),
         Binding("f", "focus_filter", "Filter"),
         Binding("ctrl+s", "screenshot", "Screenshot", show=True),
         Binding("ctrl+r", "refresh_metadata", "Refresh metadata", show=True),
@@ -109,6 +138,8 @@ class FirewallLogApp(App[None]):
         self._fw_name_set: bool = False
         self._seen_policies: set[str] = set()
         self._selected_rowid: str | None = None
+        # rowid → row for every row currently in the table (detail dialog lookup)
+        self._row_index: dict[str, FirewallDataRow] = {}
         # Management-plane enrichment state
         self._firewall_id: str | None = None
         self._fw_info: FirewallInfo | None = None
@@ -245,7 +276,7 @@ class FirewallLogApp(App[None]):
 
     # ── periodic flush ─────────────────────────────────────────────────────────
     async def _flush_rows(self) -> None:
-        """Drain pending rows into _all_rows and refresh the table (every 1 s)."""
+        """Drain pending rows into _all_rows and update the table (every 1 s)."""
         has_new = bool(self._pending) or self._skip_pending > 0
         if not has_new:
             return
@@ -253,29 +284,105 @@ class FirewallLogApp(App[None]):
         batch, self._pending = self._pending[:], []
         skips, self._skip_pending = self._skip_pending, 0
 
-        if batch:
-            for r in batch:
-                if r.fw_policy:
-                    self._seen_policies.add(r.fw_policy)
-            merged = batch + self._all_rows
-            merged.sort(key=lambda r: r.time, reverse=True)
-            self._all_rows = merged[:MAX_ROWS]
-
         status = self.query_one("#status", StatusBar)
         status.total += len(batch)
         status.skipped += skips
+        if not batch:
+            return
 
-        if batch:
+        policies_before = len(self._seen_policies)
+        for r in batch:
+            if r.fw_policy:
+                self._seen_policies.add(r.fw_policy)
+
+        # _all_rows is kept sorted newest-first; merge the (small) sorted batch
+        # in O(n) instead of re-sorting the whole buffer every second.
+        batch.sort(key=_row_time, reverse=True)
+        merged = list(heapq.merge(batch, self._all_rows, key=_row_time, reverse=True))
+        self._all_rows = merged[:MAX_ROWS]
+
+        tbl = self.query_one("#log-table", DataTable)
+        needs_full_rebuild = (
+            # The single-policy display rule changed → existing rows render differently.
+            (policies_before <= 1 < len(self._seen_policies))
+            # Table would grow past the buffer over MAX_ROWS → rebuild to trim.
+            or tbl.row_count + len(batch) > MAX_ROWS + TABLE_TRIM_SLACK
+        )
+        if needs_full_rebuild:
             self._refresh_table()
+        else:
+            self._append_rows(batch)
 
     # ── table rendering ────────────────────────────────────────────────────────
+    def _render_cells(self, row: FirewallDataRow, f: dict, single_policy: bool) -> tuple:
+        """Build the cell renderables for one table row."""
+        action_text = self._action_text(row.action)
+        if f["action"]:
+            action_text.highlight_regex(f"(?i){re.escape(f['action'])}", style="bold reverse")
+        info = row.policy or row.moreinfo
+        if single_policy and row.fw_policy and info.startswith(row.fw_policy + "»"):
+            info = info[len(row.fw_policy) + 1:]
+        return (
+            TimeCell(row.time),
+            _category_text(row.category),
+            _highlight(row.protocol, f["proto"]),
+            self._source_text(self._format_ip(row.sourceip), row.srcport, f["src"]),
+            _highlight(self._format_ip(row.targetip), f["dst"]),
+            row.targetport,
+            action_text,
+            self._info_text(info),
+        )
+
+    def _update_visible_count(self, f: dict, tbl: DataTable) -> None:
+        status = self.query_one("#status", StatusBar)
+        status.visible_count = tbl.row_count if any(f.values()) else -1
+
+    def _append_rows(self, batch: list[FirewallDataRow]) -> None:
+        """Incrementally add new rows and re-sort the table (steady-state path).
+
+        Only the rows that pass the current filters are added; the table is
+        then re-ordered newest-first via DataTable.sort, which re-indexes rows
+        without re-creating them. Far cheaper than clear() + add_row() × N.
+        """
+        f = self._get_filters()
+        tbl = self.query_one("#log-table", DataTable)
+        single_policy = len(self._seen_policies) <= 1
+        prev_rowid = self._selected_rowid
+        prev_scroll_y = tbl.scroll_y
+        prev_idx = None
+        if prev_rowid is not None:
+            try:
+                prev_idx = tbl.get_row_index(prev_rowid)
+            except Exception:
+                prev_rowid = None
+
+        added = 0
+        with tbl.prevent(DataTable.RowHighlighted):
+            for row in batch:
+                if self._matches(row, f):
+                    tbl.add_row(*self._render_cells(row, f, single_policy), key=row.rowid)
+                    # Index only what is in the table (rows may linger there
+                    # beyond _all_rows until the next trim); every full refresh
+                    # rebuilds the index from the visible rows, so it stays
+                    # bounded by the table size.
+                    self._row_index[row.rowid] = row
+                    added += 1
+            if added:
+                tbl.sort(key=_time_cell_key, reverse=True)
+                if prev_rowid is not None and prev_idx is not None:
+                    idx = tbl.get_row_index(prev_rowid)
+                    tbl.move_cursor(row=idx, animate=False, scroll=False)
+                    # keep the selected row where it was on screen
+                    tbl.scroll_to(y=prev_scroll_y + (idx - prev_idx), animate=False)
+                else:
+                    tbl.scroll_home(animate=False)
+        self._update_visible_count(f, tbl)
+
     def _refresh_table(self) -> None:
+        """Full rebuild of the table from _all_rows (filter changes, trimming)."""
         f = self._get_filters()
         visible = [r for r in self._all_rows if self._matches(r, f)]
-        status = self.query_one("#status", StatusBar)
-        filtered = any(f.values())
-        status.visible_count = len(visible) if filtered else -1
-
+        self._row_index = {r.rowid: r for r in visible}  # exactly the rows in the table
         tbl = self.query_one("#log-table", DataTable)
         prev_scroll_y = tbl.scroll_y
         prev_rowid = self._selected_rowid
@@ -284,28 +391,7 @@ class FirewallLogApp(App[None]):
         with tbl.prevent(DataTable.RowHighlighted):
             tbl.clear()
             for row in visible:
-                action_text = self._action_text(row.action)
-                if f["action"]:
-                    action_text.highlight_regex(
-                        f"(?i){re.escape(f['action'])}", style="bold reverse"
-                    )
-                info = row.policy or row.moreinfo
-                if single_policy and row.fw_policy and info.startswith(row.fw_policy + "»"):
-                    info = info[len(row.fw_policy) + 1:]
-                info_text = self._info_text(info)
-                src_display = self._format_ip(row.sourceip)
-                dst_display = self._format_ip(row.targetip)
-                tbl.add_row(
-                    _to_local(row.time),
-                    _category_text(row.category),
-                    _highlight(row.protocol, f["proto"]),
-                    self._source_text(src_display, row.srcport, f["src"]),
-                    _highlight(dst_display, f["dst"]),
-                    row.targetport,
-                    action_text,
-                    info_text,
-                    key=row.rowid,
-                )
+                tbl.add_row(*self._render_cells(row, f, single_policy), key=row.rowid)
 
             if prev_rowid is not None:
                 try:
@@ -317,6 +403,7 @@ class FirewallLogApp(App[None]):
             else:
                 # No active selection — keep the view pinned to the newest row.
                 tbl.scroll_home(animate=False)
+        self._update_visible_count(f, tbl)
 
     @staticmethod
     def _action_text(action: str) -> Text:
@@ -336,6 +423,18 @@ class FirewallLogApp(App[None]):
             return Text(action, style="bold yellow")
         if a in ("servfail", "refused"):
             return Text(action, style="bold red")
+        if a == "resolvefail":
+            return Text(action, style="bold dark_orange3")
+        # Flow-trace flags
+        if a == "invalid":
+            return Text(action, style="bold red")
+        if a == "rst":
+            return Text(action, style="bold yellow")
+        if a in ("fin", "fin-ack", "syn-ack", "syn"):
+            return Text(action, style="dim")
+        # Fat-flow bandwidth
+        if a.endswith(" mbps"):
+            return Text(action, style="bold cyan")
         return Text(action)
 
     @staticmethod
@@ -455,11 +554,9 @@ class FirewallLogApp(App[None]):
         rowid = event.row_key.value
         if rowid is None:
             return
-        for row in self._all_rows:
-            if row.rowid == rowid:
-                enrichment = self._compute_enrichment(row)
-                self.push_screen(DetailDialog(row, enrichment=enrichment))
-                return
+        row = self._row_index.get(rowid)
+        if row is not None:
+            self.push_screen(DetailDialog(row, enrichment=self._compute_enrichment(row)))
 
     def _compute_enrichment(self, row: FirewallDataRow) -> dict:
         """Build the optional enrichment payload for DetailDialog."""
@@ -505,6 +602,7 @@ class FirewallLogApp(App[None]):
         self._pending = []
         self._selected_rowid = None
         self._seen_policies.clear()
+        self._row_index.clear()
         self.query_one("#log-table", DataTable).clear()
         status = self.query_one("#status", StatusBar)
         status.total = 0

@@ -598,7 +598,8 @@ class FirewallLogApp(App[None]):
         if self._policy_info is not None:
             out["policy_sku_tier"] = self._policy_info.sku_tier
             # Exact lookup of the rule the firewall reported — no guessing.
-            found = find_logged_rule(self._policy_info, self._logged_from_row(row))
+            logged = self._logged_from_row(row)
+            found = find_logged_rule(self._policy_info, logged)
             if found is not None:
                 policy_name, grp, rc, rule = found
                 out["rule_priority"] = f"RCG:{grp.priority} \u00bb RC:{rc.priority}"
@@ -606,7 +607,7 @@ class FirewallLogApp(App[None]):
                 out["rule_definition"] = self._rule_definition(rule)
                 if policy_name and policy_name != self._policy_info.name:
                     out["rule_policy"] = f"{policy_name} (inherited)"
-            elif self._logged_from_row(row) is not None:
+            elif logged is not None:
                 out["rule_definition"] = "logged rule not in loaded policy (Ctrl+R to refresh)"
             out["trace_hint"] = "press t for the evaluation trace"
         return out
@@ -619,7 +620,8 @@ class FirewallLogApp(App[None]):
         dst = (rule.destination_addresses + names(rule.destination_ip_groups)
                + rule.destination_fqdns + rule.fqdn_tags + rule.target_urls)
         if rule.translated_address or rule.translated_fqdn:
-            dst.append(f"→ {rule.translated_address or rule.translated_fqdn}:{rule.translated_port}")
+            target = rule.translated_address or rule.translated_fqdn
+            dst.append(f"→ {target}:{rule.translated_port}" if rule.translated_port else f"→ {target}")
         parts = [
             ", ".join(rule.protocols) or "any",
             ", ".join(rule.destination_ports) or "any port",

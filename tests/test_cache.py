@@ -122,6 +122,14 @@ def test_hydrate_tolerates_missing_optional_fields(cache_file):
     assert loaded.subnet_cidrs == [] and loaded.ip_groups == {}
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX permissions")
+def test_cache_directory_is_private(monkeypatch, tmp_path):
+    monkeypatch.setattr(cache.Path, "home", staticmethod(lambda: tmp_path))
+    path = cache.cache_path()
+    assert path == tmp_path / ".az-firewall-watch" / "cache.json"
+    assert stat.S_IMODE(os.stat(path.parent).st_mode) == 0o700
+
+
 def test_cache_path_falls_back_when_home_unwritable(monkeypatch, tmp_path):
     class _Home:
         def __truediv__(self, _other):

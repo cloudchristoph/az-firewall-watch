@@ -378,6 +378,16 @@ async def test_detail_dialog_t_opens_trace(structured_record, mgmt, firewall_id)
         await wait_until(pilot, lambda: isinstance(app.screen, TraceScreen))
 
 
+def test_rule_definition_formats_dnat_targets_without_trailing_colon():
+    app = FirewallLogApp()
+    with_port = Rule(name="rdp", rule_type="NatRule", source_addresses=["*"], destination_addresses=["20.1.1.1"],
+                     destination_ports=["3389"], protocols=["TCP"], translated_address="10.3.5.4", translated_port="3389")
+    without_port = Rule(name="web", rule_type="NatRule", source_addresses=["*"], destination_addresses=["20.1.1.1"],
+                        destination_ports=["443"], protocols=["TCP"], translated_fqdn="web.internal")
+    assert app._rule_definition(with_port).endswith("to 20.1.1.1, → 10.3.5.4:3389")
+    assert app._rule_definition(without_port).endswith("to 20.1.1.1, → web.internal")
+
+
 def test_compute_enrichment_without_metadata(structured_record):
     app = FirewallLogApp()
     assert app._compute_enrichment(_net(structured_record, "10.3.5.4", "1.1.1.1")) == {}

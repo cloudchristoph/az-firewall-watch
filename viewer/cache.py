@@ -46,6 +46,10 @@ def cache_path() -> Path:
     try:
         home = Path.home() / ".az-firewall-watch"
         home.mkdir(parents=True, exist_ok=True)
+        try:
+            os.chmod(home, 0o700)  # the file is 0600; keep the directory private too
+        except OSError:
+            pass
         return home / "cache.json"
     except OSError:
         return BASE_DIR / ".azfw-cache.json"

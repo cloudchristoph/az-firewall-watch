@@ -31,6 +31,10 @@ def make_snapshot(fetched_at: float | None = None) -> CachedSnapshot:
     policy = FirewallPolicyInfo(id="/p", name="fwp-hub-premium-gwc", sku_tier="Premium", threat_intel_mode="Alert",
                                 rule_collection_groups=[
         RuleCollectionGroup(id="/p/net", name="rcg-net", priority=2000, rule_collections=[
+            RuleCollection(name="rc-deny", priority=50, action="Deny", rule_collection_type="Filter", rules=[
+                Rule(name="deny-bad", rule_type="NetworkRule", source_addresses=["*"],
+                     destination_addresses=["203.0.113.0/24"], destination_ports=["*"]),
+            ]),
             RuleCollection(name="rc-web", priority=100, action="Allow", rule_collection_type="Filter", rules=[
                 Rule(name="allow-web", rule_type="NetworkRule", source_ip_groups=[G_SPOKES],
                      destination_addresses=["*"], destination_ports=["443"], protocols=["TCP"]),
@@ -249,16 +253,20 @@ async def _open_trace(app: FirewallLogApp, pilot, row) -> TraceScreen:
     return app.screen
 
 
-def _tree_labels(tree: Tree) -> list[str]:
-    out: list[str] = []
+def _tree_nodes(tree: Tree) -> list:
+    out: list = []
 
     def walk(node):
-        out.append(node.label.plain)
+        out.append(node)
         for child in node.children:
             walk(child)
 
     walk(tree.root)
     return out
+
+
+def _tree_labels(tree: Tree) -> list[str]:
+    return [n.label.plain for n in _tree_nodes(tree)]
 
 
 async def test_trace_requires_selection_and_metadata(structured_record, mgmt, firewall_id):
@@ -289,15 +297,28 @@ async def test_trace_screen_shows_logged_match_and_closes(structured_record, mgm
         await pilot.pause()
         await _load(app, pilot, firewall_id)
         screen = await _open_trace(app, pilot, _net(structured_record, "10.3.5.4", "1.1.1.1"))
-        labels = _tree_labels(screen.query_one("#trace-tree", Tree))
+        tree = screen.query_one("#trace-tree", Tree)
+        labels = _tree_labels(tree)
         joined = "\n".join(labels)
         assert "Threat Intelligence   mode Alert" in joined
-        assert "Pass 1 · DNAT rules   no collections" in joined
-        assert "[2000] rcg-net » [100] rc-web (Allow)" in joined
-        assert "allow-web" in joined and "← logged match" in joined
-        assert "Pass 3 · Application rules   not evaluated" in joined
-        assert "✓ Allow by rcg-net » rc-web » allow-web" in joined
-        assert "10.3.5.4 → 1.1.1.1:443 TCP" in _text(screen)
+        assert "Pass 1 · DNAT   no collections" in joined
+        assert "Pass 2 · Network   ✓ matched" in joined
+        assert "[2000] rcg-net" in joined and "✓ [100] rc-web (Allow)" in joined  # group once, collection below it
+        assert "allow-web" in joined and "← logged" in joined
+        assert "Pass 3 · Application   not evaluated" in joined
+        assert "evaluation stopped at the logged rule" in joined
+        header = _text(screen)
+        assert "10.3.5.4 → 1.1.1.1:443 TCP" in header and "Allow by rcg-net » rc-web » allow-web" in header
+        assert "Enter open rule · a expand all" in header
+        # path view: the missed collection before the match is one collapsed line with the reason
+        deny = next(n for n in _tree_nodes(tree) if n.label.plain.startswith("✗ [50] rc-deny"))
+        assert "1 rule · nearest miss: destination" in deny.label.plain
+        assert not deny.is_expanded and len(deny.children) == 1
+        assert deny.children[0].label.plain == "✗ deny-bad   destination: 1.1.1.1"
+        await pilot.press("a")  # expand all
+        await pilot.pause()
+        deny = next(n for n in _tree_nodes(screen.query_one("#trace-tree", Tree)) if n.label.plain.startswith("✗ [50] rc-deny"))
+        assert deny.is_expanded and deny.children[0].is_expanded
         await pilot.press("escape")
         await pilot.pause(0.2)
         assert not isinstance(app.screen, TraceScreen)
@@ -329,10 +350,16 @@ async def test_trace_for_no_rule_matched_row_shows_near_miss(structured_record, 
             DestinationPort=8443, Action="Deny", ActionReason="No rule matched. Proceeding with default action.",
         ))
         screen = await _open_trace(app, pilot, row)
-        joined = "\n".join(_tree_labels(screen.query_one("#trace-tree", Tree)))
-        assert "port: 8443 not in 443" in joined
+        tree = screen.query_one("#trace-tree", Tree)
+        joined = "\n".join(_tree_labels(tree))
+        assert "Pass 2 · Network   ✗ no match" in joined
+        assert "✗ [100] rc-web (Allow)   2 rules · nearest miss: port" in joined
+        assert "✗ allow-web   port: 8443 not in 443 ★ nearest" in joined   # first problem inline, ranked
         assert "skipped — protocol TCP is not HTTP, HTTPS or MSSQL" in joined
         assert "default action: Deny" in joined
+        # the collection holding the nearest misses is expanded in path view
+        rc_node = next(n for n in _tree_nodes(tree) if n.label.plain.startswith("✗ [100] rc-web"))
+        assert rc_node.is_expanded
 
 
 async def test_detail_dialog_t_opens_trace(structured_record, mgmt, firewall_id):
@@ -396,7 +423,8 @@ async def test_views_render_metadata(structured_record, mgmt, firewall_id):
         assert "fwp-hub-premium-gwc" in tree.root.label.plain and "Premium" in tree.root.label.plain
         rcg_node = tree.root.children[0]
         assert "[2000] rcg-net" in rcg_node.label.plain
-        assert [n.label.plain for n in rcg_node.children[0].children] == ["allow-web", "allow-onprem"]
+        assert [n.label.plain for n in rcg_node.children] == ["[50] rc-deny (Deny)", "[100] rc-web (Allow)"]
+        assert [n.label.plain for n in rcg_node.children[1].children] == ["allow-web", "allow-onprem"]
         ipg = app.query_one("#ipg-table", DataTable)
         assert ipg.row_count == 2
         names = [ipg.get_cell_at((i, 0)) for i in range(2)]

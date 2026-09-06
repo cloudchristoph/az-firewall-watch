@@ -236,11 +236,47 @@ def evaluate_rule(rule: Rule, flow: Flow, ip_groups: dict[str, IpGroupInfo]) -> 
     results = {c.result for c in checks}
     if MISS in results:
         verdict = MISS
-    elif UNKNOWN in results:
-        verdict = UNKNOWN
-    else:
+    elif results == {MATCH}:
         verdict = MATCH
+    else:
+        # An unknown or a criterion the log does not carry (e.g. no destination
+        # IP for an application-rule row) means we cannot claim a match.
+        verdict = UNKNOWN
     return RuleTrace(rule=rule, checks=checks, verdict=verdict)
+
+
+# ── ranking helpers for the compact view ─────────────────────────────────────
+
+def rule_score(r: RuleTrace) -> int:
+    """Number of matching criteria — higher means 'closer' to a match."""
+    return sum(1 for c in r.checks if c.result == MATCH)
+
+
+def first_problem(r: RuleTrace) -> Check | None:
+    """The criterion to blame: the first miss, else the first unknown, else
+    the first criterion the log does not carry."""
+    for wanted in (MISS, UNKNOWN, NA):
+        for c in r.checks:
+            if c.result == wanted:
+                return c
+    return None
+
+
+def nearest_miss(c: CollectionTrace) -> Check | None:
+    """For a collection without a match: the problem of its closest rule."""
+    candidates = [r for r in c.rules if r.verdict != MATCH]
+    if not candidates:
+        return None
+    best = max(candidates, key=rule_score)
+    return first_problem(best)
+
+
+def nearest_rules(trace: "Trace", limit: int = 3) -> list[RuleTrace]:
+    """Closest non-matching rules across all evaluated collections (for 'no rule matched')."""
+    rules = [r for p in trace.passes if p.evaluated for c in p.collections if c.evaluated
+             for r in c.rules if not r.logged]
+    rules.sort(key=lambda r: (-rule_score(r), r.verdict != UNKNOWN))
+    return rules[:limit]
 
 
 # ── trace ────────────────────────────────────────────────────────────────────

@@ -119,10 +119,21 @@ def test_application_rule_tags_and_categories_are_unknown():
     assert dest.result == UNKNOWN and "WindowsUpdate" in dest.detail
 
 
-def test_missing_flow_values_are_not_applicable():
+def test_missing_flow_values_are_not_applicable_and_never_a_match():
     r = evaluate_rule(net("r"), Flow(category="NetworkRule", src_ip="-", dst_ip="", dst_port="-", protocol="-"), GROUPS)
-    assert {c.result for c in r.checks} == {NA, MATCH} or all(c.result in (NA, MATCH) for c in r.checks)
-    assert r.verdict == MATCH  # nothing contradicts
+    assert all(c.result == NA for c in r.checks)
+    assert r.verdict == UNKNOWN  # nothing contradicts, but nothing confirms either
+
+
+def test_application_flow_through_network_pass_is_unknown_not_a_match():
+    """Lab case: an app-rule row has no destination IP, so network rules must not read as 'would match'."""
+    from viewer.trace import first_problem
+
+    flow = Flow(category="AppRule", protocol="HTTPS", src_ip="10.3.5.4", dst_fqdn="www.bing.com", dst_port="443")
+    r = evaluate_rule(net("r", source_addresses=["*"], destination_addresses=["*"], destination_ports=["443"], protocols=["TCP"]), flow, GROUPS)
+    assert r.verdict == UNKNOWN
+    problem = first_problem(r)
+    assert problem.name == "destination" and problem.result == NA
 
 
 # ── exact lookup ─────────────────────────────────────────────────────────────
@@ -246,6 +257,24 @@ def test_trace_threat_intel_hit():
     flow = Flow(category="ThreatIntel", protocol="TCP", src_ip="10.3.5.4", dst_ip="1.1.1.1", dst_port="80")
     t = build_trace(flow, LAB, GROUPS, None)
     assert t.threat_intel.startswith("hit")
+
+
+def test_ranking_helpers_pick_the_closest_rule_and_its_problem():
+    from viewer.trace import first_problem, nearest_miss, nearest_rules, rule_score
+
+    flow = Flow(category="NetworkRule", protocol="TCP", src_ip="10.3.5.4", dst_ip="51.116.242.155", dst_port="8443")
+    t = build_trace(flow, LAB, GROUPS, None)
+    allow = t.passes[1].collections[1]
+    monitor, web = allow.rules
+    assert rule_score(web) == 3 and rule_score(monitor) == 2      # web misses only the port
+    assert first_problem(web).name == "port"
+    assert first_problem(monitor).name == "port"                  # a hard miss (port) outranks the unknown destination
+    assert nearest_miss(allow).name == "port"                     # closest rule decides
+    ranked = nearest_rules(t)
+    assert len(ranked) <= 3
+    assert web in ranked and monitor not in ranked[:1]  # deny-bad (3 matches) and web (3) tie above monitor (2)
+    assert all(rule_score(a) >= rule_score(b) for a, b in zip(ranked, ranked[1:]))
+    assert first_problem(evaluate_rule(net("all"), TCP443, GROUPS)) is None
 
 
 def test_collection_kind_detection():

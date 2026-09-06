@@ -210,6 +210,10 @@ def test_trace_computed_match_before_logged_rule_is_downgraded_to_unknown():
     t = build_trace(flow, LAB, GROUPS, logged)
     deny = t.passes[1].collections[0]
     assert deny.verdict == UNKNOWN and "firewall continued" in deny.note
+    # the rule itself is downgraded as well, with an explanatory pseudo-criterion (Copilot review)
+    rule = deny.rules[0]
+    assert rule.verdict == UNKNOWN
+    assert rule.checks[-1].name == "firewall" and rule.checks[-1].result == UNKNOWN
 
 
 def test_trace_computed_match_without_log_is_flagged():

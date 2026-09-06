@@ -67,9 +67,9 @@ class PolicyView(Static):
             details.update("Policy data unavailable")
             return
 
-        tree.root.set_label(
+        tree.root.set_label(escape(
             f"{policy.name}  (SKU: {policy.sku_tier or '-'}, ThreatIntel: {policy.threat_intel_mode or '-'})"
-        )
+        ))
         tree.root.remove_children()
         tree.root.data = {
             "kind": "policy",
@@ -86,13 +86,13 @@ class PolicyView(Static):
             for rc in sorted(g.rule_collections, key=lambda x: x.priority):
                 action = f" ({rc.action})" if rc.action else ""
                 rc_node = g_node.add(
-                    f"[{rc.priority}] {rc.name}{action}",
+                    f"[{rc.priority}] {escape(rc.name)}{escape(action)}",
                     data={"kind": "rc", "rcg": g, "rc": rc},
                 )
                 for r in rc.rules:
                     rule_ref = self._rule_ref(g.name, rc.name, r.name)
                     node = rc_node.add_leaf(
-                        r.name,
+                        escape(r.name),
                         data={"kind": "rule", "rcg": g, "rc": rc, "rule": r, "rule_ref": rule_ref},
                     )
                     self._rule_ref_to_node[rule_ref] = node

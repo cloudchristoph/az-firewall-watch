@@ -6,6 +6,7 @@ single collapsed line with a short reason. ``a`` expands everything.
 """
 from __future__ import annotations
 
+from rich.markup import escape
 from textual import events
 from textual.app import ComposeResult
 from textual.screen import ModalScreen
@@ -72,13 +73,15 @@ class TraceScreen(ModalScreen[str | None]):
         f = t.flow
         icon = "[green]✓[/]" if t.matched_rule else "[red]✗[/]"
         with Static(id="dialog"):
+            # Everything dynamic (names, FQDNs, outcome) is escaped: labels are Rich markup.
             yield Static(
-                f"{f.src_ip} → {f.dst_fqdn or f.dst_ip}:{f.dst_port} {f.protocol}    {icon} {t.outcome}",
+                escape(f"{f.src_ip} → {f.dst_fqdn or f.dst_ip}:{f.dst_port} {f.protocol}")
+                + f"    {icon} {escape(t.outcome)}",
                 id="trace-title", markup=True,
             )
-            yield Static(self._metadata_note or "", id="trace-meta", markup=True)
+            yield Static(escape(self._metadata_note or ""), id="trace-meta", markup=True)
             if t.warnings:
-                yield Static("\n".join(f"⚠ {w}" for w in t.warnings), id="trace-warnings", markup=True)
+                yield Static("\n".join(f"⚠ {escape(w)}" for w in t.warnings), id="trace-warnings", markup=True)
             yield Tree("Policy evaluation", id="trace-tree")
             yield Static(LEGEND, id="trace-legend", markup=True)
 
@@ -95,15 +98,15 @@ class TraceScreen(ModalScreen[str | None]):
         highlight = {id(r) for r in nearest_rules(t)} if t.matched_rule is None else set()
         show_origin = len({c.policy_name for p in t.passes for c in p.collections}) > 1
 
-        root.add_leaf(f"Threat Intelligence   [dim]{t.threat_intel}[/]")
+        root.add_leaf(f"Threat Intelligence   [dim]{escape(t.threat_intel)}[/]")
         for p in t.passes:
             self._add_pass(root, p, highlight, show_origin)
         if t.infrastructure:
-            root.add_leaf(f"Infrastructure rule collection   [dim]{t.infrastructure}[/]")
+            root.add_leaf(f"Infrastructure rule collection   [dim]{escape(t.infrastructure)}[/]")
         if t.matched_rule is not None:
             root.add_leaf("[green]✓[/] evaluation stopped at the logged rule")
         else:
-            root.add_leaf(f"[red]✗[/] {t.outcome}")
+            root.add_leaf(f"[red]✗[/] {escape(t.outcome)}")
         root.expand()
 
         matched = self._find_node(root, lambda d: isinstance(d, dict) and d.get("logged"))
@@ -117,10 +120,10 @@ class TraceScreen(ModalScreen[str | None]):
     def _add_pass(self, root: TreeNode, p: PassTrace, highlight: set[int], show_origin: bool) -> None:
         title = _PASS_TITLE[p.kind]
         if not p.evaluated:
-            root.add_leaf(f"[dim]{title}   {p.note}[/]")
+            root.add_leaf(f"[dim]{title}   {escape(p.note)}[/]")
             return
         if not p.collections:
-            root.add_leaf(f"{title}   [dim]{p.note or 'no collections'}[/]")
+            root.add_leaf(f"{title}   [dim]{escape(p.note or 'no collections')}[/]")
             return
         if p.stopped_here:
             summary = "[green]✓ matched[/]"
@@ -144,8 +147,8 @@ class TraceScreen(ModalScreen[str | None]):
                     group_node.add_leaf(f"[dim]{pending_skipped} more collections not evaluated[/]")
                     pending_skipped = 0
                 current_key = key
-                origin = f"   [dim]· {c.policy_name}[/]" if show_origin and c.policy_name else ""
-                group_node = pass_node.add(f"[{c.group.priority}] {c.group.name}{origin}", expand=True)
+                origin = f"   [dim]· {escape(c.policy_name)}[/]" if show_origin and c.policy_name else ""
+                group_node = pass_node.add(f"[{c.group.priority}] {escape(c.group.name)}{origin}", expand=True)
             if not c.evaluated:
                 pending_skipped += 1
                 continue
@@ -155,18 +158,18 @@ class TraceScreen(ModalScreen[str | None]):
 
     def _add_collection(self, parent: TreeNode, c: CollectionTrace, highlight: set[int]) -> None:
         rc = c.collection
-        head = f"[{rc.priority}] {rc.name} ({rc.action or rc.kind})"
+        head = escape(f"[{rc.priority}] {rc.name} ({rc.action or rc.kind})")
         n = len(c.rules)
         rules_txt = f"{n} rule" if n == 1 else f"{n} rules"
         if c.verdict == MATCH and any(r.logged for r in c.rules):
             label, expand = f"[green]✓[/] {head}", True
         elif c.verdict == MATCH:
-            label, expand = f"[green]✓[/] {head}   [dim]{rules_txt} · {c.note}[/]", self._expand_all
+            label, expand = f"[green]✓[/] {head}   [dim]{rules_txt} · {escape(c.note)}[/]", self._expand_all
         else:
             icon = _ICON.get(c.verdict, "")
             miss = nearest_miss(c)
             reason = c.note or (f"nearest miss: {miss.name}" if miss else "no rules")
-            label = f"{icon} {head}   [dim]{rules_txt} · {reason}[/]"
+            label = f"{icon} {head}   [dim]{rules_txt} · {escape(reason)}[/]"
             expand = self._expand_all or any(id(r) in highlight for r in c.rules)
         node = parent.add(label, expand=expand)
         for r in c.rules:
@@ -174,19 +177,20 @@ class TraceScreen(ModalScreen[str | None]):
 
     def _add_rule(self, parent: TreeNode, c: CollectionTrace, r: RuleTrace, highlight: set[int]) -> None:
         ref = c.rule_ref_prefix + r.rule.name
+        name = escape(r.rule.name)
         if r.logged:
             summary = "  ".join(f"{_ICON[ch.result]} {ch.name}" for ch in r.checks)
-            label = f"[green]✓[/] [b]{r.rule.name}[/b]   {summary}   [green]← logged[/]"
+            label = f"[green]✓[/] [b]{name}[/b]   {summary}   [green]← logged[/]"
         elif r.verdict == MATCH:
-            label = f"[green]✓[/] {r.rule.name}   [dim]would match[/]"
+            label = f"[green]✓[/] {name}   [dim]would match[/]"
         else:
             problem = first_problem(r)
-            detail = f"   [dim]{problem.name}: {problem.detail}[/]" if problem else ""
+            detail = f"   [dim]{problem.name}: {escape(problem.detail)}[/]" if problem else ""
             star = " [yellow]★ nearest[/]" if id(r) in highlight else ""
-            label = f"{_ICON.get(r.verdict, '')} {r.rule.name}{detail}{star}"
+            label = f"{_ICON.get(r.verdict, '')} {name}{detail}{star}"
         node = parent.add(label, data={"rule_ref": ref, "logged": r.logged}, expand=self._expand_all or r.logged)
         for ch in r.checks:
-            node.add_leaf(f"{_ICON[ch.result]} {ch.name}: [dim]{ch.detail}[/]")
+            node.add_leaf(f"{_ICON[ch.result]} {ch.name}: [dim]{escape(ch.detail)}[/]")
 
     @staticmethod
     def _find_node(node: TreeNode, pred):

@@ -359,8 +359,14 @@ def build_trace(flow: Flow, policy: FirewallPolicyInfo, ip_groups: dict[str, IpG
                     if MATCH in verdicts and logged:
                         # Firewall says another rule matched later; our local check
                         # disagrees — most likely a service tag / resolved FQDN.
+                        # Downgrade the rules too so the UI never shows a green
+                        # match the firewall demonstrably did not stop at.
                         ctrace.verdict = UNKNOWN
                         ctrace.note = "local check would match, but the firewall continued — probably an unevaluable criterion"
+                        for rt in ctrace.rules:
+                            if rt.verdict == MATCH:
+                                rt.verdict = UNKNOWN
+                                rt.checks.append(Check("firewall", UNKNOWN, "would match locally, but the firewall continued to a later rule"))
                     elif MATCH in verdicts:
                         ctrace.verdict = MATCH
                         ctrace.note = "computed match — the firewall logged no rule; verify"

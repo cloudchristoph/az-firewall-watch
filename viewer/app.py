@@ -28,6 +28,7 @@ from helpers import _category_text, _highlight, _to_local
 
 from .azure_resources import FirewallInfo, FirewallPolicyInfo, IpGroupInfo
 from .config import CATEGORY_OPTIONS, MAX_ROWS, TABLE_TRIM_SLACK, VERSION
+from .enrichment import find_matching_ip_groups, resolve_fw_instance
 from .management import load_management_data
 from .trace import Flow, LoggedMatch, build_trace, find_logged_rule
 from .streaming import run_stream
@@ -450,7 +451,6 @@ class FirewallLogApp(App[None]):
         """Return ``AzFw.N`` for IPs inside the firewall subnet, else the IP."""
         if not self._subnet_cidrs or not ip or ip == "-":
             return ip
-        from .enrichment import resolve_fw_instance
         label = resolve_fw_instance(ip, self._subnet_cidrs)
         return label or ip
 
@@ -580,7 +580,6 @@ class FirewallLogApp(App[None]):
         """Build the optional enrichment payload for DetailDialog."""
         if not self._mgmt_loaded:
             return {}
-        from .enrichment import find_matching_ip_groups, resolve_fw_instance
         out: dict = {}
         if self._subnet_cidrs:
             src_lbl = resolve_fw_instance(row.sourceip, self._subnet_cidrs)

@@ -80,11 +80,15 @@ def save(firewall_id: str, snapshot: CachedSnapshot) -> None:
         except (OSError, json.JSONDecodeError):
             existing = {"_version": _CACHE_VERSION, "entries": {}}
     existing.setdefault("entries", {})[firewall_id] = _serialize(snapshot)
+    # Create the temp file private from the start (0600) so the cache is never
+    # world-readable, not even for the instant before os.replace().
     tmp = path.with_suffix(path.suffix + ".tmp")
-    tmp.write_text(json.dumps(existing, indent=2, default=_json_default), encoding="utf-8")
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as fh:
+        fh.write(json.dumps(existing, indent=2, default=_json_default))
     os.replace(tmp, path)
     try:
-        os.chmod(path, 0o600)
+        os.chmod(path, 0o600)  # in case the file pre-existed with wider permissions
     except OSError:
         pass
 

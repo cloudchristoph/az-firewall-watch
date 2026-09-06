@@ -190,6 +190,7 @@ async def test_fetch_policy_parses_groups_collections_rules():
     assert app_rule.source_ip_groups == [G_SPOKES, G_ONPREM]
     assert app_rule.destination_fqdns == ["*.duckduckgo.com"]
     assert app_rule.protocols == ["Https", "Http"]  # dict protocols reduced to their type
+    assert app_rule.destination_ports == ["443", "80"]  # … and their ports lifted for matching
     net_rule = pol.rule_collection_groups[1].rule_collections[0].rules[0]
     assert net_rule.protocols == ["TCP"]
     assert net_rule.destination_ports == ["443"]

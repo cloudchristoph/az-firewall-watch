@@ -216,7 +216,12 @@ class FirewallLogApp(App[None]):
         status = self.query_one("#status", StatusBar)
         snap = await load_management_data(firewall_id, force=force)
         if snap is None:
-            status.meta = "metadata unavailable (no ARM access)"
+            # Keep whatever was loaded before (still valid policy data) but say
+            # so; only report "unavailable" when there is nothing to show.
+            status.meta = (
+                "refresh failed · showing previous metadata"
+                if self._mgmt_loaded else "metadata unavailable (no ARM access)"
+            )
             return
         self._fw_info = snap.firewall
         self._policy_info = snap.policy

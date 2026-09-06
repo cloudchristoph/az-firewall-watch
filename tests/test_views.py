@@ -136,6 +136,20 @@ async def test_metadata_unavailable_is_reported_without_touching_status(firewall
         assert not app._mgmt_loaded
 
 
+async def test_failed_refresh_keeps_previous_metadata(structured_record, mgmt, firewall_id):
+    app = FirewallLogApp()
+    async with app.run_test(size=(160, 45)) as pilot:
+        await pilot.pause()
+        await _load(app, pilot, firewall_id)
+        mgmt["snapshot"] = None  # ARM now unreachable
+        await pilot.press("ctrl+r")
+        status = app.query_one("#status", StatusBar)
+        await wait_until(pilot, lambda: status.meta.startswith("refresh failed"))
+        assert status.meta == "refresh failed · showing previous metadata"
+        assert app._mgmt_loaded and app._policy_info is not None
+        assert app._format_ip("10.2.0.6") == "AzFw.6"  # enrichment still works
+
+
 async def test_request_is_only_honoured_once(mgmt, firewall_id):
     app = FirewallLogApp()
     async with app.run_test(size=(160, 45)) as pilot:

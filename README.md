@@ -284,7 +284,7 @@ display name regardless of which diagnostic mode is enabled.
 | IDPS           | `AZFWIdpsSignature`                                                                               |
 | ThreatIntel    | `AZFWThreatIntel`                                                                                 |
 | FlowTrace      | `AZFWFlowTrace` — TCP flow flags (`SYN-ACK`, `FIN`, `RST`, `INVALID`, …) in the Action column; requires flow-trace logging on the firewall |
-| FatFlow        | `AZFWFatFlow` — top flows by bandwidth, rate in Mbit/s in the Action column; requires fat-flow logging on the firewall |
+| FatFlow        | `AZFWFatFlow` — top flows by bandwidth, rate in Mbit/s in the Action column (sampled every 3 min; rates well below 1 Mbit/s do appear); requires fat-flow logging on the firewall. Most records describe the return direction, i.e. `<internet>:443 → <firewall instance>:<SNAT port>`, so the spoke client often shows up only as destination or not at all |
 
 Unknown or non-firewall categories (for example the Policy Analytics
 `*Aggregation` logs) are counted in the status bar as *skipped* rather than

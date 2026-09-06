@@ -110,9 +110,6 @@ async def fetch_firewall(arm: ArmClient, firewall_id: str) -> FirewallInfo:
         subnet = (cprops.get("subnet") or {}).get("id")
         if subnet and subnet not in subnet_ids:
             subnet_ids.append(subnet)
-    for cfg in props.get("managementIpConfiguration") or []:
-        # rare, but handle the singular field too below
-        pass
     mgmt = props.get("managementIpConfiguration") or {}
     if isinstance(mgmt, dict):
         cprops = mgmt.get("properties") or {}
@@ -168,6 +165,20 @@ async def fetch_all_subnet_cidrs(arm: ArmClient, subnet_ids: list[str]) -> list[
 
 
 def _parse_rule(raw: dict) -> Rule:
+    # Network rules: ipProtocols=["TCP"] + destinationPorts=["443"].
+    # Application rules: protocols=[{"protocolType": "Https", "port": 443}] —
+    # the port lives inside the protocol entry, so lift it into
+    # destination_ports for uniform port matching.
+    protocols: list[str] = []
+    ports: list[str] = [str(p) for p in (raw.get("destinationPorts") or [])]
+    for p in raw.get("ipProtocols") or raw.get("protocols") or []:
+        if isinstance(p, dict):
+            protocols.append(str(p.get("protocolType") or ""))
+            port = p.get("port")
+            if port is not None and str(port) not in ports:
+                ports.append(str(port))
+        else:
+            protocols.append(str(p))
     return Rule(
         name=raw.get("name") or "",
         rule_type=raw.get("ruleType") or "",
@@ -176,11 +187,8 @@ def _parse_rule(raw: dict) -> Rule:
         destination_addresses=list(raw.get("destinationAddresses") or []),
         destination_ip_groups=list(raw.get("destinationIpGroups") or []),
         destination_fqdns=list(raw.get("destinationFqdns") or []),
-        destination_ports=list(raw.get("destinationPorts") or []),
-        protocols=[
-            (p.get("protocolType") if isinstance(p, dict) else str(p))
-            for p in (raw.get("ipProtocols") or raw.get("protocols") or [])
-        ],
+        destination_ports=ports,
+        protocols=protocols,
     )
 
 

@@ -362,6 +362,21 @@ async def test_trace_for_no_rule_matched_row_shows_near_miss(structured_record, 
         assert rc_node.is_expanded
 
 
+async def test_trace_header_omits_missing_port(structured_record, mgmt, firewall_id):
+    """Copilot review: ICMP rows have no port; the header must not read '1.1.1.1:-'."""
+    app = FirewallLogApp()
+    async with app.run_test(size=(160, 45)) as pilot:
+        await pilot.pause()
+        await _load(app, pilot, firewall_id)
+        row = parse_record(structured_record(
+            "AZFWNetworkRule", Protocol="ICMP", SourceIp="10.3.5.4", DestinationIp="1.1.1.1", Action="Deny",
+            ActionReason="No rule matched. Proceeding with default action.",
+        ))
+        screen = await _open_trace(app, pilot, row)
+        header = _text(screen)
+        assert "10.3.5.4 → 1.1.1.1 ICMP" in header and ":-" not in header
+
+
 async def test_detail_dialog_t_opens_trace(structured_record, mgmt, firewall_id):
     app = FirewallLogApp()
     async with app.run_test(size=(160, 45)) as pilot:

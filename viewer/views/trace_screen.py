@@ -79,8 +79,9 @@ class TraceScreen(ModalScreen[str | None]):
             icon = "[red]✗[/]"
         with Static(id="dialog"):
             # Everything dynamic (names, FQDNs, outcome) is escaped: labels are Rich markup.
+            port = f":{f.dst_port}" if f.dst_port and f.dst_port != "-" else ""  # ICMP has none
             yield Static(
-                escape(f"{f.src_ip} → {f.dst_fqdn or f.dst_ip}:{f.dst_port} {f.protocol}")
+                escape(f"{f.src_ip} → {f.dst_fqdn or f.dst_ip}{port} {f.protocol}".rstrip())
                 + f"    {icon} {escape(t.outcome)}",
                 id="trace-title", markup=True,
             )

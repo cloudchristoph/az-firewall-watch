@@ -30,10 +30,12 @@ def resolve_fw_instance(ip: str, subnet_cidrs: Iterable[str]) -> str | None:
         return None
     for net in _parse_networks(subnet_cidrs):
         if addr in net:
+            # Derive the label from the parsed address, not the input string:
+            # "fd00::" or "fd00::00ab" would otherwise yield "" / "00ab".
             if isinstance(addr, ipaddress.IPv4Address):
-                last = ip.split(".")[-1]
+                last = str(int(addr) & 0xFF)
             else:
-                last = ip.split(":")[-1]
+                last = format(int(addr) & 0xFFFF, "x")
             return f"AzFw.{last}"
     return None
 

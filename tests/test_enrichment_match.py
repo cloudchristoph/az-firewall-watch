@@ -37,8 +37,17 @@ def test_resolve_fw_instance(ip, expected):
     assert resolve_fw_instance(ip, SUBNETS) == expected
 
 
-def test_resolve_fw_instance_ipv6_uses_last_hextet():
-    assert resolve_fw_instance("fd00::1:2:3:abcd", ["fd00::/64"]) == "AzFw.abcd"
+@pytest.mark.parametrize(
+    "ip, expected",
+    [
+        ("fd00::1:2:3:abcd", "AzFw.abcd"),
+        ("fd00::", "AzFw.0"),                 # compressed trailing zeros (Copilot review)
+        ("fd00::00ab", "AzFw.ab"),            # leading zeros are not part of the label
+        ("fd00:0:0:0:0:0:0:1", "AzFw.1"),     # uncompressed input, same label
+    ],
+)
+def test_resolve_fw_instance_ipv6_uses_last_hextet(ip, expected):
+    assert resolve_fw_instance(ip, ["fd00::/64"]) == expected
 
 
 def test_resolve_fw_instance_ignores_invalid_cidrs():

@@ -1,6 +1,6 @@
 # 🔥 Azure Firewall Watch
 
-Azure Firewall Watch is a terminal UI for **live log monitoring of Azure Firewall**. It streams logs from an Event Hub in real time and lets you filter and inspect them directly in your terminal.
+Azure Firewall Watch is a terminal UI for **live log monitoring of Azure Firewall**. It streams logs from an Event Hub in real time and lets you filter and inspect them directly in your terminal. With access to Azure Resource Manager it also shows the firewall's policy and IP groups and explains which rule a log row matched.
 
 Built by [CloudChristoph](https://github.com/cloudchristoph).
 
@@ -190,6 +190,7 @@ EVENT_HUB_START_POSITION=latest
 | `Tab`        | Move between filter inputs            |
 | `Enter`      | Open detail view for the selected row (`Escape` or `q` closes it) |
 | `c`          | Clear all rows from the table         |
+| `Ctrl` + `r` | Re-fetch firewall / policy / IP-group metadata (bypasses the cache) |
 
 The status bar at the bottom shows the connection state, total events received,
 the currently visible count when a filter is active, and how many records were
@@ -199,6 +200,39 @@ If an established connection drops, the app reconnects on its own with a
 capped backoff (up to 60 s between attempts) and reports the countdown in the
 status bar. Only the very first connection gives up after three attempts, and
 authentication errors stop immediately with a hint.
+
+## 🧭 Firewall, Policy and IP Groups tabs
+
+Next to the **Logs** tab the viewer shows what it learned about the firewall from
+Azure Resource Manager (ARM):
+
+- **Firewall** — name, resource group, location, SKU, policy, private IPs and
+  the firewall subnets.
+- **Policy** — a tree of rule collection groups → rule collections → rules,
+  ordered by priority, with a detail pane (sources, destinations, ports,
+  protocols, IP groups resolved to their addresses).
+- **IP Groups** — every IP group the policy references, how many rules use it,
+  and for the selected group the rules that reference it. `Enter` on a rule
+  jumps to it in the Policy tab.
+
+The metadata also enriches the **Logs** tab: addresses inside the firewall's
+own subnets are rendered as `AzFw.<last octet>` so traffic from the firewall
+instances themselves (DNS proxy, probes) stands out, and the row detail dialog
+lists the IP groups that contain source and destination, the matching rule's
+priorities and action, and the policy SKU tier. The status bar shows a short
+summary (`policy Premium · 11 IP groups · fresh`).
+
+**How it authenticates.** The ARM client uses `DefaultAzureCredential` (Azure
+CLI login, managed identity, environment credentials, …) and falls back to a
+token from the Azure CLI, so this also works when the Event Hub itself is read
+with a SAS connection string. Your identity needs **Reader** on the firewall,
+its policy and the IP groups. Without ARM access the status bar says
+*metadata unavailable* and the viewer works exactly as before.
+
+**Cache.** Metadata is cached for 24 hours in `~/.az-firewall-watch/cache.json`
+(file mode `0600`; falls back to `.azfw-cache.json` next to the binary if the
+home directory is not writable). Press `Ctrl+R` to re-fetch after changing
+rules or IP groups.
 
 ## 🔍 Filters
 
@@ -297,7 +331,8 @@ pytest
 
 The suite covers the log parser (structured and legacy formats), the filter
 logic, the Event Hub streaming worker (against a fake client), the update
-check, and headless runs of both the viewer and the setup wizard via Textual's
+check, the ARM client and metadata enrichment (against canned ARM payloads),
+and headless runs of both the viewer and the setup wizard via Textual's
 test pilot with the Azure CLI mocked out. No Azure connection is required. The
 same suite runs in CI on every push and pull request.
 

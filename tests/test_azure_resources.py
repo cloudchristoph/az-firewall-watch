@@ -132,6 +132,18 @@ async def test_fetch_firewall():
     assert fw.policy_id == POLICY_ID
 
 
+async def test_fetch_firewall_sku_under_properties_as_returned_by_arm_rest():
+    """Verbatim ARM REST shape (2024-01-01): no top-level sku, properties.sku instead."""
+    payload = {
+        "id": FW_ID, "name": "fw-hub-gwc", "location": "germanywestcentral",
+        "properties": {"sku": {"name": "AZFW_VNet", "tier": "Premium"},
+                       "ipConfigurations": [{"properties": {"privateIPAddress": "10.2.0.4", "subnet": {"id": SUBNET}}}]},
+    }
+    fw = await fetch_firewall(FakeArm({FW_ID: payload}), FW_ID)
+    assert fw.sku_tier == "Premium"
+    assert fw.private_ips == ["10.2.0.4"]
+
+
 async def test_fetch_firewall_minimal_payload_falls_back_to_id_parts():
     fw = await fetch_firewall(FakeArm({FW_ID: {}}), FW_ID)
     assert fw.id == FW_ID

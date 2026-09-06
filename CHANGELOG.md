@@ -8,24 +8,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-This release introduces Azure management-plane enrichment. The viewer now reads the firewall, policy and IP-group resources via ARM (using `DefaultAzureCredential` or the Azure CLI), so source/destination IPs and rule context can be rendered in human-friendly terms.
+Management-plane enrichment: the viewer reads the firewall, its policy and the referenced IP groups from Azure Resource Manager and uses them to explain what the log rows show.
 
 ### Added
 
-- **Management-plane enrichment** — viewer now reads the firewall, its policy, and any referenced IP groups via ARM REST. Works with `DefaultAzureCredential` (Entra ID) or falls back to the Azure CLI for users on SAS connection strings.
-- **FwInstance.N naming** — source IPs that fall inside the firewall's own subnet are rendered as `FwInstance.<lastOctet>` so backend-instance traffic stands out from regular client traffic.
-- **IP-group context in the detail dialog** — matching IP-group names are shown for source and destination, alongside the matching rule's priority, action and the policy SKU tier.
-- **SKU-aware category dropdown** — `ThreatIntel` and `IDPS` are hidden from the filter dropdown when the policy SKU is Standard or Basic.
-- **Persistent metadata cache** at `~/.az-firewall-watch/cache.json` (`0600`), with a 24 h TTL. Falls back to `BASE_DIR/.azfw-cache.json` when the home directory is not writable.
-- **Ctrl+R — Refresh metadata** binding to force a re-fetch of firewall / policy / IP-groups, bypassing the cache.
+- **Firewall, Policy and IP Groups tabs** next to the log table. The Policy tab is a tree of rule collection groups, collections and rules with a detail pane; the IP Groups tab lists every group with its usage count and, per group, the rules that reference it — selecting one jumps to that rule in the Policy tab.
+- **Enriched log rows and detail dialog.** Addresses inside the firewall's own subnets are shown as `AzFw.<last octet>` so traffic from the firewall instances (DNS proxy, health probes) stands out. The detail dialog adds the IP groups that contain source and destination, the matching rule's collection-group and collection priority, its action, and the policy SKU tier.
+- **Metadata segment in the status bar** (`policy Premium · 11 IP groups · fresh`) — the connection status itself is untouched. The title shows the firewall's real, case-preserved name from ARM instead of the upper-cased one from the diagnostic records.
+- **Persistent metadata cache** at `~/.az-firewall-watch/cache.json` (mode `0600`, 24 h TTL), falling back to `.azfw-cache.json` next to the binary when the home directory is not writable. `Ctrl+R` bypasses the cache and re-fetches.
+- **ARM access for SAS users too.** The ARM client uses `DefaultAzureCredential` and falls back to a token from the Azure CLI (`az account get-access-token`), so enrichment also works when the Event Hub itself is read with a SAS connection string. Without any ARM access the viewer simply reports *metadata unavailable* and behaves as before.
+- 97 tests for the ARM client, resource parsing, cache, matching logic, orchestration and the tabs.
 
 ### Changed
 
-- `requirements.txt` now lists `aiohttp` explicitly (was previously transitive via `azure-eventhub`).
-
-### Fixed
-
-- _(none yet)_
+- `aiohttp` is now an explicit runtime dependency (used by the ARM client).
 
 ## [0.4.1] - 2026-09-05
 

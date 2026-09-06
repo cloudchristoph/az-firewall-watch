@@ -120,7 +120,9 @@ async def fetch_firewall(arm: ArmClient, firewall_id: str) -> FirewallInfo:
         if subnet and subnet not in subnet_ids:
             subnet_ids.append(subnet)
 
-    sku_tier = ((raw.get("sku") or {}).get("tier")) or ""
+    # The REST API returns the firewall SKU under properties.sku; the Azure
+    # CLI flattens it to the top level, so accept both.
+    sku_tier = ((raw.get("sku") or props.get("sku") or {}).get("tier")) or ""
     policy_id = ((props.get("firewallPolicy") or {}).get("id")) or ""
 
     return FirewallInfo(

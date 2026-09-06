@@ -277,9 +277,11 @@ def nearest_miss(c: CollectionTrace) -> Check | None:
 
 
 def nearest_rules(trace: "Trace", limit: int = 3) -> list[RuleTrace]:
-    """Closest non-matching rules across all evaluated collections (for 'no rule matched')."""
+    """Closest rules that did *not* match (miss or unknown) across all evaluated
+    collections — the candidates to look at on a 'no rule matched' row.
+    Computed matches are excluded; the view flags those separately."""
     rules = [r for p in trace.passes if p.evaluated for c in p.collections if c.evaluated
-             for r in c.rules if not r.logged]
+             for r in c.rules if not r.logged and r.verdict != MATCH]
     # Highest score first; on ties prefer a definite miss (actionable) over an
     # unknown we cannot evaluate locally.
     rules.sort(key=lambda r: (-rule_score(r), r.verdict == UNKNOWN))

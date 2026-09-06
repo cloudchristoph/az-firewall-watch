@@ -121,6 +121,24 @@ async def test_off_means_logs_only_and_no_arm(arm_calls):
         await pilot.press("ctrl+r")
         assert "enrichment off" in status.meta
         assert app._is_logs_tab_active()  # filters keep working without tabs
+        # keys that normally switch back to the Logs tab must not crash without tabs
+        for key in ("c", "escape", "f"):
+            await pilot.press(key)
+            await pilot.pause()
+        assert app.query_one("#f-src").has_focus
+
+
+async def test_off_notice_then_disable_keys_still_work(tmp_path: Path, arm_calls):
+    app, env = await _open_notice(tmp_path, arm_calls)
+    async with app.run_test(size=(160, 45)) as pilot:
+        await wait_until(pilot, lambda: isinstance(app.screen, EnrichmentNoticeDialog))
+        await pilot.pause()
+        await pilot.click("#btn-disable")
+        await wait_until(pilot, lambda: not isinstance(app.screen, EnrichmentNoticeDialog))
+        for key in ("c", "escape", "f"):
+            await pilot.press(key)
+            await pilot.pause()
+        assert app.query_one("#f-src").has_focus
 
 
 async def test_off_shows_no_notice(arm_calls):

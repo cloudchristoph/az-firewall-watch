@@ -720,6 +720,8 @@ class FirewallLogApp(App[None]):
         self.query_one("#f-src", Input).focus()
 
     def _ensure_logs_tab(self) -> None:
+        if not self._enrichment:
+            return  # Logs-only layout: there are no tabs to switch
         tabs = self.query_one("#main-tabs", TabbedContent)
         if tabs.active != "tab-logs":
             tabs.active = "tab-logs"

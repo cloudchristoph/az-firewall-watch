@@ -19,7 +19,7 @@ class FirewallView(Static):
     """
 
     def compose(self) -> ComposeResult:
-        yield Static("Waiting for first firewall event…", id="fw-content")
+        yield Static("Waiting for first firewall event…", id="fw-content", markup=True)
 
     def render_data(
         self,

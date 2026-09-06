@@ -108,7 +108,7 @@ class IpGroupsView(Static):
         with Horizontal():
             yield DataTable(zebra_stripes=True, cursor_type="row", id="ipg-table")
             with Static(id="ipg-right"):
-                yield Static("Select an IP Group to see details.", id="ipg-details")
+                yield Static("Select an IP Group to see details.", id="ipg-details", markup=True)
                 yield DataTable(zebra_stripes=True, cursor_type="row", id="ipg-rules")
 
     def on_mount(self) -> None:

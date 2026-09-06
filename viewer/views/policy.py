@@ -50,7 +50,7 @@ class PolicyView(Static):
     def compose(self) -> ComposeResult:
         with Horizontal():
             yield Tree("Policy data unavailable", id="policy-tree")
-            yield Static("Select a policy node to see details.", id="policy-details")
+            yield Static("Select a policy node to see details.", id="policy-details", markup=True)
 
     def render_data(
         self,

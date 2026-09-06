@@ -101,6 +101,17 @@ def test_malformed_but_valid_json_is_a_miss_and_reset(cache_file, content):
     assert data["_version"] == cache._CACHE_VERSION and list(data["entries"]) == [FW_ID]
 
 
+def test_invalidate_tolerates_unwritable_file(cache_file, monkeypatch):
+    cache.save(FW_ID, _snapshot())
+
+    def _boom(self, *a, **kw):
+        raise OSError("read-only")
+
+    monkeypatch.setattr(Path, "write_text", _boom)
+    cache.invalidate(FW_ID)  # must not raise; a forced refresh continues
+    assert cache.load(FW_ID) is not None  # entry still on disk, that is acceptable
+
+
 def test_ttl(cache_file):
     old = _snapshot(fetched_at=time.time() - cache.DEFAULT_TTL_SECONDS - 5)
     assert not old.is_fresh()

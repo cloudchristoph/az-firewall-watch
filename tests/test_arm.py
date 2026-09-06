@@ -78,6 +78,10 @@ def test_extract_error_variants():
     assert _extract_error(json.dumps({"error": {"code": "AuthorizationFailed", "message": "nope"}})) == ("AuthorizationFailed", "nope")
     assert _extract_error(json.dumps({"code": "X", "message": "flat"})) == ("X", "flat")
     assert _extract_error("<html>gateway</html>") == ("Unknown", "<html>gateway</html>")
+    # valid JSON that is not dict-shaped (gateways, proxies) must not raise
+    assert _extract_error("[]") == ("Unknown", "[]")
+    assert _extract_error("42") == ("Unknown", "42")
+    assert _extract_error(json.dumps({"error": "string, not an object"})) == ("Unknown", '{"error": "string, not an object"}')
     assert _extract_error(json.dumps({})) == ("Unknown", "{}")
 
 

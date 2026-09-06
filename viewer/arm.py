@@ -171,9 +171,13 @@ class ArmClient:
 def _extract_error(body: str) -> tuple[str, str]:
     try:
         data = json.loads(body)
-    except json.JSONDecodeError:
+    except ValueError:
         return "Unknown", body[:200]
-    err = data.get("error") or data
+    if not isinstance(data, dict):
+        return "Unknown", body[:200]  # e.g. a proxy answering with a JSON list
+    err = data.get("error")
+    if not isinstance(err, dict):
+        err = data
     code = str(err.get("code") or "Unknown")
     message = str(err.get("message") or body[:200])
     return code, message

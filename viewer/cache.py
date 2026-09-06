@@ -118,7 +118,10 @@ def invalidate(firewall_id: str) -> None:
     entries = data["entries"]
     if firewall_id in entries:
         del entries[firewall_id]
-        path.write_text(json.dumps(data, indent=2, default=_json_default), encoding="utf-8")
+        try:
+            path.write_text(json.dumps(data, indent=2, default=_json_default), encoding="utf-8")
+        except OSError:
+            pass  # a read-only cache must not block a forced refresh; save() will retry later
 
 
 def _json_default(obj: Any) -> Any:

@@ -71,7 +71,8 @@ def load(firewall_id: str) -> CachedSnapshot | None:
         return None
     try:
         return _hydrate(entry)
-    except (TypeError, KeyError):
+    except (TypeError, KeyError, ValueError):
+        # malformed or older entry (e.g. non-numeric priority) → treat as a miss
         return None
 
 

@@ -81,13 +81,13 @@ class PolicyView(Static):
         for policy_name, g in policy.all_groups():
             origin = f"  · {escape(policy_name)}" if policy.parent is not None and policy_name != policy.name else ""
             g_node = tree.root.add(
-                f"[{g.priority}] {escape(g.name)}{origin}",
+                escape(f"[{g.priority}] {g.name}") + origin,   # whole label escaped: it is Rich markup
                 data={"kind": "rcg", "rcg": g},
             )
             for rc in sorted(g.rule_collections, key=lambda x: x.priority):
                 action = f" ({rc.action})" if rc.action else ""
                 rc_node = g_node.add(
-                    f"[{rc.priority}] {escape(rc.name)}{escape(action)}",
+                    escape(f"[{rc.priority}] {rc.name}{action}"),
                     data={"kind": "rc", "rcg": g, "rc": rc},
                 )
                 for r in rc.rules:

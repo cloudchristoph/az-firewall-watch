@@ -111,6 +111,15 @@ def test_invalidate_removes_only_that_entry(cache_file):
     cache.invalidate(FW_ID)  # no file → no error
 
 
+def test_malformed_priority_is_a_cache_miss_not_a_crash(cache_file):
+    """Copilot review: int('abc') raised ValueError out of load()."""
+    entry = {"firewall": {"id": FW_ID, "name": "fw", "subscription_id": "s", "resource_group": "rg", "location": "gwc"},
+             "policy": {"id": "/p", "name": "p", "rule_collection_groups": [{"name": "g", "priority": "abc", "rule_collections": []}]},
+             "fetched_at": 1.0}
+    cache_file.write_text(json.dumps({"_version": cache._CACHE_VERSION, "entries": {FW_ID: entry}}))
+    assert cache.load(FW_ID) is None
+
+
 def test_hydrate_tolerates_missing_optional_fields(cache_file):
     entry = {"firewall": {"id": FW_ID, "name": "fw", "subscription_id": "s", "resource_group": "rg", "location": "gwc"},
              "policy": {"id": "/p", "name": "p", "rule_collection_groups": [{"name": "g", "rule_collections": [{"name": "rc", "rules": [{"name": "r"}]}]}]},

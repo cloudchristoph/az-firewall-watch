@@ -16,9 +16,22 @@ resource ID from the first log record it receives and fetches from there.
 
 ### Three extra tabs
 
-- **Firewall**: name, resource group, subscription, location, SKU tier, attached
-  policy, the private IPs of the firewall instances, and the subnets it sits in,
-  as CIDRs and as resource IDs.
+- **Firewall**: four blocks about the instance itself.
+  - *Instance*: SKU tier and name, zones, provisioning state, resource group,
+    subscription, location, tags.
+  - *Networking*: every IP configuration with its private IP and the name and
+    address of its public IP, the management IP (marked *forced tunneling*),
+    subnet names and CIDRs, and additional properties such as
+    `EnableFatFlowLogging`.
+  - *Policy*: the attached policy with its number of rule collection groups
+    including inherited ones, base policy, Threat Intelligence mode and allowlist,
+    DNS proxy and its servers, IDPS mode with bypass and override counts, TLS
+    inspection with the CA name, SNAT ranges, explicit proxy, child policies.
+  - *Logging*: the firewall's diagnostic settings with their targets (Event Hub,
+    Log Analytics, Storage) and categories, plus a **Not to Event Hub** line
+    naming the categories this viewer understands that no setting forwards. That
+    line answers the most common question about a missing category before you
+    start looking for a bug.
 - **Policy**: a tree of rule collection groups → rule collections → rules, ordered
   by priority, with a detail pane showing sources, destinations, ports, protocols,
   and IP groups resolved to their actual addresses.
@@ -109,18 +122,27 @@ environment credentials, …) and falls back to a token from the Azure CLI. That
 means policy context also works when the Event Hub itself is read with a SAS
 connection string.
 
-Your identity needs **Reader** on the firewall, its policy and the IP groups. See
+Your identity needs **Reader** on the firewall, its policy, the IP groups it
+references, and the firewall's subnets and public IPs. See
 [required Azure permissions](configuration.md#required-azure-permissions).
 
-Without ARM access nothing breaks: the status bar says *metadata unavailable
-(no ARM access)*, the extra tabs stay empty and the viewer behaves exactly as it
-does with policy context switched off.
+Two of the reads are optional and fail quietly, because they only add detail to
+the Firewall tab: one `GET` per public IP for its address, and one on the
+firewall's `Microsoft.Insights/diagnosticSettings`. Without the first you still
+get the public IP's name, without the second the Logging block says *no
+diagnostic settings readable*.
+
+Without ARM access at all nothing breaks: the status bar says *metadata
+unavailable (no ARM access)*, the extra tabs stay empty and the viewer behaves
+exactly as it does with policy context switched off.
 
 ## Caching and staying current
 
 Metadata is cached for **one hour** in `~/.az-firewall-watch/cache.json` (file mode
 `0600`, directory `0700`). If your home directory is not writable, the cache falls
-back to `.azfw-cache.json` next to the binary.
+back to `.azfw-cache.json` next to the binary. The file carries a version, so a
+release that collects more metadata discards the old cache and fetches once on
+first start rather than showing you a half-filled tab.
 
 You rarely have to think about it, because the viewer keeps the cache current on
 its own:

@@ -23,6 +23,11 @@ Unknown or non-firewall categories (for example the Policy Analytics
 `*Aggregation` logs) are counted in the status bar as *skipped* rather than
 displayed.
 
+If a category never shows up at all, the diagnostic setting is the usual reason.
+With [policy context](policy-context.md) enabled, the Firewall tab's *Logging*
+block lists your diagnostic settings and names, under **Not to Event Hub**, every
+category this viewer understands that nothing forwards.
+
 > [!NOTE]
 > **Reading FatFlow rows.** Records are sampled every 3 minutes, and rates well
 > below 1 Mbit/s do appear. Most records describe the return direction, i.e.

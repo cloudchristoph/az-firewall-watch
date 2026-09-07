@@ -39,6 +39,8 @@ resource ID from the first log record it receives and fetches from there.
   for the selected group the rules that reference it. `Enter` on a rule jumps to it
   in the Policy tab.
 
+![The Firewall tab in four blocks: Instance, Networking, Policy and Logging, the last one ending in the Not to Event Hub line. Subscription ID and public IP addresses are blacked out](firewall-tab.png)
+
 ![The Policy tab: rule collection groups and collections in priority order on the left, the selected rule's definition on the right](policy-tab.png)
 
 ![The IP Groups tab: every group with its entry and usage count, and the rules that reference the selected group](ip-groups-tab.png)

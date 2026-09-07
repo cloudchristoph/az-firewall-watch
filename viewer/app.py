@@ -617,11 +617,18 @@ class FirewallLogApp(App[None]):
         if row is not None:
             self._open_detail(row)
 
+    # Only rows that *are* a policy decision get an evaluation trace. Flow traces,
+    # fat flows, DNS proxy rows and IDPS hits are observations, not rule matches.
+    _TRACEABLE = frozenset({"networkrule", "apprule", "natrule", "threatintel"})
+
+    def _is_traceable(self, row: FirewallDataRow) -> bool:
+        return row.category.lower() in self._TRACEABLE
+
     def _open_detail(self, row: FirewallDataRow) -> None:
         """Open the row detail dialog; the evaluation trace sits beside it when possible."""
-        status = self.query_one("#status", StatusBar)
         trace = None
-        if self._policy_context and self._mgmt_loaded and self._policy_info is not None:
+        if (self._policy_context and self._mgmt_loaded and self._policy_info is not None
+                and self._is_traceable(row)):
             trace = build_trace(self._flow_from_row(row), self._policy_info, self._ip_groups,
                                 self._logged_from_row(row))
         self.push_screen(
@@ -762,7 +769,9 @@ class FirewallLogApp(App[None]):
             if self._policy_context:
                 status.meta = "trace: select a log row first"
             return
-        if self._policy_context and (not self._mgmt_loaded or self._policy_info is None):
+        if self._policy_context and not self._is_traceable(row):
+            status.meta = f"no policy evaluation for {row.category} rows"
+        elif self._policy_context and (not self._mgmt_loaded or self._policy_info is None):
             status.meta = "trace needs policy metadata (not loaded)"
         self._open_detail(row)
 

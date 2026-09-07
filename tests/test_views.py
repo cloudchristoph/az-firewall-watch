@@ -271,6 +271,30 @@ def _tree_labels(tree: Tree) -> list[str]:
     return [n.label.plain for n in _tree_nodes(tree)]
 
 
+async def test_flow_trace_rows_get_no_evaluation_tree(structured_record, mgmt, firewall_id):
+    """FlowTrace / FatFlow / DNS / IDPS rows are observations, not rule decisions."""
+    app = FirewallLogApp()
+    async with app.run_test(size=(160, 45)) as pilot:
+        await pilot.pause()
+        await _load(app, pilot, firewall_id)
+        row = parse_record(structured_record(
+            "AZFWFlowTrace", Protocol="TCP", SourceIp="10.3.5.4", SourcePort=1, DestinationIp="1.1.1.1",
+            DestinationPort=443, Flag="SYN",
+        ))
+        assert row is not None and row.category == "FlowTrace"
+        app._pending.append(row)
+        await app._flush_rows()
+        await pilot.pause()
+        tbl = app.query_one("#log-table", DataTable)
+        tbl.focus()
+        tbl.move_cursor(row=0, animate=False)
+        await pilot.pause()
+        await pilot.press("t")
+        await wait_until(pilot, lambda: isinstance(app.screen, DetailDialog))
+        assert not app.screen.has_trace
+        assert app.query_one("#status", StatusBar).meta == "no policy evaluation for FlowTrace rows"
+
+
 async def test_trace_requires_selection_and_metadata(structured_record, mgmt, firewall_id):
     app = FirewallLogApp()
     async with app.run_test(size=(160, 45)) as pilot:

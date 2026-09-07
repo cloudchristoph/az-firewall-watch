@@ -23,6 +23,7 @@ launch `main.py`. Python 3.10 or newer is required.
 | `viewer/arm.py`     | ARM client (`DefaultAzureCredential` with Azure CLI token fallback)                |
 | `viewer/azure_resources.py` | Typed fetchers for firewall, policy chain, IP groups and subnets           |
 | `viewer/management.py` | Orchestrates cache lookup → ARM fetch → cache write                            |
+| `viewer/enrichment.py` | Ties log rows to the metadata: IP-group membership, the logged rule's definition, `AzFw.<octet>` rendering |
 | `viewer/trace.py`   | Policy evaluation trace, the logic behind the detail dialog's tree              |
 | `viewer/cache.py`   | On-disk metadata cache                                                             |
 | `setup/`            | The setup wizard: `screens.py`, `operations.py` (Azure CLI), `services.py`         |
@@ -66,6 +67,14 @@ Textual's test pilot with the Azure CLI mocked out.
 **No Azure connection is required.** The same suite runs in CI on every push and
 pull request: Linux on Python 3.10, 3.12 and 3.13, plus Windows and macOS on 3.12.
 
+While working on one area, run just that part:
+
+```bash
+pytest tests/test_trace.py        # one file
+pytest -k "trace and not live"    # by name
+pytest tests/test_views.py -x     # stop at the first failure
+```
+
 ### Live integration tests
 
 Optional, never run in CI: these exercise the real ARM round trip and a real Event
@@ -79,6 +88,9 @@ AZFW_LIVE_EVENTHUB_NAMESPACE=<ns>.servicebus.windows.net \
 AZFW_LIVE_EVENTHUB_NAME=firewall-logs \
 pytest tests/live -m live
 ```
+
+Add `AZFW_LIVE_CONSUMER_GROUP=<name>` when `$Default` is already taken by another
+reader; without it the tests use `$Default`.
 
 Your identity needs **Reader** on the firewall, its policy and IP groups, and the
 **Azure Event Hubs Data Receiver** role on the hub.

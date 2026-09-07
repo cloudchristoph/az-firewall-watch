@@ -39,7 +39,7 @@ The metadata also feeds back into the **Logs** tab:
   and the definition of the rule the firewall logged, looked up by name, never
   guessed. Whatever the trace beside it already shows (policy path, priorities,
   action, SKU) is left out rather than printed twice.
-- The status bar shows a short summary: `policy Premium · 11 IP groups · fresh`.
+- The status bar shows a short summary: `Policy: Premium · 11 IP groups · fresh`.
 
 ## Evaluation trace
 

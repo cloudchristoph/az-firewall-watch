@@ -110,9 +110,64 @@ async def test_metadata_load_fills_status_segment_and_title(structured_record, m
         await _load(app, pilot, firewall_id)
         assert mgmt["calls"] == [(firewall_id, False)]
         assert status.status == before  # connection status untouched
-        assert status.meta == "policy Premium · 2 IP groups · fresh"
-        assert "policy Premium" in status.render()
+        assert status.meta == "Policy: Premium · 2 IP groups · fresh"
+        assert "Policy: Premium" in status.render()
         assert app.sub_title == "fw-hub-gwc"  # real name from ARM
+
+
+async def test_unknown_logged_rule_triggers_one_auto_refresh(structured_record, mgmt, firewall_id):
+    """A row naming a rule the cached policy lacks re-fetches once, then waits out the interval."""
+    app = FirewallLogApp()
+    async with app.run_test(size=(160, 45)) as pilot:
+        await pilot.pause()
+        await _load(app, pilot, firewall_id)
+        assert mgmt["calls"] == [(firewall_id, False)]
+        known = _net(structured_record, "10.3.5.4", "1.1.1.1")           # allow-web is in the fixture
+        app._pending.append(known)
+        await app._flush_rows()
+        assert mgmt["calls"] == [(firewall_id, False)]                    # nothing to refresh
+        renamed = parse_record(structured_record(
+            "AZFWNetworkRule", SourceIp="10.3.5.4", DestinationIp="1.1.1.1", Action="Allow",
+            Policy="fwp-hub-premium-gwc", RuleCollectionGroup="rcg-net", RuleCollection="rc-web", Rule="brand-new",
+        ))
+        app._pending.append(renamed)
+        await app._flush_rows()
+        await wait_until(pilot, lambda: (firewall_id, True) in mgmt["calls"])
+        assert mgmt["calls"] == [(firewall_id, False), (firewall_id, True)]
+        again = parse_record(structured_record(
+            "AZFWNetworkRule", time="2026-09-05T08:00:01Z", SourceIp="10.3.5.4", DestinationIp="1.1.1.1",
+            Action="Allow", Policy="fwp-hub-premium-gwc", RuleCollectionGroup="rcg-net", RuleCollection="rc-web",
+            Rule="brand-new",
+        ))
+        app._pending.append(again)                                        # still unknown (fixture unchanged)
+        await app._flush_rows()
+        await pilot.pause(0.2)
+        assert mgmt["calls"].count((firewall_id, True)) == 1              # rate-limited
+
+
+async def test_expired_cache_is_refetched_by_the_minute_check(structured_record, mgmt, firewall_id):
+    mgmt["snapshot"] = make_snapshot(fetched_at=time.time() - 61 * 60)  # older than the 1 h TTL
+    app = FirewallLogApp()
+    async with app.run_test(size=(160, 45)) as pilot:
+        await pilot.pause()
+        await _load(app, pilot, firewall_id)
+        assert app.query_one("#status", StatusBar).meta.endswith("cache 61m")
+        app._check_cache_age()
+        await wait_until(pilot, lambda: (firewall_id, True) in mgmt["calls"])
+        app._check_cache_age()                                            # within the interval: no second fetch
+        await pilot.pause(0.2)
+        assert mgmt["calls"].count((firewall_id, True)) == 1
+
+
+async def test_minute_check_updates_the_cache_age(structured_record, mgmt, firewall_id):
+    mgmt["snapshot"] = make_snapshot(fetched_at=time.time() - 7 * 60)
+    app = FirewallLogApp()
+    async with app.run_test(size=(160, 45)) as pilot:
+        await pilot.pause()
+        await _load(app, pilot, firewall_id)
+        app._snapshot.fetched_at -= 5 * 60                                # five minutes pass
+        app._check_cache_age()
+        assert app.query_one("#status", StatusBar).meta.endswith("cache 12m")
 
 
 async def test_metadata_cache_age_is_shown(structured_record, mgmt, firewall_id):

@@ -148,6 +148,14 @@ async def test_off_notice_then_disable_keys_still_work(tmp_path: Path, arm_calls
         assert app.query_one("#f-src").has_focus
 
 
+async def test_q_is_advertised_in_the_footer(arm_calls):
+    app = FirewallLogApp()
+    async with app.run_test(size=(160, 45)) as pilot:
+        await pilot.pause()
+        shown = {b.key: b.show for b in app.BINDINGS if hasattr(b, "key")}
+        assert shown["q"] is True and shown["ctrl+q"] is False
+
+
 async def test_off_shows_no_notice(arm_calls):
     app = FirewallLogApp(policy_context=False, policy_context_notice=True)
     async with app.run_test(size=(160, 45)) as pilot:

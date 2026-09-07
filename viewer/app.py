@@ -5,6 +5,7 @@ import ipaddress
 
 import heapq
 import re
+import time
 
 from rich.text import Text
 from textual import on, work
@@ -31,6 +32,7 @@ from fw_parser import FirewallDataRow
 from helpers import _category_text, _highlight, _to_local
 
 from .azure_resources import FirewallInfo, FirewallPolicyInfo, IpGroupInfo
+from .cache import CachedSnapshot
 from .config import CATEGORY_GROUPS, CATEGORY_OPTIONS, MAX_ROWS, TABLE_TRIM_SLACK, VERSION
 from .enrichment import find_matching_ip_groups, resolve_fw_instance
 from .management import load_management_data
@@ -126,8 +128,8 @@ class FirewallLogApp(App[None]):
     """
 
     BINDINGS = [
-        Binding("q", "quit", "Quit", show=False),
-        Binding("ctrl+q", "quit", "Quit", priority=True, show=True),
+        Binding("q", "quit", "Quit"),
+        Binding("ctrl+q", "quit", "Quit", priority=True, show=False),  # works inside inputs too
         Binding("ctrl+p", "toggle_pause", "Pause/Resume", show=True),
         Binding("c", "clear_logs", "Clear"),
         # Deliberately NOT a priority binding: priority bindings are resolved
@@ -171,6 +173,9 @@ class FirewallLogApp(App[None]):
         self._ip_groups: dict[str, IpGroupInfo] = {}
         self._subnet_cidrs: list[str] = []
         self._mgmt_loaded: bool = False
+        self._snapshot: CachedSnapshot | None = None
+        self._known_rules: set[tuple[str, str, str]] = set()  # (rcg, rc, rule) of the loaded policy chain
+        self._last_auto_refresh = 0.0  # monotonic; auto refreshes are rate-limited
 
     # ── layout ─────────────────────────────────────────────────────────────────
     def compose(self) -> ComposeResult:
@@ -225,6 +230,7 @@ class FirewallLogApp(App[None]):
         self._refresh_metadata_views()
         self._start_stream()
         self.set_interval(1.0, self._flush_rows)
+        self.set_interval(60.0, self._check_cache_age)
         self._check_update()
         if self._policy_context_notice:
             notice = PolicyContextNoticeDialog()
@@ -259,6 +265,8 @@ class FirewallLogApp(App[None]):
         self._firewall_id = None
         self._deferred_firewall_id = None
         self._mgmt_loaded = False
+        self._snapshot = None
+        self._known_rules = set()
         self._fw_info = self._policy_info = None
         self._ip_groups = {}
         self._subnet_cidrs = []
@@ -301,17 +309,64 @@ class FirewallLogApp(App[None]):
         self._ip_groups = snap.ip_groups
         self._subnet_cidrs = snap.subnet_cidrs
         self._mgmt_loaded = True
+        self._snapshot = snap
+        self._known_rules = {
+            (g.name, rc.name, r.name)
+            for _, g in (snap.policy.all_groups() if snap.policy else [])
+            for rc in g.rule_collections for r in rc.rules
+        }
         if snap.firewall.name:
             # ARM knows the real (case-preserved) name; the diagnostics
             # resourceId only gave us an upper-cased one.
             self.sub_title = snap.firewall.name
             self._fw_name_set = True
-        policy_txt = f"policy {snap.policy.sku_tier or 'unknown tier'}" if snap.policy else "no policy attached"
-        age_min = int(snap.age_seconds() // 60)
-        age = "fresh" if age_min < 1 else f"cache {age_min}m"
-        status.meta = f"{policy_txt} · {len(snap.ip_groups)} IP groups · {age}"
+        status.meta = self._meta_text(snap)
         self._refresh_metadata_views()
         self._refresh_table()
+
+    @staticmethod
+    def _meta_text(snap: CachedSnapshot) -> str:
+        policy_txt = f"Policy: {snap.policy.sku_tier or 'unknown tier'}" if snap.policy else "Policy: none"
+        age_min = int(snap.age_seconds() // 60)
+        age = "fresh" if age_min < 1 else f"cache {age_min}m"
+        return f"{policy_txt} · {len(snap.ip_groups)} IP groups · {age}"
+
+    # ── keeping the policy context current ────────────────────────────────────
+    _AUTO_REFRESH_INTERVAL = 300.0  # seconds between automatic re-fetches
+
+    def _refresh_policy_context(self, reason: str) -> bool:
+        """Force a metadata re-fetch for *reason*, at most once per interval."""
+        if not self._policy_context or self._firewall_id is None or not self._mgmt_loaded:
+            return False
+        now = time.monotonic()
+        if now - self._last_auto_refresh < self._AUTO_REFRESH_INTERVAL:
+            return False
+        self._last_auto_refresh = now
+        self.query_one("#status", StatusBar).meta = f"refreshing metadata ({reason})…"
+        self._load_mgmt(self._firewall_id, force=True)
+        return True
+
+    def _check_cache_age(self) -> None:
+        """Every minute: keep the age in the status bar honest; re-fetch once the TTL is over."""
+        snap = self._snapshot
+        if snap is None or not self._policy_context:
+            return
+        if not snap.is_fresh():
+            if self._refresh_policy_context("cache expired"):
+                return
+        status = self.query_one("#status", StatusBar)
+        if status.meta.startswith("Policy: "):
+            status.meta = self._meta_text(snap)
+
+    def _note_unknown_rules(self, batch: list[FirewallDataRow]) -> None:
+        """A logged rule the loaded policy does not know means the cache is stale."""
+        if not self._known_rules:
+            return
+        for r in batch:
+            if r.rule_name and r.rule_collection_group and \
+                    (r.rule_collection_group, r.rule_collection, r.rule_name) not in self._known_rules:
+                self._refresh_policy_context(f"new rule {r.rule_name}")
+                return
 
     def _refresh_metadata_views(self) -> None:
         """Refresh Firewall / Policy / IP Groups tabs from current state."""
@@ -367,6 +422,7 @@ class FirewallLogApp(App[None]):
         if not batch:
             return
 
+        self._note_unknown_rules(batch)
         policies_before = len(self._seen_policies)
         for r in batch:
             if r.fw_policy:

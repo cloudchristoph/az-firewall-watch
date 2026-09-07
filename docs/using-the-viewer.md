@@ -102,7 +102,7 @@ The bar at the bottom shows the connection state, the total number of events
 received, the currently visible count while a filter is active, and how many
 records were skipped (unknown or non-firewall categories). With policy context
 enabled it also carries a short metadata summary such as
-`policy Premium · 11 IP groups · fresh`.
+`Policy: Premium · 11 IP groups · fresh`.
 
 Clicking the status bar pauses and resumes the stream, the same as `Ctrl` + `P`.
 

@@ -200,7 +200,7 @@ EVENT_HUB_START_POSITION=latest
 | `Tab`        | Move between filter inputs            |
 | `Enter`      | Open the row details — with the evaluation trace beside them when metadata is loaded (`Escape` or `q` closes it) |
 | `c`          | Clear all rows from the table         |
-| `t`          | Same dialog as `Enter`, with the trace tree focused |
+| `t`          | Same dialog as `Enter`, with the trace tree focused (plain details when no trace is possible) |
 | `Ctrl` + `r` | Re-fetch firewall / policy / IP-group metadata (bypasses the cache) |
 
 The status bar at the bottom shows the connection state, total events received,
@@ -283,8 +283,9 @@ rules or IP groups.
 
 **Switching it off.** Enrichment is a feature flag: `ENRICHMENT=off` in `.env`
 (or `--no-enrichment` for a single run) turns everything in this section off —
-no ARM requests, no Azure CLI token, no cache file, Logs tab only; `t` and
-`Ctrl+R` then just say so in the status bar. The wizard asks for this when it
+no ARM requests, no Azure CLI token, no cache file, Logs tab only. `t` then
+opens the plain row details and `Ctrl+R` does nothing; both say so in the
+status bar. The wizard asks for this when it
 writes `.env`. A `.env` from an earlier release has no `ENRICHMENT` key, so the
 viewer shows a one-time notice explaining what enrichment does (on by default)
 with a *Disable* button; the choice is saved to `.env`.

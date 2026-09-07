@@ -740,7 +740,8 @@ class FirewallLogApp(App[None]):
     def action_trace(self) -> None:
         """Open the detail dialog for the selected row with the trace in focus.
 
-        Same dialog as Enter; the status bar explains when no trace can be built.
+        Same dialog as Enter. When no trace can be built (enrichment off, policy
+        not loaded yet) the plain details open and the status bar says why.
         """
         status = self.query_one("#status", StatusBar)
         if not self._enrichment:

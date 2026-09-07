@@ -150,6 +150,10 @@ class FirewallLogApp(App[None]):
         # Off → Logs tab only, no ARM access at all.
         self._policy_context = policy_context
         self._policy_context_notice = policy_context and policy_context_notice
+        # While the first-run notice is open nothing may reach ARM: the first
+        # firewall id seen is parked here and loaded only after "Keep enabled".
+        self._awaiting_context_answer = self._policy_context_notice
+        self._deferred_firewall_id: str | None = None
         self._env_file = env_file
         self._all_rows: list[FirewallDataRow] = []
         self._pending: list[FirewallDataRow] = []
@@ -230,9 +234,14 @@ class FirewallLogApp(App[None]):
     # ── enrichment switch ──────────────────────────────────────────────────────
     def _on_policy_context_notice(self, keep: bool | None) -> None:
         keep = True if keep is None else keep
+        self._awaiting_context_answer = False
         self._persist_policy_context(keep)
         if not keep:
             self._disable_policy_context()
+            return
+        if self._deferred_firewall_id is not None:
+            fid, self._deferred_firewall_id = self._deferred_firewall_id, None
+            self.request_mgmt_load(fid)  # the consent is in; now the metadata may load
 
     def _persist_policy_context(self, enabled: bool) -> None:
         """Remember the decision in .env (only when a .env exists next to us)."""
@@ -248,6 +257,7 @@ class FirewallLogApp(App[None]):
         """Switch policy context off at runtime: drop the metadata tabs, stop ARM use."""
         self._policy_context = False
         self._firewall_id = None
+        self._deferred_firewall_id = None
         self._mgmt_loaded = False
         self._fw_info = self._policy_info = None
         self._ip_groups = {}
@@ -331,6 +341,11 @@ class FirewallLogApp(App[None]):
     def request_mgmt_load(self, firewall_id: str) -> None:
         """Called from streaming.on_event when we first see a resourceId."""
         if not self._policy_context:
+            return
+        if self._awaiting_context_answer:
+            # Consent pending: remember the firewall, touch nothing yet.
+            if self._deferred_firewall_id is None:
+                self._deferred_firewall_id = firewall_id
             return
         if self._firewall_id is None:
             self._firewall_id = firewall_id

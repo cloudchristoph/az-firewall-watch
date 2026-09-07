@@ -186,6 +186,39 @@ async def test_notice_keep_persists_on(tmp_path: Path, arm_calls):
     assert _values(env)["EVENT_HUB_CONNECTION_STRING"] == CONN
 
 
+FW = "/subscriptions/s/resourceGroups/rg/providers/Microsoft.Network/azureFirewalls/fw"
+
+
+async def test_notice_blocks_arm_until_kept(tmp_path: Path, arm_calls):
+    """Consent first: events arriving while the notice is open must not trigger ARM."""
+    app, env = await _open_notice(tmp_path, arm_calls)
+    async with app.run_test(size=(160, 45)) as pilot:
+        await wait_until(pilot, lambda: isinstance(app.screen, PolicyContextNoticeDialog))
+        await pilot.pause()
+        app.request_mgmt_load(FW)          # the stream sees the firewall while the dialog is open
+        app.request_mgmt_load(FW)
+        await pilot.pause(0.3)
+        assert arm_calls == []             # nothing left the process
+        assert app._firewall_id is None
+        await pilot.click("#btn-keep")
+        await wait_until(pilot, lambda: arm_calls == [FW])   # answered → the parked id loads once
+        assert app._firewall_id == FW
+
+
+async def test_notice_disable_never_touches_arm(tmp_path: Path, arm_calls):
+    app, env = await _open_notice(tmp_path, arm_calls)
+    async with app.run_test(size=(160, 45)) as pilot:
+        await wait_until(pilot, lambda: isinstance(app.screen, PolicyContextNoticeDialog))
+        await pilot.pause()
+        app.request_mgmt_load(FW)
+        await pilot.click("#btn-disable")
+        await wait_until(pilot, lambda: not isinstance(app.screen, PolicyContextNoticeDialog))
+        app.request_mgmt_load(FW)          # later events stay ignored as well
+        await pilot.pause(0.3)
+        assert arm_calls == []
+    assert not (Path.home() / ".az-firewall-watch" / "never-written").exists()  # (sanity: no exception above)
+
+
 async def test_notice_enter_means_keep_enabled(tmp_path: Path, arm_calls):
     app, env = await _open_notice(tmp_path, arm_calls)
     async with app.run_test(size=(160, 45)) as pilot:

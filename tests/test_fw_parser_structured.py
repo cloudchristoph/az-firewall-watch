@@ -75,6 +75,7 @@ def test_nat_rule_shows_translated_target_and_dnat_action(structured_record):
     assert row.category == "NATRule"
     assert row.action == "DNAT"
     assert (row.targetip, row.targetport) == ("10.0.3.4", "3389")
+    assert (row.nat_dst_ip, row.nat_dst_port) == ("20.1.1.1", "3389")  # the public side, for the trace
     assert row.policy == "pol-hub»rcg-default»rc-allow»r-web"
 
 

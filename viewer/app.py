@@ -657,7 +657,10 @@ class FirewallLogApp(App[None]):
 
     @staticmethod
     def _flow_from_row(row: FirewallDataRow) -> Flow:
-        target = row.targetip or ""
+        target, port = row.targetip or "", row.targetport
+        if row.category.lower() == "natrule" and row.nat_dst_ip:
+            # The DNAT log carries the translated target; the rule matched the public one.
+            target, port = row.nat_dst_ip, row.nat_dst_port
         try:
             ipaddress.ip_address(target)
             is_fqdn = False
@@ -667,9 +670,9 @@ class FirewallLogApp(App[None]):
             category=row.category,
             protocol=row.protocol if row.protocol != "-" else "",
             src_ip=row.sourceip,
-            dst_ip="" if is_fqdn else row.targetip,
-            dst_fqdn=row.targetip if is_fqdn else "",
-            dst_port="" if row.targetport == "-" else row.targetport,
+            dst_ip="" if is_fqdn else target,
+            dst_fqdn=target if is_fqdn else "",
+            dst_port="" if port == "-" else port,
             action=row.action if row.action != "-" else "",
         )
 
@@ -721,14 +724,15 @@ class FirewallLogApp(App[None]):
         src = rule.source_addresses + names(rule.source_ip_groups)
         dst = (rule.destination_addresses + names(rule.destination_ip_groups)
                + rule.destination_fqdns + rule.fqdn_tags + rule.target_urls)
+        dst_txt = ", ".join(dst) or "any"
         if rule.translated_address or rule.translated_fqdn:
             target = rule.translated_address or rule.translated_fqdn
-            dst.append(f"→ {target}:{rule.translated_port}" if rule.translated_port else f"→ {target}")
+            dst_txt += f" → {target}:{rule.translated_port}" if rule.translated_port else f" → {target}"
         parts = [
             ", ".join(rule.protocols) or "any",
             ", ".join(rule.destination_ports) or "any port",
             "from " + (", ".join(src) or "any"),
-            "to " + (", ".join(dst) or "any"),
+            "to " + dst_txt,
         ]
         return "  ".join(parts)
 

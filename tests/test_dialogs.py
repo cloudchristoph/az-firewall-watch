@@ -174,6 +174,20 @@ async def test_fatflow_dialog_shows_flow_and_rate(structured_record):
     assert "Top flow by bandwidth" not in text and "Action" not in text
 
 
+async def test_dnat_dialog_shows_public_destination_and_translation(structured_record):
+    row = parse_record(structured_record(
+        "AZFWNatRule", Protocol="TCP", SourceIp="95.91.87.6", SourcePort=60223,
+        DestinationIp="72.144.131.50", DestinationPort=18080, TranslatedIp="10.3.6.4", TranslatedPort=80,
+        Policy="p", RuleCollectionGroup="g", RuleCollection="c", Rule="r",
+    ))
+    app = FirewallLogApp()
+    async with app.run_test(size=(140, 40)) as pilot:
+        await pilot.pause()
+        text = _dialog_text(await _open_detail(app, pilot, row))
+    assert "72.144.131.50" in text and "60223 → 18080" in text
+    assert "Translated" in text and "10.3.6.4:80" in text
+
+
 @pytest.mark.parametrize("key", ["escape", "q"])
 async def test_detail_dialog_closes_on_key(structured_record, key):
     app = FirewallLogApp()

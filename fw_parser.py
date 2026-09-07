@@ -76,6 +76,10 @@ class FirewallDataRow:
     rule_collection_group: str = ""
     rule_collection: str = ""
     rule_name: str = ""
+    # DNAT rows only: the public destination the client actually hit (the
+    # DNAT rule matches on it); targetip/targetport carry the translated target.
+    nat_dst_ip: str = ""
+    nat_dst_port: str = ""
 
 
 def parse_record(record: dict) -> Optional[FirewallDataRow]:
@@ -234,6 +238,8 @@ def _parse_structured(record: dict, category: str, time: str, resource_id: str =
             rule_collection_group=rcg,
             rule_collection=rc,
             rule_name=rule,
+            nat_dst_ip=_s(props, "DestinationIp"),
+            nat_dst_port=_port(props, "DestinationPort"),
         )
 
     if category == "AZFWIdpsSignature":

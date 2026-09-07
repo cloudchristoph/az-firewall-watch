@@ -152,6 +152,14 @@ class DetailDialog(ModalScreen[str | None]):
             # The log's source/destination are the packet's. Show the connection
             # client → server, then say which way this packet went.
             yield from self._flowtrace_fields(row)
+        elif cat == "natrule" and row.nat_dst_ip:
+            # what the client hit, then what the firewall turned it into
+            yield self._field("Source       ", row.sourceip)
+            yield self._field("Destination  ", row.nat_dst_ip)
+            ports = _ports(row.srcport, row.nat_dst_port)
+            if ports:
+                yield self._field("Ports        ", ports)
+            yield self._field("Translated   ", _ports_join(row.targetip, row.targetport))
         else:
             yield self._field(_SOURCE_LABEL.get(cat, "Source").ljust(13), row.sourceip)
             yield self._field(_DEST_LABEL.get(cat, "Destination").ljust(13), row.targetip)

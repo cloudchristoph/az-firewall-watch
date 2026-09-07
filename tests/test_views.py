@@ -527,8 +527,20 @@ def test_rule_definition_formats_dnat_targets_without_trailing_colon():
                      destination_ports=["3389"], protocols=["TCP"], translated_address="10.3.5.4", translated_port="3389")
     without_port = Rule(name="web", rule_type="NatRule", source_addresses=["*"], destination_addresses=["20.1.1.1"],
                         destination_ports=["443"], protocols=["TCP"], translated_fqdn="web.internal")
-    assert app._rule_definition(with_port).endswith("to 20.1.1.1, → 10.3.5.4:3389")
-    assert app._rule_definition(without_port).endswith("to 20.1.1.1, → web.internal")
+    assert app._rule_definition(with_port).endswith("to 20.1.1.1 → 10.3.5.4:3389")
+    assert app._rule_definition(without_port).endswith("to 20.1.1.1 → web.internal")
+
+
+def test_flow_from_dnat_row_uses_the_public_destination(structured_record):
+    """AZFWNatRule logs the translated target; the DNAT rule matched the public IP and port."""
+    row = parse_record(structured_record(
+        "AZFWNatRule", Protocol="TCP", SourceIp="95.91.87.6", SourcePort=60223,
+        DestinationIp="72.144.131.50", DestinationPort=18080, TranslatedIp="10.3.6.4", TranslatedPort=80,
+        Policy="p", RuleCollectionGroup="g", RuleCollection="c", Rule="r",
+    ))
+    flow = FirewallLogApp._flow_from_row(row)
+    assert (flow.dst_ip, flow.dst_port) == ("72.144.131.50", "18080")
+    assert flow.src_ip == "95.91.87.6" and flow.category == "NATRule"
 
 
 def test_compute_enrichment_without_metadata(structured_record):

@@ -12,7 +12,7 @@ import json
 import os
 from typing import TYPE_CHECKING, Any, Callable
 
-from dialogs import ConnectingDialog, ErrorDialog, StatusBar, UpdateDialog
+from dialogs import ConnectingDialog, ErrorDialog, StatusBar
 from fw_parser import parse_record
 from helpers import _parse_eventhub_endpoint
 
@@ -289,7 +289,7 @@ async def run_stream(app: "FirewallLogApp") -> None:
                         raise TimeoutError(
                             "Event Hub did not respond within 15 s — "
                             "check connection string and network"
-                        )
+                        ) from None
 
                     # Azure Event Hubs silently accepts AMQP receiver links regardless
                     # of permissions (authorization is enforced at message delivery,

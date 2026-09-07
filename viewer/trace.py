@@ -339,10 +339,10 @@ def build_trace(flow: Flow, policy: FirewallPolicyInfo, ip_groups: dict[str, IpG
         # decision was made there. In Alert mode the rules still run afterwards
         # for the same packet, but that produces its own log row.
         threat_intel = f"hit — {flow.action or 'logged'} by Threat Intelligence (mode {policy.threat_intel_mode or '?'})"
-        passes = [PassTrace(kind=kind, evaluated=False,
-                            note="not evaluated — Threat Intelligence decided before rule processing")
-                  for kind in PASS_ORDER]
-        return Trace(flow=flow, logged=None, threat_intel=threat_intel, passes=passes,
+        skipped = [PassTrace(kind=kind, evaluated=False,
+                             note="not evaluated — Threat Intelligence decided before rule processing")
+                   for kind in PASS_ORDER]
+        return Trace(flow=flow, logged=None, threat_intel=threat_intel, passes=skipped,
                      infrastructure=None, outcome=f"{flow.action or 'handled'} by Threat Intelligence",
                      warnings=warnings)
     threat_intel = f"mode {policy.threat_intel_mode or 'Off'} — no hit"
@@ -407,7 +407,7 @@ def build_trace(flow: Flow, policy: FirewallPolicyInfo, ip_groups: dict[str, IpG
             ptrace.note = "no collections of this type"
         passes.append(ptrace)
 
-    if stopped:
+    if stopped and logged is not None:
         infrastructure = None
         outcome = f"{logged.action or 'matched'} by {logged.group} » {logged.collection} » {logged.rule}"
     elif missing is not None:

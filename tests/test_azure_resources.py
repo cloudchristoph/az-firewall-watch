@@ -302,7 +302,6 @@ async def test_fetch_policy_sku_at_top_level():
 
 
 def test_collect_ip_group_ids_is_sorted_and_unique():
-    pol = FIREWALL_JSON and None  # placeholder to keep flake-free
     from viewer.azure_resources import FirewallPolicyInfo, Rule, RuleCollection, RuleCollectionGroup
     policy = FirewallPolicyInfo(id="/p", name="p", rule_collection_groups=[
         RuleCollectionGroup(id="/g", name="g", rule_collections=[

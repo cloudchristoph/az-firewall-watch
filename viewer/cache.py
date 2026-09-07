@@ -128,7 +128,7 @@ def invalidate(firewall_id: str) -> None:
 
 
 def _json_default(obj: Any) -> Any:
-    if is_dataclass(obj):
+    if is_dataclass(obj) and not isinstance(obj, type):
         return asdict(obj)
     raise TypeError(f"Object of type {type(obj).__name__} is not JSON serializable")
 

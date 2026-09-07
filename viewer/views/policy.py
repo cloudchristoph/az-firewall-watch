@@ -5,6 +5,7 @@ from rich.markup import escape
 from textual.containers import Horizontal
 from textual.app import ComposeResult
 from textual.widgets import Static, Tree
+from textual.widgets.tree import TreeNode
 
 from ..azure_resources import FirewallPolicyInfo, IpGroupInfo, Rule, RuleCollection
 
@@ -45,7 +46,7 @@ class PolicyView(Static):
 
     def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
-        self._rule_ref_to_node: dict[str, Tree.Node] = {}
+        self._rule_ref_to_node: dict[str, TreeNode] = {}
 
     def compose(self) -> ComposeResult:
         with Horizontal():
@@ -138,6 +139,9 @@ class PolicyView(Static):
             r = payload.get("rule")
             g = payload.get("rcg")
             rc = payload.get("rc")
+            if r is None or g is None or rc is None:
+                details.update("No details available")
+                return
             details.update(self._rule_summary(g, rc, r, ip_groups))
 
     def focus_rule(self, rule_ref: str) -> bool:

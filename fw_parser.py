@@ -11,7 +11,7 @@ Ported from azure-firewall-mon/firewall-mon-app/src/app/services/event-hub-sourc
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Optional
 
 _counter = 0
@@ -97,7 +97,7 @@ def parse_record(record: dict) -> Optional[FirewallDataRow]:
         return FirewallDataRow(
             rowid=_next_id(),
             time=time,
-            category=f"SKIP:ResourceType",
+            category="SKIP:ResourceType",
         )
 
     # ── Structured log format (new) ──────────────────────────────────────────

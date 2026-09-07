@@ -193,7 +193,8 @@ class TracePanel(Vertical):
             if not c.evaluated:
                 pending_skipped += 1
                 continue
-            self._add_collection(group_node, c, highlight)
+            if group_node is not None:
+                self._add_collection(group_node, c, highlight)
         if pending_skipped and group_node is not None:
             group_node.add_leaf(f"[dim]{pending_skipped} more collections not evaluated[/]")
 
@@ -242,10 +243,10 @@ class TracePanel(Vertical):
         event.stop()
         node = event.node
         data = node.data
-        is_rule = isinstance(data, dict) and bool(data.get("rule_ref"))
+        rule_ref = data.get("rule_ref") if isinstance(data, dict) else None
         if node.allow_expand and not node.is_expanded:
             node.expand()
-        elif is_rule:
-            self.post_message(self.RuleChosen(data["rule_ref"]))
+        elif rule_ref:
+            self.post_message(self.RuleChosen(rule_ref))
         elif node.allow_expand:
             node.collapse()

@@ -46,27 +46,27 @@ CATEGORY_OPTIONS: list[tuple[str, str]] = [
 ]
 
 # ── enrichment flag ───────────────────────────────────────────────────────────
-ENRICHMENT_KEY = "ENRICHMENT"
+POLICY_CONTEXT_KEY = "POLICY_CONTEXT"
 _ON_VALUES = ("on", "true", "1", "yes")
 
 
-def enrichment_setting(argv: list[str], environ: Mapping[str, str]) -> tuple[bool, bool]:
-    """Resolve the enrichment flag.
+def policy_context_setting(argv: list[str], environ: Mapping[str, str]) -> tuple[bool, bool]:
+    """Resolve the policy-context flag.
 
-    Returns ``(enabled, explicit)``. ``--no-enrichment`` / ``--enrichment`` on
-    the command line win, then ``ENRICHMENT=on|off`` from the environment (or
+    Returns ``(enabled, explicit)``. ``--no-policy-context`` / ``--policy-context`` on
+    the command line win, then ``POLICY_CONTEXT=on|off`` from the environment (or
     ``.env``). A missing value means *enabled* but *not explicit* — the viewer
     then shows a one-time notice so the user knows what is switched on.
     """
-    if "--no-enrichment" in argv:
+    if "--no-policy-context" in argv:
         return False, True
-    if "--enrichment" in argv:
+    if "--policy-context" in argv:
         return True, True
-    raw = (environ.get(ENRICHMENT_KEY) or "").strip().lower()
+    raw = (environ.get(POLICY_CONTEXT_KEY) or "").strip().lower()
     if not raw:
         return True, False
     return raw in _ON_VALUES, True
 
 
 __all__ = ["BASE_DIR", "SRC_DIR", "VERSION", "MAX_ROWS", "TABLE_TRIM_SLACK", "CATEGORY_OPTIONS",
-           "ENRICHMENT_KEY", "enrichment_setting", "load_env"]
+           "POLICY_CONTEXT_KEY", "policy_context_setting", "load_env"]

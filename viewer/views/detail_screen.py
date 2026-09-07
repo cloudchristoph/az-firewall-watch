@@ -1,6 +1,6 @@
 """Row detail dialog: the log entry on the left, its evaluation trace on the right.
 
-The trace column only exists when the app could build one (enrichment on and
+The trace column only exists when the app could build one (policy context on and
 policy metadata loaded). Without it the dialog is the plain, narrow entry view.
 """
 from __future__ import annotations

@@ -125,17 +125,17 @@ class ErrorDialog(ModalScreen[None]):
             self.app.exit()
 
 
-class EnrichmentNoticeDialog(ModalScreen[bool]):
-    """One-time notice: metadata enrichment is on and reaches beyond the Event Hub.
+class PolicyContextNoticeDialog(ModalScreen[bool]):
+    """One-time notice: policy context is on and reaches beyond the Event Hub.
 
     Dismisses with ``True`` to keep it enabled, ``False`` to switch it off.
     """
 
     DEFAULT_CSS = """
-    EnrichmentNoticeDialog {
+    PolicyContextNoticeDialog {
         align: center middle;
     }
-    EnrichmentNoticeDialog > #dialog {
+    PolicyContextNoticeDialog > #dialog {
         width: 84;
         max-width: 96%;
         height: auto;
@@ -143,29 +143,29 @@ class EnrichmentNoticeDialog(ModalScreen[bool]):
         border: thick $warning;
         padding: 1 2;
     }
-    EnrichmentNoticeDialog > #dialog > #enr-title {
+    PolicyContextNoticeDialog > #dialog > #enr-title {
         text-style: bold;
         color: $warning;
         margin-bottom: 1;
     }
-    EnrichmentNoticeDialog > #dialog > #enr-body {
+    PolicyContextNoticeDialog > #dialog > #enr-body {
         margin-bottom: 1;
     }
-    EnrichmentNoticeDialog > #dialog > #enr-hint {
+    PolicyContextNoticeDialog > #dialog > #enr-hint {
         color: $text-muted;
         margin-bottom: 1;
     }
-    EnrichmentNoticeDialog > #dialog > .btn-row {
+    PolicyContextNoticeDialog > #dialog > .btn-row {
         height: 3;
     }
-    EnrichmentNoticeDialog > #dialog > .btn-row > Button {
+    PolicyContextNoticeDialog > #dialog > .btn-row > Button {
         width: 1fr;
     }
     """
 
     def compose(self) -> ComposeResult:
         with Static(id="dialog"):
-            yield Static("Metadata enrichment is ON", id="enr-title")
+            yield Static("Policy context is ON", id="enr-title")
             yield Static(
                 "Beyond reading the Event Hub, this viewer will:\n"
                 "• read the firewall, its policy and IP groups via Azure Resource Manager (Reader role)\n"
@@ -176,14 +176,14 @@ class EnrichmentNoticeDialog(ModalScreen[bool]):
                 "IP Groups tabs, enriched rows and the evaluation trace (t).",
                 id="enr-body",
             )
-            yield Static("Saved to .env as ENRICHMENT=on|off — change it there or run with --no-enrichment.", id="enr-hint")
+            yield Static("Saved to .env as POLICY_CONTEXT=on|off — change it there or run with --no-policy-context.", id="enr-hint")
             with Horizontal(classes="btn-row"):
                 yield Button("Keep enabled  (Enter)", variant="success", id="btn-keep")
                 yield Button("Disable", variant="default", id="btn-disable")
 
-    def recreate(self) -> "EnrichmentNoticeDialog":
+    def recreate(self) -> "PolicyContextNoticeDialog":
         """Fresh copy for re-pushing after the connecting splash is removed."""
-        return EnrichmentNoticeDialog()
+        return PolicyContextNoticeDialog()
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         self.dismiss(event.button.id == "btn-keep")

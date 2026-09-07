@@ -497,21 +497,25 @@ def test_compute_enrichment_without_metadata(structured_record):
 
 # ── tabs ─────────────────────────────────────────────────────────────────────
 
-async def test_switching_tabs_hides_filter_bar_and_restores_it(structured_record, mgmt, firewall_id):
+async def test_filter_bar_lives_in_logs_tab_and_tab_strip_stays_put(structured_record, mgmt, firewall_id):
+    from textual.widgets import Tabs
     app = FirewallLogApp()
     async with app.run_test(size=(160, 45)) as pilot:
         await pilot.pause()
         tabs = app.query_one("#main-tabs", TabbedContent)
-        bar = app.query_one("#filter-bar")
-        assert bar.display
+        strip_y = tabs.query_one(Tabs).region.y
+        bar = app.query_one("#tab-logs #filter-bar")  # part of the Logs pane, not above the strip
+        assert bar.region.y > strip_y
         tabs.active = "tab-policy"
         await pilot.pause()
-        assert not bar.display
+        assert tabs.query_one(Tabs).region.y == strip_y  # the strip does not jump
+        assert not app.query_one("#f-action", Input).region  # hidden with its pane
         app.query_one("#f-action", Input).value = "deny"  # must not explode while hidden
         await pilot.pause()
         tabs.active = "tab-logs"
         await pilot.pause()
-        assert bar.display
+        assert tabs.query_one(Tabs).region.y == strip_y
+        assert app.query_one("#f-action", Input).region
 
 
 async def test_views_show_placeholders_before_metadata(firewall_id):

@@ -2,7 +2,7 @@
 
 Uses :class:`azure.identity.aio.DefaultAzureCredential` when available, and
 falls back to ``az account get-access-token`` (subprocess) when the SDK
-credential cannot acquire a token. This keeps enrichment working for users
+credential cannot acquire a token. This keeps the policy context working for users
 who configured the app with a SAS connection string but have the Azure CLI
 logged in locally.
 """

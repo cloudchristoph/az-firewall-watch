@@ -8,7 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-Management-plane enrichment: the viewer reads the firewall, its policy and the referenced IP groups from Azure Resource Manager and uses them to explain what the log rows show.
+Policy context: the viewer reads the firewall, its policy and the referenced IP groups from Azure Resource Manager and uses them to explain what the log rows show.
 
 ### Added
 
@@ -17,8 +17,8 @@ Management-plane enrichment: the viewer reads the firewall, its policy and the r
 - **Enriched log rows and detail dialog.** Addresses inside the firewall's own subnets are shown as `AzFw.<last octet>` so traffic from the firewall instances (DNS proxy, health probes) stands out. The detail dialog adds the IP groups that contain source and destination, the logged rule's definition, priorities and action (exact lookup by name, no guessing), and the policy SKU tier.
 - **Metadata segment in the status bar** (`policy Premium · 11 IP groups · fresh`) — the connection status itself is untouched. The title shows the firewall's real, case-preserved name from ARM instead of the upper-cased one from the diagnostic records.
 - **Persistent metadata cache** at `~/.az-firewall-watch/cache.json` (mode `0600`, 1 h TTL so the trace never explains yesterday's rules), falling back to `.azfw-cache.json` next to the binary when the home directory is not writable. `Ctrl+R` bypasses the cache and re-fetches.
-- **ARM access for SAS users too.** The ARM client uses `DefaultAzureCredential` and falls back to a token from the Azure CLI (`az account get-access-token`), so enrichment also works when the Event Hub itself is read with a SAS connection string. Without any ARM access the viewer simply reports *metadata unavailable* and behaves as before.
-- **`ENRICHMENT` feature flag** (default `on`). The setup wizard asks before writing `.env`; `--enrichment` / `--no-enrichment` override it per run. With enrichment off the viewer never leaves the Event Hub: no ARM requests, no Azure CLI token, no cache file, Logs tab only. A `.env` from 0.4.x has no such key, so the viewer shows a one-time notice that says what enrichment does and offers to disable it; the answer is saved to `.env`.
+- **ARM access for SAS users too.** The ARM client uses `DefaultAzureCredential` and falls back to a token from the Azure CLI (`az account get-access-token`), so policy context also works when the Event Hub itself is read with a SAS connection string. Without any ARM access the viewer simply reports *metadata unavailable* and behaves as before.
+- **`POLICY_CONTEXT` feature flag** (default `on`). *Policy context* is everything the viewer reads via ARM beyond the Event Hub: firewall, policy and IP groups. The setup wizard asks before writing `.env`; `--policy-context` / `--no-policy-context` override it per run. With policy context off the viewer never leaves the Event Hub: no ARM requests, no Azure CLI token, no cache file, Logs tab only. A `.env` from 0.4.x has no such key, so the viewer shows a one-time notice that says what policy context does and offers to disable it; the answer is saved to `.env`.
 - 125 tests for the ARM client, resource parsing, cache, matching logic, orchestration, the tabs and the feature flag.
 
 ### Changed

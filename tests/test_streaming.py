@@ -15,7 +15,7 @@ from textual.widgets import Static
 
 import viewer.app as app_module
 import viewer.streaming as streaming
-from dialogs import ConnectingDialog, EnrichmentNoticeDialog, ErrorDialog, StatusBar, UpdateDialog
+from dialogs import ConnectingDialog, PolicyContextNoticeDialog, ErrorDialog, StatusBar, UpdateDialog
 from viewer.app import FirewallLogApp
 
 pytestmark = pytest.mark.usefixtures("no_eventhub_env", "no_update_check", "fast_backoff")
@@ -291,33 +291,33 @@ async def test_update_dialog_survives_first_event(monkeypatch, fake_client, fire
         assert len(app.screen_stack) == 2
 
 
-async def test_enrichment_notice_survives_first_event(monkeypatch, fake_client, firewall_id, tmp_path):
-    """The enrichment notice is pushed on top of the splash at start-up. The first
+async def test_policy_context_notice_survives_first_event(monkeypatch, fake_client, firewall_id, tmp_path):
+    """The policy-context notice is pushed on top of the splash at start-up. The first
     event must remove the splash underneath it, keep the notice, and keep its
     callback wired so the answer still lands in .env."""
     monkeypatch.setenv("EVENT_HUB_CONNECTION_STRING", SAS_CONN)
     fake_client.script = [{"events": []}]
     env = tmp_path / ".env"
     env.write_text(f"EVENT_HUB_CONNECTION_STRING={SAS_CONN}\n", encoding="utf-8")
-    app = FirewallLogApp(enrichment=True, enrichment_notice=True, env_file=env)
+    app = FirewallLogApp(policy_context=True, policy_context_notice=True, env_file=env)
     async with app.run_test(size=(140, 40)) as pilot:
         await wait_until(pilot, lambda: app.query_one("#status", StatusBar).status == "Connected")
         # the splash is pushed *beneath* the notice, so the question is visible at once
-        assert [type(s).__name__ for s in app.screen_stack] == ["Screen", "ConnectingDialog", "EnrichmentNoticeDialog"]
+        assert [type(s).__name__ for s in app.screen_stack] == ["Screen", "ConnectingDialog", "PolicyContextNoticeDialog"]
 
         client = fake_client.instances[0]
         await client.on_event(None, FakeEvent(_records(firewall_id, 1)))
         await pilot.pause(0.2)
 
-        assert isinstance(app.screen, EnrichmentNoticeDialog)  # bug: used to be popped
+        assert isinstance(app.screen, PolicyContextNoticeDialog)  # bug: used to be popped
         assert not any(isinstance(s, ConnectingDialog) for s in app.screen_stack)  # bug: used to linger
         assert len(app.screen_stack) == 2
 
         await pilot.click("#btn-disable")
-        await wait_until(pilot, lambda: not isinstance(app.screen, EnrichmentNoticeDialog))
+        await wait_until(pilot, lambda: not isinstance(app.screen, PolicyContextNoticeDialog))
         await pilot.pause()
         assert [p.id for p in app.query("TabPane")] == ["tab-logs"]
-    assert "ENRICHMENT=off" in env.read_text(encoding="utf-8")
+    assert "POLICY_CONTEXT=off" in env.read_text(encoding="utf-8")
 
 
 # ── retries and errors ───────────────────────────────────────────────────────

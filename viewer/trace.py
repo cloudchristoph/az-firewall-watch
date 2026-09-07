@@ -223,9 +223,14 @@ def _destination_check(rule: Rule, flow: Flow, ip_groups: dict[str, IpGroupInfo]
 
     ip = _parse_ip(flow.dst_ip)
     result, detail = _address_check(ip, rule.destination_addresses, rule.destination_ip_groups, ip_groups)
-    if result == MISS and rule.destination_fqdns:
-        # FQDNs in network rules are resolved by the firewall's DNS; we cannot
-        # know which IPs they resolved to at the time.
+    if result != MATCH and rule.destination_fqdns:
+        if flow.dst_fqdn and flow.dst_fqdn != "-":
+            # Application-rule logs carry the FQDN, not the IP. A network rule's
+            # FQDN target is resolved by the firewall's DNS, so compare names.
+            if _fqdn_matches(flow.dst_fqdn, rule.destination_fqdns):
+                return Check("destination", MATCH, f"{flow.dst_fqdn} (FQDN target)")
+            return Check("destination", MISS, f"{flow.dst_fqdn} not in {', '.join(rule.destination_fqdns)}")
+        # An IP in the log: we cannot know what the rule's FQDNs resolved to at the time.
         return Check("destination", UNKNOWN, "cannot evaluate: FQDN " + ", ".join(rule.destination_fqdns))
     return Check("destination", result, detail)
 

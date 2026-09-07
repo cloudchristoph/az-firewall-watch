@@ -22,7 +22,7 @@ from .config import BASE_DIR
 # One hour: the evaluation trace explains the *cached* policy, so a long TTL
 # would explain yesterday's rules. Ctrl+R refreshes on demand.
 DEFAULT_TTL_SECONDS = 60 * 60
-_CACHE_VERSION = 2  # v2: nested parent policy, extra rule fields
+_CACHE_VERSION = 3  # v3: application-rule targetFqdns parsed (v2 caches lost them)
 
 
 @dataclass

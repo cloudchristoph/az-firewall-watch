@@ -235,7 +235,8 @@ def _parse_rule(raw: dict) -> Rule:
         source_ip_groups=list(raw.get("sourceIpGroups") or []),
         destination_addresses=list(raw.get("destinationAddresses") or []),
         destination_ip_groups=list(raw.get("destinationIpGroups") or []),
-        destination_fqdns=list(raw.get("destinationFqdns") or []),
+        # network rules carry destinationFqdns, application rules targetFqdns
+        destination_fqdns=list(raw.get("targetFqdns") or raw.get("destinationFqdns") or []),
         destination_ports=ports,
         protocols=protocols,
         fqdn_tags=list(raw.get("fqdnTags") or []),

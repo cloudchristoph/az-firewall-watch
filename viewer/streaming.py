@@ -128,7 +128,7 @@ def resolve_start_position(value: str | None) -> str:
 
 # ── splash vs. other dialogs ─────────────────────────────────────────────────
 # The connecting splash is transient, while dialogs such as the update notice
-# or the enrichment notice want an answer. They may end up in either order on
+# or the policy-context notice want an answer. They may end up in either order on
 # the screen stack (the notice is pushed on mount, the splash from the worker
 # once the SDK import is done). Both helpers below keep the splash *below*
 # those dialogs: they pop everything above a point, do their job, and push each

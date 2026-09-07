@@ -81,7 +81,7 @@ RCG_JSON = {"value": [
          {"name": "outbound-access-demo-app-rules", "priority": 200, "action": {"type": "Allow"},
           "ruleCollectionType": "FirewallPolicyFilterRuleCollection",
           "rules": [{"name": "allow-outbound-web-traffic", "ruleType": "ApplicationRule",
-                     "sourceIpGroups": [G_SPOKES, G_ONPREM], "destinationFqdns": ["*.duckduckgo.com"],
+                     "sourceIpGroups": [G_SPOKES, G_ONPREM], "targetFqdns": ["*.duckduckgo.com"],
                      "protocols": [{"protocolType": "Https", "port": 443}, {"protocolType": "Http", "port": 80}]}]},
      ]}},
 ]}

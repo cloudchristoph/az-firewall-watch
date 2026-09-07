@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import pytest
+from dataclasses import replace
 
 from viewer.azure_resources import FirewallPolicyInfo, IpGroupInfo, Rule, RuleCollection, RuleCollectionGroup
 from viewer.trace import (
@@ -99,6 +100,18 @@ def test_service_tag_and_unloaded_group_are_unknown():
 def test_network_rule_with_fqdn_destination_is_unknown():
     r = evaluate_rule(net("r", destination_addresses=[], destination_fqdns=["time.windows.com"]), TCP443, GROUPS)
     assert next(c for c in r.checks if c.name == "destination").result == UNKNOWN
+
+
+def test_network_rule_fqdn_target_is_compared_with_a_logged_fqdn():
+    """An application-rule log has an FQDN but no IP; a network rule targeting
+    FQDNs is then compared by name instead of reporting 'no address in log'."""
+    rule = net("r", destination_addresses=[], destination_fqdns=["ifconfig.me"])
+    miss = replace(TCP443, category="AppRule", protocol="HTTPS", dst_ip="", dst_fqdn="www.facebook.com")
+    c = next(c for c in evaluate_rule(rule, miss, GROUPS).checks if c.name == "destination")
+    assert c.result == MISS and c.detail == "www.facebook.com not in ifconfig.me"
+    hit = replace(miss, dst_fqdn="ifconfig.me")
+    c = next(c for c in evaluate_rule(rule, hit, GROUPS).checks if c.name == "destination")
+    assert c.result == MATCH and "ifconfig.me" in c.detail
 
 
 def test_application_rule_fqdn_and_protocol():

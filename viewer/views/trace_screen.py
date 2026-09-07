@@ -70,6 +70,7 @@ class TracePanel(Vertical):
         super().__init__(**kwargs)
         self._trace = trace
         self._expand_all = False
+        self._logged_node: TreeNode | None = None  # remembered while building, no tree search needed
 
     # ── layout ──────────────────────────────────────────────────────────────
     def compose(self) -> ComposeResult:
@@ -107,6 +108,7 @@ class TracePanel(Vertical):
         tree.clear()
         tree.show_root = False
         tree.auto_expand = False  # Enter is handled below: expand first, open the rule second
+        self._logged_node = None
         t = self._trace
         root = tree.root
         highlight = {id(r) for r in nearest_rules(t)} if t.matched_rule is None else set()
@@ -125,7 +127,7 @@ class TracePanel(Vertical):
             root.add_leaf(f"{_LEAF_PAD}[red]✗[/] {escape(t.outcome)}")
         root.expand()
 
-        matched = self._find_node(root, lambda d: isinstance(d, dict) and d.get("logged"))
+        matched = self._logged_node
         if matched is not None:
             def _go(node=matched) -> None:
                 tree.move_cursor(node)
@@ -206,18 +208,10 @@ class TracePanel(Vertical):
             star = " [yellow]★ nearest[/]" if id(r) in highlight else ""
             label = f"{_ICON.get(r.verdict, '')} {name}{detail}{star}"
         node = parent.add(label, data={"rule_ref": ref, "logged": r.logged}, expand=self._expand_all or r.logged)
+        if r.logged:
+            self._logged_node = node
         for ch in r.checks:
             node.add_leaf(f"{_ICON[ch.result]} {ch.name}: [dim]{escape(ch.detail)}[/]")
-
-    @staticmethod
-    def _find_node(node: TreeNode, pred):
-        if pred(node.data):
-            return node
-        for child in node.children:
-            found = TracePanel._find_node(child, pred)
-            if found is not None:
-                return found
-        return None
 
     # ── interaction ─────────────────────────────────────────────────────────
     def on_tree_node_selected(self, event: Tree.NodeSelected) -> None:

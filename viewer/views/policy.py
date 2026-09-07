@@ -97,8 +97,8 @@ class PolicyView(Static):
                         data={"kind": "rule", "rcg": g, "rc": rc, "rule": r, "rule_ref": rule_ref},
                     )
                     self._rule_ref_to_node[rule_ref] = node
-        # Expand only the groups; collections and rules open on demand (large
-        # policies have thousands of rule nodes).
+        # All nodes exist up front (focus_rule needs them addressable), but only
+        # the groups start expanded so a large policy stays readable.
         tree.root.expand()
         for g_node in tree.root.children:
             g_node.expand()

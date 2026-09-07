@@ -32,6 +32,23 @@ _LEAF_PAD = "  "
 _INLINE_DETAIL_MAX = 40  # collapsed rule lines stay short; the full text is on the child leaf
 
 
+def _action_tag(action: str, kind: str) -> str:
+    """The collection's action as a short coloured tag.
+
+    ✓/✗ in front of a line say whether the flow matched; the tag says what a
+    match means. Deny is what a reader must not miss, so it is loud; allow is
+    the common case and stays quiet.
+    """
+    a = (action or "").lower()
+    if a == "deny":
+        return "[bold red]deny[/]"
+    if a == "allow":
+        return "[dim]allow[/]"
+    if a == "dnat" or kind == "dnat":
+        return "[bold yellow]dnat[/]"
+    return f"[dim]{escape(a or kind or '')}[/]"
+
+
 def _short(text: str, limit: int = _INLINE_DETAIL_MAX) -> str:
     return text if len(text) <= limit else text[: limit - 1].rstrip() + "…"
 
@@ -182,7 +199,7 @@ class TracePanel(Vertical):
 
     def _add_collection(self, parent: TreeNode, c: CollectionTrace, highlight: set[int]) -> None:
         rc = c.collection
-        head = escape(f"[{rc.priority}] {rc.name} ({rc.action or rc.kind})")
+        head = escape(f"[{rc.priority}] {rc.name}") + "  " + _action_tag(rc.action, rc.kind)
         n = len(c.rules)
         rules_txt = f"{n} rule" if n == 1 else f"{n} rules"
         if c.verdict == MATCH and any(r.logged for r in c.rules):

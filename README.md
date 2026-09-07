@@ -246,9 +246,9 @@ Policy evaluation
 ├─ Threat Intelligence   mode Alert — no hit
 ├─ DNAT rules   no collections of this type
 ├─ Network rules
-│  ├─ ✗ [2000] cclab-network-rule-collection-group » [100] priority-demo-net-rules (Deny)
+│  ├─ ✗ [2000] cclab-network-rule-collection-group » [100] priority-demo-net-rules  deny
 │  │   └─ ✗ deny-bad   ✓ source  ✗ destination  ✓ port  ✓ protocol
-│  ├─ ✓ [2000] cclab-network-rule-collection-group » [200] azure-monitor-access (Allow)
+│  ├─ ✓ [2000] cclab-network-rule-collection-group » [200] azure-monitor-access  allow
 │  │   ├─ ? allow-azure-monitor   ✓ source  ? destination  ✓ port  ✓ protocol
 │  │   └─ ✓ allow-web   ✓ source  ✓ destination  ✓ port  ✓ protocol   ← logged match
 │  └─ evaluation stops here — rule matched

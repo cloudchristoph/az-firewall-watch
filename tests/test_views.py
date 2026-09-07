@@ -218,7 +218,7 @@ async def test_detail_dialog_shows_enrichment(structured_record, mgmt, firewall_
         # priorities, action and policy path are shown once — in the trace, not the fields
         assert "Rule Priority" not in text
         labels = "\n".join(_tree_labels(app.screen.query_one("#trace-tree", Tree)))
-        assert "[2000] rcg-net" in labels and "[100] rc-web (Allow)" in labels
+        assert "[2000] rcg-net" in labels and "[100] rc-web  allow" in labels
 
 
 async def test_detail_dialog_shows_logged_rule_definition(structured_record, mgmt, firewall_id):
@@ -329,7 +329,7 @@ async def test_trace_screen_shows_logged_match_and_closes(structured_record, mgm
         assert "Threat Intelligence   mode Alert" in joined
         assert "DNAT rules   no collections" in joined
         assert "Network rules   ✓ matched" in joined
-        assert "[2000] rcg-net" in joined and "✓ [100] rc-web (Allow)" in joined  # group once, collection below it
+        assert "[2000] rcg-net" in joined and "✓ [100] rc-web  allow" in joined  # group once, collection below it
         assert "allow-web" in joined and "← logged" in joined
         assert "Application rules   not evaluated" in joined
         assert "evaluation stopped at the logged rule" in joined
@@ -430,7 +430,7 @@ async def test_trace_for_no_rule_matched_row_shows_near_miss(structured_record, 
         tree = screen.query_one("#trace-tree", Tree)
         joined = "\n".join(_tree_labels(tree))
         assert "Network rules   ✗ no match" in joined
-        assert "✗ [100] rc-web (Allow)   2 rules · nearest miss: port" in joined
+        assert "✗ [100] rc-web  allow   2 rules · nearest miss: port" in joined
         assert "✗ allow-web   port: 8443 not in 443 ★ nearest" in joined   # first problem inline, ranked
         assert "skipped — protocol TCP is not HTTP, HTTPS or MSSQL" in joined
         assert "default action: Deny" in joined

@@ -43,9 +43,9 @@ CATEGORY_GROUPS: dict[str, frozenset[str]] = {
     "dns": frozenset({"dnsquery", "dnsfailure"}),
 }
 CATEGORY_OPTIONS: list[tuple[str, str]] = [
-    ("Decisions · rules, TI, IDPS", "group:decisions"),
-    ("Traffic · FlowTrace, FatFlow", "group:traffic"),
-    ("DNS · queries, failures", "group:dns"),
+    ("Decisions", "group:decisions"),  # rules, ThreatIntel, IDPS
+    ("Traffic", "group:traffic"),      # FlowTrace, FatFlow
+    ("DNS", "group:dns"),              # DnsQuery, DnsFailure
     ("NetworkRule", "networkrule"),
     ("AppRule", "apprule"),
     ("NATRule", "natrule"),

@@ -130,7 +130,7 @@ jobs:
             echo "| macOS Apple Silicon | \`az-firewall-watch-macos.tar.gz\` |"
             echo "| Windows | \`az-firewall-watch.exe\` |"
             echo ""
-            echo "See the [Getting started](https://github.com/${GITHUB_REPOSITORY}/blob/${GITHUB_REF_NAME}/README.md#-getting-started) section of the README for first-run instructions on each platform."
+            echo "See [Getting started](https://github.com/${GITHUB_REPOSITORY}/blob/${GITHUB_REF_NAME}/docs/getting-started.md) for first-run instructions on each platform."
             echo "EOF"
           } >> "$GITHUB_OUTPUT"
 

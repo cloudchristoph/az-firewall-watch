@@ -27,6 +27,7 @@ Policy context: the viewer reads the firewall, its policy and the referenced IP 
 
 - `aiohttp` is now an explicit runtime dependency (used by the ARM client).
 - Threat Intelligence rows show the FQDN of HTTP/HTTPS hits as destination (was empty); Threat Intelligence and IDPS actions are capitalised (`Alert`, `Deny`) like every other action.
+- **Documentation restructured.** The README is now a landing page (what it does, how it works, quick start, doc index); the details moved into `docs/`: [getting-started](docs/getting-started.md), [using-the-viewer](docs/using-the-viewer.md), [policy-context](docs/policy-context.md), [configuration](docs/configuration.md), [log-categories](docs/log-categories.md), [event-hub](docs/event-hub.md) and [development](docs/development.md). `POLICY_CONTEXT` is documented in one place instead of four, the required Azure roles are collected in a single table, and the command-line options are documented at all.
 
 ## [0.4.1] - 2026-09-05
 

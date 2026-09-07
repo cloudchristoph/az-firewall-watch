@@ -369,6 +369,26 @@ async def test_trace_screen_enter_jumps_to_policy_rule(structured_record, mgmt, 
         assert policy_tree.cursor_node is not None and policy_tree.cursor_node.label.plain == "allow-web"
 
 
+async def test_threat_intel_trace_is_two_lines(structured_record, mgmt, firewall_id):
+    """A ThreatIntel row was decided before the rules: no per-pass lines, no repeated verdict."""
+    app = FirewallLogApp()
+    async with app.run_test(size=(160, 45)) as pilot:
+        await pilot.pause()
+        await _load(app, pilot, firewall_id)
+        row = parse_record(structured_record(
+            "AZFWThreatIntel", Protocol="HTTP", SourceIp="10.3.5.4", SourcePort=1, DestinationIp="",
+            DestinationPort=80, Fqdn="testmaliciousdomain.eastus.cloudapp.azure.com", Action="Alert",
+            ThreatDescription="test indicator",
+        ))
+        screen = await _open_trace(app, pilot, row)
+        labels = _tree_labels(screen.query_one("#trace-tree", Tree))[1:]  # skip the hidden root
+        assert len(labels) == 2, labels
+        assert labels[0].startswith("  Threat Intelligence   hit — Alert by Threat Intelligence (mode Alert)")
+        assert labels[1].startswith("  DNAT, Network and Application rules   not evaluated")
+        title = str(screen.query_one("#trace-title", Static).content)
+        assert "Alert by Threat Intelligence" in title  # the verdict lives in the header only
+
+
 async def test_enter_on_collapsed_rule_expands_before_it_opens(structured_record, mgmt, firewall_id):
     app = FirewallLogApp()
     async with app.run_test(size=(160, 45)) as pilot:

@@ -88,6 +88,26 @@ async def test_detail_dialog_escapes_rich_markup_in_values(structured_record):
         assert "[bold]evil" in _dialog_text(dialog)
 
 
+async def test_threat_intel_entry_labels_and_long_values(structured_record):
+    fqdn = "testmaliciousdomain.eastus.cloudapp.azure.com"
+    row = parse_record(structured_record(
+        "AZFWThreatIntel", time="2026-09-07T16:14:09.903912+00:00", Protocol="HTTP", SourceIp="10.3.8.4",
+        SourcePort=47074, DestinationIp="", DestinationPort=80, Fqdn=fqdn, Action="alert",
+        ThreatDescription="This is a test indicator for a Microsoft owned domain.",
+    ))
+    app = FirewallLogApp()
+    async with app.run_test(size=(140, 40)) as pilot:
+        await pilot.pause()
+        dialog = await _open_detail(app, pilot, row)
+        contents = [str(s.content) for s in dialog.query(Static)]
+        text = "\n".join(contents)
+        assert "2026-09-07T16:14:09Z" in text and ".903912" not in text      # UTC trimmed to seconds
+        assert "Threat" in text and "More Info" not in text                   # category-specific label
+        assert any(c.startswith("[dim]Destination[/]\n  " + fqdn) for c in contents)  # long value on its own line
+        assert any(c.startswith("[dim]Protocol     [/]  HTTP") for c in contents)     # short values stay inline
+        assert dialog.query_one("#btn-close").region.width < dialog.query_one("#detail-pane").region.width
+
+
 @pytest.mark.parametrize("key", ["escape", "q"])
 async def test_detail_dialog_closes_on_key(structured_record, key):
     app = FirewallLogApp()

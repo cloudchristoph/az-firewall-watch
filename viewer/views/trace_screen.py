@@ -117,16 +117,20 @@ class TracePanel(Vertical):
         show_origin = len({c.policy_name for p in t.passes for c in p.collections}) > 1
 
         root.add_leaf(f"{_LEAF_PAD}Threat Intelligence   [dim]{escape(t.threat_intel)}[/]")
-        for p in t.passes:
-            self._add_pass(root, p, highlight, show_origin)
-        if t.infrastructure:
-            root.add_leaf(f"{_LEAF_PAD}Built-in infrastructure FQDNs   [dim]{escape(t.infrastructure)}[/]")
-        if t.matched_rule is not None:
-            root.add_leaf(f"{_LEAF_PAD}[green]✓[/] evaluation stopped at the logged rule")
-        elif t.flow.threat_intel:
-            root.add_leaf(f"{_LEAF_PAD}[magenta]![/] {escape(t.outcome)}")
+        if t.flow.threat_intel:
+            # Decided before the rules: one line for all three passes, and no
+            # repeated verdict — the header already carries it.
+            root.add_leaf(f"{_LEAF_PAD}[dim]DNAT, Network and Application rules   "
+                          "not evaluated — decided before rule processing[/]")
         else:
-            root.add_leaf(f"{_LEAF_PAD}[red]✗[/] {escape(t.outcome)}")
+            for p in t.passes:
+                self._add_pass(root, p, highlight, show_origin)
+            if t.infrastructure:
+                root.add_leaf(f"{_LEAF_PAD}Built-in infrastructure FQDNs   [dim]{escape(t.infrastructure)}[/]")
+            if t.matched_rule is not None:
+                root.add_leaf(f"{_LEAF_PAD}[green]✓[/] evaluation stopped at the logged rule")
+            else:
+                root.add_leaf(f"{_LEAF_PAD}[red]✗[/] {escape(t.outcome)}")
         root.expand()
 
         matched = self._logged_node

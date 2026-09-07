@@ -12,10 +12,18 @@ from textual.screen import ModalScreen
 from textual.widgets import Button, Static
 
 from fw_parser import FirewallDataRow
-from helpers import _to_local
+from helpers import _to_local, _utc_short
 
 from ..trace import Trace
 from .trace_screen import TracePanel
+
+
+# Values longer than this go on their own line under the label instead of
+# wrapping mid-word at the pane edge (long FQDNs, rule definitions).
+_INLINE_VALUE_MAX = 34
+
+# The free-text column means different things per category.
+_INFO_LABEL = {"threatintel": "Threat", "idps": "Signature", "dnsfailure": "Error"}
 
 
 def _endpoint(address: str, port: str) -> str:
@@ -69,9 +77,14 @@ class DetailDialog(ModalScreen[str | None]):
     DetailDialog .detail-row {
         height: auto;
     }
-    DetailDialog #detail-pane > Button {
-        width: 100%;
+    DetailDialog #detail-pane > .btn-row {
+        height: 3;
         margin-top: 1;
+        align-horizontal: right;
+    }
+    DetailDialog #detail-pane > .btn-row > Button {
+        width: auto;
+        min-width: 16;
     }
     """
 
@@ -91,13 +104,16 @@ class DetailDialog(ModalScreen[str | None]):
     @staticmethod
     def _field(label: str, value: str) -> Static:
         safe = value.replace("[", "\\[")
+        if len(value) > _INLINE_VALUE_MAX:
+            return Static(f"[dim]{label.rstrip()}[/]\n  {safe}", markup=True, classes="detail-row")
         return Static(f"[dim]{label.ljust(13)}[/]  {safe}", markup=True, classes="detail-row")
 
     def compose(self) -> ComposeResult:
         with Horizontal(id="dialog"):
             with Vertical(id="detail-pane"):
                 yield from self._entry_fields()
-                yield Button("Close  (Esc)", variant="primary", id="btn-close")
+                with Horizontal(classes="btn-row"):
+                    yield Button("Close  (Esc)", variant="primary", id="btn-close")
             if self._trace is not None:
                 yield TracePanel(self._trace, id="trace-panel")
 
@@ -108,7 +124,7 @@ class DetailDialog(ModalScreen[str | None]):
         with_trace = self._trace is not None
         yield Static(f"Log Entry — {row.category}", id="title")
 
-        yield self._field("Time (UTC)   ", row.time)
+        yield self._field("Time (UTC)   ", _utc_short(row.time))
         yield self._field("Time (Local) ", _to_local(row.time))
         yield self._field("Category     ", row.category)
         yield self._field("Protocol     ", row.protocol)
@@ -127,7 +143,7 @@ class DetailDialog(ModalScreen[str | None]):
         if not any([row.fw_policy, row.rule_collection_group, row.rule_collection, row.rule_name]) and row.policy:
             yield self._field("Policy / Info", row.policy)
         if row.moreinfo:
-            yield self._field("More Info    ", row.moreinfo)
+            yield self._field(_INFO_LABEL.get(row.category.lower(), "More Info").ljust(13), row.moreinfo)
 
         enr = self._enrichment
         if enr:

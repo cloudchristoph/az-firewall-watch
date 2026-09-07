@@ -11,7 +11,7 @@ from textual.containers import Horizontal, Vertical
 from textual.screen import ModalScreen
 from textual.widgets import Button, Static
 
-from fw_parser import FirewallDataRow
+from fw_parser import FirewallDataRow, tcp_direction
 from helpers import _to_local, _utc_short
 
 from ..trace import Trace
@@ -22,8 +22,19 @@ from .trace_screen import TracePanel
 # wrapping mid-word at the pane edge (long FQDNs, rule definitions).
 _INLINE_VALUE_MAX = 34
 
-# The free-text column means different things per category.
-_INFO_LABEL = {"threatintel": "Threat", "idps": "Signature", "dnsfailure": "Error"}
+# The columns mean different things per category; the labels say what a row's
+# value really is instead of the table's generic column names.
+_ACTION_LABEL = {"flowtrace": "Flag", "fatflow": "Rate", "dnsquery": "Response", "dnsfailure": "Result"}
+_INFO_LABEL = {"threatintel": "Threat", "dnsfailure": "Error"}
+_PROTOCOL_LABEL = {"dnsquery": "Query type"}
+_SOURCE_LABEL = {"dnsquery": "Client"}
+_DEST_LABEL = {"dnsquery": "Query", "dnsfailure": "FQDN"}
+_INFO_HIDDEN = {"flowtrace", "fatflow", "idps"}  # rendered in their own way below
+_IDPS_FIELDS = ("Severity", "Signature", "Class", "Description")  # "Class": the Category row names the log category
+
+
+def _ports_join(address: str, port: str) -> str:
+    return address if not port or port == "-" else f"{address}:{port}"
 
 
 def _ports(src: str, dst: str) -> str:
@@ -133,14 +144,25 @@ class DetailDialog(ModalScreen[str | None]):
 
         yield self._field("Time (UTC)   ", _utc_short(row.time))
         yield self._field("Time (Local) ", _to_local(row.time))
+        cat = row.category.lower()
         yield self._field("Category     ", row.category)
-        yield self._field("Protocol     ", row.protocol)
-        yield self._field("Source       ", row.sourceip)
-        yield self._field("Destination  ", row.targetip)
-        ports = _ports(row.srcport, row.targetport)
-        if ports:
-            yield self._field("Ports        ", ports)
-        yield self._field("Action       ", row.action)
+        if row.protocol and row.protocol != "-":
+            yield self._field(_PROTOCOL_LABEL.get(cat, "Protocol").ljust(13), row.protocol)
+        if cat in ("flowtrace", "fatflow"):
+            # The log's source/destination are the packet's. Show the connection
+            # client → server, then say which way this packet went.
+            yield from self._flowtrace_fields(row)
+        else:
+            yield self._field(_SOURCE_LABEL.get(cat, "Source").ljust(13), row.sourceip)
+            yield self._field(_DEST_LABEL.get(cat, "Destination").ljust(13), row.targetip)
+            ports = _ports(row.srcport, row.targetport)
+            if ports:
+                yield self._field("Ports        ", ports)
+        yield self._field(_ACTION_LABEL.get(cat, "Action").ljust(13), row.action)
+        if cat == "idps" and row.moreinfo:
+            # parser joins "SEV:n · id · category · description"
+            for label, value in zip(_IDPS_FIELDS, row.moreinfo.split(" · ")):
+                yield self._field(label.ljust(13), value[4:] if label == "Severity" and value.startswith("SEV:") else value)
 
         if row.fw_policy and not with_trace:
             yield self._field("Policy       ", row.fw_policy)
@@ -152,8 +174,8 @@ class DetailDialog(ModalScreen[str | None]):
             yield self._field("Rule         ", row.rule_name)
         if not any([row.fw_policy, row.rule_collection_group, row.rule_collection, row.rule_name]) and row.policy:
             yield self._field("Policy / Info", row.policy)
-        if row.moreinfo:
-            yield self._field(_INFO_LABEL.get(row.category.lower(), "More Info").ljust(13), row.moreinfo)
+        if row.moreinfo and cat not in _INFO_HIDDEN:
+            yield self._field(_INFO_LABEL.get(cat, "More Info").ljust(13), row.moreinfo)
 
         enr = self._enrichment
         if enr:
@@ -174,8 +196,21 @@ class DetailDialog(ModalScreen[str | None]):
                 yield self._field("Rule Action  ", enr["rule_action"])
             if enr.get("rule_definition"):
                 yield self._field("Rule Def.    ", enr["rule_definition"])  # the tree shows checks, not the whole rule
-            if enr.get("policy_sku_tier") and not with_trace:
-                yield self._field("Policy SKU   ", enr["policy_sku_tier"])
+
+    def _flowtrace_fields(self, row: FirewallDataRow) -> ComposeResult:
+        flag = row.action if row.category.lower() == "flowtrace" else ""  # FatFlow has a rate there
+        direction = tcp_direction(flag, row.srcport, row.targetport)
+        src = _ports_join(row.sourceip, row.srcport)
+        dst = _ports_join(row.targetip, row.targetport)
+        if direction == "server → client":
+            client, server = dst, src
+        else:
+            client, server = src, dst
+        yield self._field("Flow         ", f"{client} → {server}")
+        if direction:
+            yield self._field("Packet       ", f"{row.sourceip} → {row.targetip}  ({direction})")
+        else:
+            yield self._field("Packet       ", f"{row.sourceip} → {row.targetip}  (direction unknown)")
 
     def on_mount(self) -> None:
         if self._trace is None:

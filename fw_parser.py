@@ -23,6 +23,29 @@ _RESOLVE_FAIL_RE = re.compile(
 )
 
 
+_FLOWTRACE_BOILERPLATE = "Log Additional TCP Log"
+
+
+def tcp_direction(flag: str, sport: str, dport: str) -> str:
+    """Which way a FlowTrace packet went: ``client → server`` or ``server → client``.
+
+    SYN and SYN-ACK are unambiguous. For everything else the side with the
+    ephemeral (higher) port is taken as the client; equal ports give ``""``.
+    """
+    f = (flag or "").upper()
+    if f == "SYN":
+        return "client → server"
+    if f == "SYN-ACK":
+        return "server → client"
+    try:
+        s, d = int(sport), int(dport)
+    except (TypeError, ValueError):
+        return ""
+    if s == d:
+        return ""
+    return "client → server" if s > d else "server → client"
+
+
 def _capitalise(value: str) -> str:
     """'alert' → 'Alert'; values that are already cased stay as they are."""
     return value[:1].upper() + value[1:] if value else value
@@ -224,12 +247,13 @@ def _parse_structured(record: dict, category: str, time: str, resource_id: str =
             targetip=_s(props, "DestinationIp"),
             targetport=_port(props, "DestinationPort"),
             action=_capitalise(_s(props, "Action")),  # the firewall sends "alert" / "deny"
-            moreinfo=(
-                f"SEV:{_s(props, 'Severity')} "
-                f"{_s(props, 'SignatureId')} "
-                f"{_s(props, 'Category')} "
-                f"{_s(props, 'Description')}"
-            ).strip(),
+            # " · " separated so the detail dialog can split it back into fields
+            moreinfo=" · ".join(filter(None, [
+                f"SEV:{_s(props, 'Severity')}" if _s(props, "Severity") else "",
+                _s(props, "SignatureId"),
+                _s(props, "Category"),
+                _s(props, "Description"),
+            ])),
             resource_id=resource_id,
         )
 
@@ -275,20 +299,28 @@ def _parse_structured(record: dict, category: str, time: str, resource_id: str =
         )
 
     if category == "AZFWFlowTrace":
-        # Flag: FIN / FIN-ACK / SYN-ACK / RST / INVALID …; Action/ActionReason
-        # describe why the flow was logged (e.g. "Additional TCP Log").
+        # Flag: FIN / FIN-ACK / SYN-ACK / RST / INVALID …. Source and destination
+        # are the *packet's*, so a SYN-ACK lists the server as source. The info
+        # column says which way the packet went; Azure's own Action/ActionReason
+        # ("Log Additional TCP Log") is the same boilerplate on every row and is
+        # only kept when it says something else.
+        flag = _s(props, "Flag") or "-"
+        sport, dport = _port(props, "SourcePort"), _port(props, "DestinationPort")
         reason = " ".join(filter(None, [_s(props, "Action"), _s(props, "ActionReason")]))
+        info = tcp_direction(flag, sport, dport)
+        if reason and reason != _FLOWTRACE_BOILERPLATE:
+            info = f"{info} · {reason}" if info else reason
         return FirewallDataRow(
             rowid=_next_id(),
             time=time,
             category="FlowTrace",
             protocol=_s(props, "Protocol"),
             sourceip=_s(props, "SourceIp"),
-            srcport=_port(props, "SourcePort"),
+            srcport=sport,
             targetip=_s(props, "DestinationIp"),
-            targetport=_port(props, "DestinationPort"),
-            action=_s(props, "Flag") or "-",
-            moreinfo=reason,
+            targetport=dport,
+            action=flag,
+            moreinfo=info,
             resource_id=resource_id,
         )
 
@@ -298,17 +330,18 @@ def _parse_structured(record: dict, category: str, time: str, resource_id: str =
         # common in practice, so keep three decimals below 1 Mbit/s.
         rate = _s(props, "FlowRate")
         rate_txt = _format_mbps(rate)
+        sport, dport = _port(props, "SourcePort"), _port(props, "DestinationPort")
         return FirewallDataRow(
             rowid=_next_id(),
             time=time,
             category="FatFlow",
             protocol=_s(props, "Protocol"),
             sourceip=_s(props, "SourceIp"),
-            srcport=_port(props, "SourcePort"),
+            srcport=sport,
             targetip=_s(props, "DestinationIp"),
-            targetport=_port(props, "DestinationPort"),
+            targetport=dport,
             action=rate_txt,
-            moreinfo="Top flow by bandwidth",
+            moreinfo=tcp_direction("", sport, dport),  # like FlowTrace: which way this flow's packets go
             resource_id=resource_id,
         )
 

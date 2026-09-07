@@ -700,7 +700,6 @@ class FirewallLogApp(App[None]):
             if dst_groups:
                 out["dest_ip_groups"] = dst_groups
         if self._policy_info is not None:
-            out["policy_sku_tier"] = self._policy_info.sku_tier
             # Exact lookup of the rule the firewall reported — no guessing.
             logged = self._logged_from_row(row)
             found = find_logged_rule(self._policy_info, logged)

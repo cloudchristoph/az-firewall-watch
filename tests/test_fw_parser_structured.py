@@ -118,7 +118,7 @@ def test_idps_signature_moreinfo_combines_severity_and_signature(structured_reco
     ))
     assert row.category == "IDPS"
     assert row.action == "Alert"
-    assert row.moreinfo == "SEV:1 2024897 Attempted User Privilege Gain ET TEST"
+    assert row.moreinfo == "SEV:1 · 2024897 · Attempted User Privilege Gain · ET TEST"
 
 
 def test_idps_lowercase_action_from_the_firewall_is_capitalised(structured_record):
@@ -176,7 +176,28 @@ def test_flow_trace_shows_flag_as_action(structured_record):
     assert row.category == "FlowTrace"
     assert row.action == "INVALID"
     assert (row.sourceip, row.srcport, row.targetip, row.targetport) == ("10.0.1.4", "51000", "10.0.2.5", "443")
-    assert row.moreinfo == "Log Additional TCP Log"
+    assert row.moreinfo == "client → server"  # the boilerplate reason is dropped, direction shown instead
+
+
+@pytest.mark.parametrize("flag, sport, dport, expected", [
+    ("SYN", "50674", "443", "client → server"),
+    ("SYN-ACK", "443", "50674", "server → client"),
+    ("FIN", "50674", "443", "client → server"),      # ephemeral port side is the client
+    ("FIN", "443", "50674", "server → client"),
+    ("RST", "443", "443", ""),                        # cannot tell
+    ("FIN", "-", "443", ""),
+])
+def test_flowtrace_packet_direction(flag, sport, dport, expected):
+    from fw_parser import tcp_direction
+    assert tcp_direction(flag, sport, dport) == expected
+
+
+def test_flowtrace_keeps_a_non_boilerplate_reason(structured_record):
+    row = parse_record(structured_record(
+        "AZFWFlowTrace", Protocol="TCP", SourceIp="10.0.1.4", SourcePort=51000, DestinationIp="10.0.2.5",
+        DestinationPort=443, Flag="RST", Action="Log", ActionReason="Something unusual",
+    ))
+    assert row.moreinfo == "client → server · Log Something unusual"
     assert row.policy == ""
 
 
@@ -195,7 +216,7 @@ def test_fat_flow_real_record(structured_record):
     assert row.category == "FatFlow"
     assert row.action == "3.3 Mbps"
     assert (row.sourceip, row.srcport, row.targetip, row.targetport) == ("146.75.118.114", "443", "10.2.0.6", "13590")
-    assert row.moreinfo == "Top flow by bandwidth"
+    assert row.moreinfo == "server → client"  # 443 → high port
 
 
 @pytest.mark.parametrize(

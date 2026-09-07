@@ -80,6 +80,8 @@ class TracePanel(Vertical):
             icon = "[green]✓[/]"
         elif f.threat_intel:
             icon = "[magenta]![/]"
+        elif not t.outcome.startswith("default action"):
+            icon = "[yellow]?[/]"  # the firewall matched a rule we could not locate (stale cache)
         else:
             icon = "[red]✗[/]"
         # Everything dynamic (names, FQDNs, outcome) is escaped: labels are Rich markup.

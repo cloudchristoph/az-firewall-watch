@@ -323,12 +323,13 @@ def build_trace(flow: Flow, policy: FirewallPolicyInfo, ip_groups: dict[str, IpG
                 logged: LoggedMatch | None = None) -> Trace:
     warnings: list[str] = []
     logged_found = find_logged_rule(policy, logged) is not None
+    missing: LoggedMatch | None = None  # the firewall's decision when we cannot locate its rule
     if logged and not logged_found:
         warnings.append(
             f"Logged rule {logged.group} » {logged.collection} » {logged.rule} is not in the "
             "loaded policy — the cache may be stale (Ctrl+R) or the rule was renamed."
         )
-        logged = None
+        missing, logged = logged, None
 
     if flow.threat_intel:
         # Threat Intelligence runs before any rule; a ThreatIntel row means the
@@ -406,6 +407,12 @@ def build_trace(flow: Flow, policy: FirewallPolicyInfo, ip_groups: dict[str, IpG
     if stopped:
         infrastructure = None
         outcome = f"{logged.action or 'matched'} by {logged.group} » {logged.collection} » {logged.rule}"
+    elif missing is not None:
+        # The firewall did match a rule; we just cannot show it. Never claim a
+        # default deny for a row the log says was allowed.
+        infrastructure = None
+        outcome = (f"{missing.action or 'matched'} by {missing.group} » {missing.collection} » "
+                   f"{missing.rule} (rule not in loaded policy)")
     else:
         infrastructure = "no match assumed — infrastructure FQDNs are not evaluated locally"
         outcome = "default action: Deny (no rule matched)"

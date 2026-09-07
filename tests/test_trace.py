@@ -266,6 +266,9 @@ def test_trace_stale_cache_warning_when_logged_rule_missing():
     logged = LoggedMatch(group="rcg-net", collection="net-allow", rule="renamed-rule", action="Allow")
     t = build_trace(TCP443, LAB, GROUPS, logged)
     assert t.warnings and "renamed-rule" in t.warnings[0] and "Ctrl+R" in t.warnings[0]
+    # the header keeps the firewall's verdict instead of claiming a default deny
+    assert t.outcome == "Allow by rcg-net » net-allow » renamed-rule (rule not in loaded policy)"
+    assert t.infrastructure is None and t.matched_rule is None
     assert t.logged is None                                   # evaluated heuristically instead
     assert t.matched_rule is None
 

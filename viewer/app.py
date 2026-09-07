@@ -139,7 +139,6 @@ class FirewallLogApp(App[None]):
         Binding("f", "focus_filter", "Filter"),
         Binding("ctrl+s", "screenshot", "Screenshot", show=True),
         Binding("ctrl+r", "refresh_metadata", "Refresh metadata", show=True),
-        Binding("t", "trace", "Trace"),
     ]
 
     # ── state ──────────────────────────────────────────────────────────────────
@@ -637,12 +636,20 @@ class FirewallLogApp(App[None]):
         return row.category.lower() in self._TRACEABLE
 
     def _open_detail(self, row: FirewallDataRow) -> None:
-        """Open the row detail dialog; the evaluation trace sits beside it when possible."""
+        """Open the row detail dialog; the evaluation trace sits beside it when possible.
+
+        When policy context is on but no trace can be built, the status bar says why.
+        """
         trace = None
-        if (self._policy_context and self._mgmt_loaded and self._policy_info is not None
-                and self._is_traceable(row)):
-            trace = build_trace(self._flow_from_row(row), self._policy_info, self._ip_groups,
-                                self._logged_from_row(row))
+        if self._policy_context:
+            status = self.query_one("#status", StatusBar)
+            if not self._is_traceable(row):
+                status.meta = f"no policy evaluation for {row.category} rows"
+            elif not self._mgmt_loaded or self._policy_info is None:
+                status.meta = "trace needs policy metadata (not loaded)"
+            else:
+                trace = build_trace(self._flow_from_row(row), self._policy_info, self._ip_groups,
+                                    self._logged_from_row(row))
         self.push_screen(
             DetailDialog(row, enrichment=self._compute_enrichment(row), trace=trace),
             callback=self._on_trace_result,
@@ -764,32 +771,6 @@ class FirewallLogApp(App[None]):
         tabs = self.query_one("#main-tabs", TabbedContent)
         if tabs.active != "tab-logs":
             tabs.active = "tab-logs"
-
-    def action_trace(self) -> None:
-        """Open the detail dialog for the selected row with the trace in focus.
-
-        Same dialog as Enter. When no trace can be built (policy context off, policy
-        not loaded yet) the plain details open and the status bar says why.
-        """
-        status = self.query_one("#status", StatusBar)
-        if not self._policy_context:
-            status.meta = "trace needs policy context (POLICY_CONTEXT=on or --policy-context)"
-        row = self._row_index.get(self._selected_rowid or "")
-        if row is None:
-            # No highlight event yet (cursor never moved): use the cursor row.
-            tbl = self.query_one("#log-table", DataTable)
-            if tbl.row_count:
-                key = tbl.coordinate_to_cell_key(tbl.cursor_coordinate).row_key.value
-                row = self._row_index.get(key or "")
-        if row is None:
-            if self._policy_context:
-                status.meta = "trace: select a log row first"
-            return
-        if self._policy_context and not self._is_traceable(row):
-            status.meta = f"no policy evaluation for {row.category} rows"
-        elif self._policy_context and (not self._mgmt_loaded or self._policy_info is None):
-            status.meta = "trace needs policy metadata (not loaded)"
-        self._open_detail(row)
 
     def _on_trace_result(self, rule_ref: str | None) -> None:
         if not rule_ref:

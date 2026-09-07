@@ -249,7 +249,7 @@ async def _open_trace(app: FirewallLogApp, pilot, row) -> DetailDialog:
     tbl.focus()
     tbl.move_cursor(row=0, animate=False)
     await pilot.pause()
-    await pilot.press("t")
+    await pilot.press("enter")
     await wait_until(pilot, lambda: isinstance(app.screen, DetailDialog) and app.screen.has_trace)
     await pilot.pause(0.2)
     return app.screen
@@ -289,20 +289,17 @@ async def test_flow_trace_rows_get_no_evaluation_tree(structured_record, mgmt, f
         tbl.focus()
         tbl.move_cursor(row=0, animate=False)
         await pilot.pause()
-        await pilot.press("t")
+        await pilot.press("enter")
         await wait_until(pilot, lambda: isinstance(app.screen, DetailDialog))
         assert not app.screen.has_trace
         assert app.query_one("#status", StatusBar).meta == "no policy evaluation for FlowTrace rows"
 
 
-async def test_trace_requires_selection_and_metadata(structured_record, mgmt, firewall_id):
+async def test_detail_without_policy_metadata_has_no_trace(structured_record, mgmt, firewall_id):
     app = FirewallLogApp()
     async with app.run_test(size=(160, 45)) as pilot:
         await pilot.pause()
         status = app.query_one("#status", StatusBar)
-        await pilot.press("t")
-        await pilot.pause()
-        assert status.meta == "trace: select a log row first"
         row = _net(structured_record, "10.3.5.4", "1.1.1.1")
         app._pending.append(row)
         await app._flush_rows()
@@ -311,7 +308,7 @@ async def test_trace_requires_selection_and_metadata(structured_record, mgmt, fi
         tbl.focus()
         tbl.move_cursor(row=0, animate=False)
         await pilot.pause()
-        await pilot.press("t")
+        await pilot.press("enter")
         await pilot.pause()
         assert status.meta == "trace needs policy metadata (not loaded)"
         # the plain detail dialog still opens — just without the trace column
@@ -464,7 +461,7 @@ async def test_enter_opens_entry_and_trace_side_by_side(structured_record, mgmt,
         assert tree.cursor_node is not None and "allow-web" in tree.cursor_node.label.plain
         # the pane sits left of the trace, both inside the same dialog
         assert screen.query_one("#detail-pane").region.x < tree.region.x
-        await pilot.press("t")  # same dialog: t only (re)focuses the trace
+        await pilot.press("t")  # no longer bound: must neither close the dialog nor move focus
         await pilot.pause()
         assert app.screen is screen and tree.has_focus
 

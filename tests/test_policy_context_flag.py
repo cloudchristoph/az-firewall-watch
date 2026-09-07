@@ -123,8 +123,8 @@ async def test_off_means_logs_only_and_no_arm(arm_calls):
         assert arm_calls == []
         status = app.query_one("#status", StatusBar)
         assert status.meta == ""
-        await pilot.press("t")
-        assert "needs policy context" in status.meta
+        await pilot.press("t")  # no longer bound; must do nothing
+        assert status.meta == ""
         await pilot.press("ctrl+r")
         assert "policy context off" in status.meta
         assert app._is_logs_tab_active()  # filters keep working without tabs

@@ -198,9 +198,8 @@ EVENT_HUB_START_POSITION=latest
 | `Escape`     | Clear all filter inputs               |
 | `f`          | Jump focus to the filters             |
 | `Tab`        | Move between filter inputs            |
-| `Enter`      | Open the row details — with the evaluation trace beside them when metadata is loaded (`Escape` or `q` closes it) |
+| `Enter`      | Open the row details — with the evaluation trace beside them when policy metadata is loaded (`Escape` or `q` closes it) |
 | `c`          | Clear all rows from the table         |
-| `t`          | Same dialog as `Enter`, with the trace tree focused (plain details when no trace is possible) |
 | `Ctrl` + `r` | Re-fetch firewall / policy / IP-group metadata (bypasses the cache) |
 
 The status bar at the bottom shows the connection state, total events received,
@@ -234,9 +233,9 @@ priorities of the rule the firewall logged (looked up by name, never guessed),
 and the policy SKU tier. The status bar shows a short summary
 (`policy Premium · 11 IP groups · fresh`).
 
-### Evaluation trace (`t`)
+### Evaluation trace
 
-Press `t` on a log row to see the path that flow took through the policy,
+Press `Enter` on a log row to see the path that flow took through the policy,
 in the order Azure Firewall actually uses: Threat Intelligence first, then
 three passes over all rule collection groups — DNAT, Network, Application —
 each in inherited-policy-first, then priority order, stopping at the first
@@ -265,8 +264,9 @@ identity cannot read. For `Deny · no rule matched` rows the whole path is
 computed and the near misses show which criterion failed (for example
 `port: 8443 not in 443`). `Enter` unfolds a rule; `Enter` on an unfolded rule
 opens it in the Policy tab, `Space` folds it again. The trace sits to the right
-of the log entry's own fields in the same dialog, so `Enter` and `t` open the
-same view. The trace explains the *cached* policy; if the logged rule is
+of the log entry's own fields in the same dialog. Rows that are not a policy
+decision (FlowTrace, FatFlow, DNS, IDPS) show their fields only, and the status
+bar says so. The trace explains the *cached* policy; if the logged rule is
 missing from it, a warning suggests `Ctrl+R`.
 
 **How it authenticates.** The ARM client uses `DefaultAzureCredential` (Azure
@@ -283,9 +283,9 @@ rules or IP groups.
 
 **Switching it off.** Policy context is a feature flag: `POLICY_CONTEXT=off` in `.env`
 (or `--no-policy-context` for a single run) turns everything in this section off —
-no ARM requests, no Azure CLI token, no cache file, Logs tab only. `t` then
-opens the plain row details and `Ctrl+R` does nothing; both say so in the
-status bar. The wizard asks for this when it
+no ARM requests, no Azure CLI token, no cache file, Logs tab only. `Enter` then
+shows the plain row details and `Ctrl+R` says so in the status bar. The wizard
+asks for this when it
 writes `.env`. A `.env` from an earlier release has no `POLICY_CONTEXT` key, so the
 viewer shows a one-time notice explaining what policy context does (on by default)
 with a *Disable* button; the choice is saved to `.env`.

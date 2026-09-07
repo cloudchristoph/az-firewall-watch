@@ -11,7 +11,6 @@ Key bindings
   c        Clear all rows
   Escape   Clear all filter inputs
   f        Focus the Source-IP filter
-  t        Row details with the evaluation trace focused (needs policy context)
 
 Options
   --reconfigure     redo the setup wizard

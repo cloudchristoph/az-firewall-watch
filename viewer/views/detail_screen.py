@@ -24,7 +24,7 @@ def _endpoint(address: str, port: str) -> str:
 
 
 class DetailDialog(ModalScreen[str | None]):
-    """Opened with Enter, double-click or ``t`` on a log row.
+    """Opened with Enter or double-click on a log row.
 
     Dismisses with a rule ref (``policy|rcg|rc|rule``, the key the Policy tab
     understands) when a rule is chosen in the trace, else ``None``.
@@ -169,12 +169,6 @@ class DetailDialog(ModalScreen[str | None]):
             # on to the App and trigger its own q / escape bindings.
             event.stop()
             self.dismiss(None)
-        elif event.key == "t":
-            event.stop()
-            if self._trace is not None:
-                self.query_one(TracePanel).focus_tree()  # same dialog, just jump to the trace
-            else:
-                self.dismiss(None)
         elif event.key == "a" and self._trace is not None:
             event.stop()
             self.query_one(TracePanel).toggle_expand_all()

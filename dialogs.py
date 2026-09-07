@@ -180,7 +180,7 @@ class PolicyContextNoticeDialog(ModalScreen[bool]):
                 "• cache that metadata for one hour in ~/.az-firewall-watch/cache.json\n"
                 "\n"
                 "Nothing is written to Azure. In return you get the Firewall, Policy and "
-                "IP Groups tabs, enriched rows and the evaluation trace (t).",
+                "IP Groups tabs, enriched rows and the evaluation trace.",
                 id="enr-body",
             )
             yield Static("Saved to .env as POLICY_CONTEXT=on|off — change it there or run with --no-policy-context.", id="enr-hint")

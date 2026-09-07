@@ -23,6 +23,11 @@ _RESOLVE_FAIL_RE = re.compile(
 )
 
 
+def _capitalise(value: str) -> str:
+    """'alert' → 'Alert'; values that are already cased stay as they are."""
+    return value[:1].upper() + value[1:] if value else value
+
+
 def _next_id() -> str:
     global _counter
     _counter += 1
@@ -218,7 +223,7 @@ def _parse_structured(record: dict, category: str, time: str, resource_id: str =
             srcport=_port(props, "SourcePort"),
             targetip=_s(props, "DestinationIp"),
             targetport=_port(props, "DestinationPort"),
-            action=_s(props, "Action"),
+            action=_capitalise(_s(props, "Action")),  # the firewall sends "alert" / "deny"
             moreinfo=(
                 f"SEV:{_s(props, 'Severity')} "
                 f"{_s(props, 'SignatureId')} "
@@ -229,6 +234,8 @@ def _parse_structured(record: dict, category: str, time: str, resource_id: str =
         )
 
     if category == "AZFWThreatIntel":
+        # HTTP/HTTPS hits carry the FQDN (DestinationIp is then empty); show it
+        # like an application-rule row. IP-based indicators keep the address.
         return FirewallDataRow(
             rowid=_next_id(),
             time=time,
@@ -236,9 +243,9 @@ def _parse_structured(record: dict, category: str, time: str, resource_id: str =
             protocol=_s(props, "Protocol"),
             sourceip=_s(props, "SourceIp"),
             srcport=_port(props, "SourcePort"),
-            targetip=_s(props, "DestinationIp"),
+            targetip=_s(props, "Fqdn") or _s(props, "DestinationIp"),
             targetport=_port(props, "DestinationPort"),
-            action=_s(props, "Action"),
+            action=_capitalise(_s(props, "Action")),
             moreinfo=_s(props, "ThreatDescription"),
             resource_id=resource_id,
         )

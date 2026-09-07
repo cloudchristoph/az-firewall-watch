@@ -21,9 +21,12 @@ Policy context: the viewer reads the firewall, its policy and the referenced IP 
 - **`POLICY_CONTEXT` feature flag** (default `on`). *Policy context* is everything the viewer reads via ARM beyond the Event Hub: firewall, policy and IP groups. The setup wizard asks before writing `.env`; `--policy-context` / `--no-policy-context` override it per run. With policy context off the viewer never leaves the Event Hub: no ARM requests, no Azure CLI token, no cache file, Logs tab only. A `.env` from 0.4.x has no such key, so the viewer shows a one-time notice that says what policy context does and offers to disable it; the answer is saved to `.env`.
 - 125 tests for the ARM client, resource parsing, cache, matching logic, orchestration, the tabs and the feature flag.
 
+- **Category presets** in the filter dropdown — *Decisions* (rules, Threat Intelligence, IDPS), *Traffic* (FlowTrace, FatFlow) and *DNS* — so a flood of FlowTrace or DNS rows is one pick away from gone, without another switch.
+
 ### Changed
 
 - `aiohttp` is now an explicit runtime dependency (used by the ARM client).
+- Threat Intelligence rows show the FQDN of HTTP/HTTPS hits as destination (was empty); Threat Intelligence and IDPS actions are capitalised (`Alert`, `Deny`) like every other action.
 
 ## [0.4.1] - 2026-09-05
 

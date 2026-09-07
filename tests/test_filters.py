@@ -64,6 +64,22 @@ def test_all_filters_must_match_together():
     assert not matches(row, make_filters(action="deny", proto="tcp", port="53"))
 
 
+@pytest.mark.parametrize("preset, visible, hidden", [
+    ("group:decisions", ["NetworkRule", "AppRule", "NATRule", "ThreatIntel", "IDPS"], ["FlowTrace", "FatFlow", "DnsQuery", "DnsFailure"]),
+    ("group:traffic", ["FlowTrace", "FatFlow"], ["NetworkRule", "DnsQuery"]),
+    ("group:dns", ["DnsQuery", "DnsFailure"], ["NetworkRule", "FlowTrace"]),
+])
+def test_category_presets_select_whole_groups(preset, visible, hidden):
+    for cat in visible:
+        assert matches(make_row(category=cat), make_filters(cat=preset)), cat
+    for cat in hidden:
+        assert not matches(make_row(category=cat), make_filters(cat=preset)), cat
+
+
+def test_unknown_preset_matches_nothing():
+    assert not matches(make_row(category="NetworkRule"), make_filters(cat="group:nope"))
+
+
 def test_hide_dns_removes_only_dnsquery_rows():
     dns = make_row(category="DnsQuery")
     net = make_row(category="NetworkRule")

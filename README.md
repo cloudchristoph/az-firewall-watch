@@ -300,10 +300,18 @@ All filters are **case-insensitive substring matches** applied instantly as you 
 | Source IP   | `sourceip` field                                                                       |
 | Dest / FQDN | `targetip` / FQDN field                                                                |
 | Action      | `allow`, `deny`, `dnat`, `alert`, `resolvefail`, DNS RCODEs (`noerror`, `nxdomain`, …), flow flags (`rst`, `invalid`, …), `mbps` |
-| Category    | `NetworkRule`, `AppRule`, `NATRule`, `DnsQuery`, `DnsFailure`, `IDPS`, `ThreatIntel`, `FlowTrace`, `FatFlow` |
+| Category    | Presets **Decisions** (NetworkRule, AppRule, NATRule, ThreatIntel, IDPS), **Traffic** (FlowTrace, FatFlow), **DNS** (DnsQuery, DnsFailure), or a single category |
 | Protocol    | `TCP`, `UDP`, `HTTPS`, `HTTP`, DNS query types (`A`, `AAAA`, `MX`, …)                  |
 | Port        | Destination port (e.g. `443`, `80`, `53`)                                              |
 <!-- markdownlint-enable MD060 -->
+
+### Category presets
+
+FlowTrace and DNS proxy rows can flood the table. The Category dropdown starts
+with three presets so one pick is enough: **Decisions** keeps only rows where
+the firewall decided something (rules, Threat Intelligence, IDPS), **Traffic**
+shows just the observations (FlowTrace, FatFlow), **DNS** the proxy queries and
+resolve failures. Picking **DNS** switches the Hide-DNS toggle off for you.
 
 ### Hide DNS toggle
 

@@ -1,6 +1,8 @@
 """Top-level Textual app for az-firewall-watch."""
 from __future__ import annotations
 
+import ipaddress
+
 import heapq
 import re
 
@@ -29,7 +31,7 @@ from fw_parser import FirewallDataRow
 from helpers import _category_text, _highlight, _to_local
 
 from .azure_resources import FirewallInfo, FirewallPolicyInfo, IpGroupInfo
-from .config import CATEGORY_OPTIONS, MAX_ROWS, TABLE_TRIM_SLACK, VERSION
+from .config import CATEGORY_GROUPS, CATEGORY_OPTIONS, MAX_ROWS, TABLE_TRIM_SLACK, VERSION
 from .enrichment import find_matching_ip_groups, resolve_fw_instance
 from .management import load_management_data
 from .trace import Flow, LoggedMatch, build_trace, find_logged_rule
@@ -553,12 +555,20 @@ class FirewallLogApp(App[None]):
         return tabs.active == "tab-logs"
 
     @staticmethod
+    def _category_matches(selected: str, category: str) -> bool:
+        """``group:<name>`` presets match a set of categories, plain values a substring."""
+        cat = category.lower()
+        if selected.startswith("group:"):
+            return cat in CATEGORY_GROUPS.get(selected[6:], frozenset())
+        return selected in cat
+
+    @staticmethod
     def _matches(row: FirewallDataRow, f: dict) -> bool:
         if f["hide_dns"] and row.category.lower() == "dnsquery":               return False
         if f["src"]    and f["src"]    not in row.sourceip.lower():             return False
         if f["dst"]    and f["dst"]    not in (row.targetip or "").lower():     return False
         if f["action"] and f["action"] not in row.action.lower():               return False
-        if f["cat"]    and f["cat"]    not in row.category.lower():             return False
+        if f["cat"] and not FirewallLogApp._category_matches(f["cat"], row.category):    return False
         if f["proto"]  and f["proto"]  not in row.protocol.lower():             return False
         if f["port"]   and f["port"]   not in row.targetport.lower():           return False
         return True
@@ -574,9 +584,9 @@ class FirewallLogApp(App[None]):
     def on_category_changed(self, event: Select.Changed) -> None:
         if not self._is_logs_tab_active():
             return
-        # If the user explicitly picks DnsQuery, disable the hide-DNS toggle so
-        # they actually see those rows.
-        if isinstance(event.value, str) and event.value == "dnsquery":
+        # If the user explicitly asks for DNS rows, disable the hide-DNS toggle so
+        # they actually see them.
+        if isinstance(event.value, str) and event.value in ("dnsquery", "group:dns"):
             self.query_one("#f-hide-dns", Switch).value = False
         self._refresh_table()
 
@@ -640,8 +650,12 @@ class FirewallLogApp(App[None]):
 
     @staticmethod
     def _flow_from_row(row: FirewallDataRow) -> Flow:
-        cat = row.category.lower()
-        is_fqdn = cat in ("apprule", "dnsfailure", "dnsquery")
+        target = row.targetip or ""
+        try:
+            ipaddress.ip_address(target)
+            is_fqdn = False
+        except ValueError:
+            is_fqdn = bool(target) and target != "-"  # AppRule, DNS and FQDN-based ThreatIntel rows
         return Flow(
             category=row.category,
             protocol=row.protocol if row.protocol != "-" else "",

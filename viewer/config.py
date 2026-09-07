@@ -33,7 +33,19 @@ TABLE_TRIM_SLACK = 250
 
 
 # ── category dropdown options ─────────────────────────────────────────────────
+# Presets come first: one pick hides whole classes of rows (FlowTrace and DNS
+# can flood the table) without another switch in the filter bar. Values with the
+# ``group:`` prefix are looked up in CATEGORY_GROUPS; plain values match the
+# category name.
+CATEGORY_GROUPS: dict[str, frozenset[str]] = {
+    "decisions": frozenset({"networkrule", "apprule", "natrule", "threatintel", "idps"}),
+    "traffic": frozenset({"flowtrace", "fatflow"}),
+    "dns": frozenset({"dnsquery", "dnsfailure"}),
+}
 CATEGORY_OPTIONS: list[tuple[str, str]] = [
+    ("Decisions · rules, TI, IDPS", "group:decisions"),
+    ("Traffic · FlowTrace, FatFlow", "group:traffic"),
+    ("DNS · queries, failures", "group:dns"),
     ("NetworkRule", "networkrule"),
     ("AppRule", "apprule"),
     ("NATRule", "natrule"),
@@ -68,5 +80,5 @@ def policy_context_setting(argv: list[str], environ: Mapping[str, str]) -> tuple
     return raw in _ON_VALUES, True
 
 
-__all__ = ["BASE_DIR", "SRC_DIR", "VERSION", "MAX_ROWS", "TABLE_TRIM_SLACK", "CATEGORY_OPTIONS",
+__all__ = ["BASE_DIR", "SRC_DIR", "VERSION", "MAX_ROWS", "TABLE_TRIM_SLACK", "CATEGORY_OPTIONS", "CATEGORY_GROUPS",
            "POLICY_CONTEXT_KEY", "policy_context_setting", "load_env"]

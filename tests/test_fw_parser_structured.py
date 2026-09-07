@@ -121,6 +121,15 @@ def test_idps_signature_moreinfo_combines_severity_and_signature(structured_reco
     assert row.moreinfo == "SEV:1 2024897 Attempted User Privilege Gain ET TEST"
 
 
+def test_idps_lowercase_action_from_the_firewall_is_capitalised(structured_record):
+    row = parse_record(structured_record(
+        "AZFWIdpsSignature", Protocol="TCP", SourceIp="10.3.7.4", SourcePort=47524,
+        DestinationIp="10.3.6.4", DestinationPort=80, Action="alert", Severity=2, SignatureId=2032081,
+        Category="Potentially Bad Traffic", Description="HaxerMen",
+    ))
+    assert row.action == "Alert"
+
+
 def test_threat_intel(structured_record):
     row = parse_record(structured_record(
         "AZFWThreatIntel",
@@ -131,6 +140,17 @@ def test_threat_intel(structured_record):
     assert row.category == "ThreatIntel"
     assert row.action == "Deny"
     assert row.moreinfo == "Known malicious IP"
+
+
+def test_threat_intel_http_hit_shows_the_fqdn(structured_record):
+    """HTTP/HTTPS indicators arrive with Fqdn set and DestinationIp empty."""
+    row = parse_record(structured_record(
+        "AZFWThreatIntel", Protocol="HTTP", SourceIp="10.3.8.4", SourcePort=56266,
+        DestinationIp="", DestinationPort=80, Fqdn="testmaliciousdomain.eastus.cloudapp.azure.com",
+        Action="alert", ThreatDescription="This is a test indicator for a Microsoft Threat Intelligence test.",
+    ))
+    assert row.targetip == "testmaliciousdomain.eastus.cloudapp.azure.com"
+    assert row.action == "Alert"
 
 
 def test_fqdn_resolve_failure_is_dnsfailure_with_resolvefail(structured_record):

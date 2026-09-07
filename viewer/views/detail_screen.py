@@ -26,9 +26,16 @@ _INLINE_VALUE_MAX = 34
 _INFO_LABEL = {"threatintel": "Threat", "idps": "Signature", "dnsfailure": "Error"}
 
 
-def _endpoint(address: str, port: str) -> str:
-    """``ip:port`` — without the port when the log has none (ICMP, DNS rows)."""
-    return address if not port or port == "-" else f"{address}:{port}"
+def _ports(src: str, dst: str) -> str:
+    """``47972 → 443`` — one line for both ports, so long FQDNs stay unbroken.
+
+    Empty when the log has no ports (ICMP, DNS rows); a missing side shows as ``-``.
+    """
+    s = src if src and src != "-" else ""
+    d = dst if dst and dst != "-" else ""
+    if not s and not d:
+        return ""
+    return f"{s or '-'} → {d or '-'}"
 
 
 class DetailDialog(ModalScreen[str | None]):
@@ -128,8 +135,11 @@ class DetailDialog(ModalScreen[str | None]):
         yield self._field("Time (Local) ", _to_local(row.time))
         yield self._field("Category     ", row.category)
         yield self._field("Protocol     ", row.protocol)
-        yield self._field("Source       ", _endpoint(row.sourceip, row.srcport))
-        yield self._field("Destination  ", _endpoint(row.targetip, row.targetport))
+        yield self._field("Source       ", row.sourceip)
+        yield self._field("Destination  ", row.targetip)
+        ports = _ports(row.srcport, row.targetport)
+        if ports:
+            yield self._field("Ports        ", ports)
         yield self._field("Action       ", row.action)
 
         if row.fw_policy and not with_trace:

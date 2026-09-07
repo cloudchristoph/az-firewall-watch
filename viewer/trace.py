@@ -176,8 +176,11 @@ def _protocol_check(rule: Rule, flow: Flow) -> Check:
     if not rule_protos:
         return Check("protocol", MATCH, "any")
     if rule.kind == "application":
+        # The log says HTTP/1.1, HTTPS or MSSQL; the rule says Http, Https, Mssql.
+        # Compare the bare names: a prefix test would let HTTPS match Http.
+        app_proto = proto.split("/", 1)[0]
         for rp in rule_protos:
-            if proto.startswith(rp):      # HTTP/1.1 vs Http, HTTPS vs Https
+            if rp == app_proto:
                 return Check("protocol", MATCH, rp)
         return Check("protocol", MISS, f"{flow.protocol} not in {', '.join(rule.protocols)}")
     # Network / DNAT rules see layer 4: an application-rule log line says

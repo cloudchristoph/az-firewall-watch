@@ -114,6 +114,20 @@ def test_network_rule_fqdn_target_is_compared_with_a_logged_fqdn():
     assert c.result == MATCH and "ifconfig.me" in c.detail
 
 
+@pytest.mark.parametrize("flow_proto, rule_protos, expected, detail", [
+    ("HTTPS", ["Http", "Https"], MATCH, "HTTPS"),      # reported as the protocol that matched, not the first one
+    ("HTTP/1.1", ["Http", "Https"], MATCH, "HTTP"),
+    ("HTTPS", ["Http"], MISS, "HTTPS not in Http"),   # HTTPS must not match an Http-only rule
+    ("HTTP/1.1", ["Https"], MISS, "HTTP/1.1 not in Https"),
+    ("MSSQL", ["Mssql"], MATCH, "MSSQL"),
+])
+def test_application_protocol_is_matched_exactly(flow_proto, rule_protos, expected, detail):
+    rule = app("r", destination_fqdns=["*"], protocols=rule_protos)
+    flow = replace(TCP443, category="AppRule", protocol=flow_proto, dst_ip="", dst_fqdn="x.example")
+    c = next(c for c in evaluate_rule(rule, flow, GROUPS).checks if c.name == "protocol")
+    assert (c.result, c.detail) == (expected, detail)
+
+
 def test_application_rule_fqdn_and_protocol():
     flow = Flow(category="AppRule", protocol="HTTPS", src_ip="10.3.5.4", dst_fqdn="html.duckduckgo.com", dst_port="443")
     ok = evaluate_rule(app("r", destination_fqdns=["*.duckduckgo.com"]), flow, GROUPS)

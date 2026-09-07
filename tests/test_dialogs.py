@@ -58,8 +58,8 @@ async def test_enter_opens_detail_dialog_with_all_fields(structured_record):
         text = _dialog_text(dialog)
         assert "Log Entry — NetworkRule" in text
         assert "2026-09-05T08:00:00Z" in text
-        assert "10.0.1.4:51000" in text
-        assert "10.0.2.5:443" in text
+        assert "10.0.1.4" in text and "51000 → 443" in text  # ports on their own line
+        assert "10.0.2.5" in text
         assert "Deny" in text
         assert "pol-hub" in text and "rcg" in text and "rc" in text and "r-web" in text
 

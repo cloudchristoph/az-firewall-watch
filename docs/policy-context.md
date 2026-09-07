@@ -19,19 +19,20 @@ resource ID from the first log record it receives and fetches from there.
 - **Firewall**: four blocks about the instance itself.
   - *Instance*: SKU tier and name, zones, provisioning state, resource group,
     subscription, location, tags.
-  - *Networking*: every IP configuration with its private IP and the name and
-    address of its public IP, the management IP (marked *forced tunneling*),
-    subnet names and CIDRs, and additional properties such as
-    `EnableFatFlowLogging`.
+  - *Networking*: a table with one row per IP configuration, each with its
+    private IP and the name and address of its public IP, plus the management IP
+    when the firewall uses forced tunnelling. Underneath: subnets, their CIDRs,
+    and whether forced tunnelling is on.
   - *Policy*: the attached policy with its number of rule collection groups
     including inherited ones, base policy, Threat Intelligence mode and allowlist,
     DNS proxy and its servers, IDPS mode with bypass and override counts, TLS
     inspection with the CA name, SNAT ranges, explicit proxy, child policies.
-  - *Logging*: the firewall's diagnostic settings with their targets (Event Hub,
-    Log Analytics, Storage) and categories, plus a **Not to Event Hub** line
-    naming the categories this viewer understands that no setting forwards. That
-    line answers the most common question about a missing category before you
-    start looking for a bug.
+  - *Logging*: a table of the firewall's diagnostic settings, each with its
+    target (Event Hub, Log Analytics, Storage) and how many categories it
+    forwards, including how many of those the viewer understands. Below it, a
+    **Not to Event Hub** line names the categories this viewer understands that
+    no setting forwards at all. That line answers the most common question about
+    a missing category before you start looking for a bug.
 - **Policy**: a tree of rule collection groups → rule collections → rules, ordered
   by priority, with a detail pane showing sources, destinations, ports, protocols,
   and IP groups resolved to their actual addresses.

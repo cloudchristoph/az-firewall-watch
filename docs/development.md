@@ -51,6 +51,22 @@ pyinstaller \
 Releases are built by `.github/workflows/release.yml` when a `v*` tag is pushed;
 the workflow refuses to build if `CHANGELOG.md` has no section for that version.
 
+## Linting and types
+
+```bash
+ruff check .        # --fix applies what can be fixed automatically
+mypy
+```
+
+Both are configured in `pyproject.toml`, so neither takes arguments. `ruff` runs
+the `E`, `F`, `W`, `I`, `B` and `UP` rule sets at line length 120, with `E501`
+and `E701` off because long TUI strings and one-line guards are deliberate here.
+`mypy` checks the entry point, the shared modules and the `viewer` and `setup`
+packages against Python 3.10.
+
+A `lint` job in CI runs both on every push, in parallel with the test matrix, so
+a failure here is as blocking as a failing test.
+
 ## 🧪 Running tests
 
 ```bash
@@ -66,6 +82,8 @@ Textual's test pilot with the Azure CLI mocked out.
 
 **No Azure connection is required.** The same suite runs in CI on every push and
 pull request: Linux on Python 3.10, 3.12 and 3.13, plus Windows and macOS on 3.12.
+
+Before committing, the full local round is `ruff check .`, `mypy`, `pytest`.
 
 While working on one area, run just that part:
 

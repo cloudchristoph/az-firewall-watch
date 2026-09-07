@@ -288,6 +288,10 @@ class EnrichmentNoticeDialog(ModalScreen[bool]):
                 yield Button("Keep enabled  (Enter)", variant="success", id="btn-keep")
                 yield Button("Disable", variant="default", id="btn-disable")
 
+    def recreate(self) -> "EnrichmentNoticeDialog":
+        """Fresh copy for re-pushing after the connecting splash is removed."""
+        return EnrichmentNoticeDialog()
+
     def on_button_pressed(self, event: Button.Pressed) -> None:
         self.dismiss(event.button.id == "btn-keep")
 
@@ -361,6 +365,10 @@ class UpdateDialog(ModalScreen[None]):
         super().__init__()
         self._latest = latest
         self._url = url
+
+    def recreate(self) -> "UpdateDialog":
+        """Fresh copy for re-pushing after the connecting splash is removed."""
+        return UpdateDialog(self._latest, self._url)
 
     def compose(self) -> ComposeResult:
         with Static(id="dialog"):

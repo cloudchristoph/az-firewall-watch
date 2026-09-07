@@ -10,7 +10,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Callable
 
 from dialogs import ConnectingDialog, ErrorDialog, StatusBar, UpdateDialog
 from fw_parser import parse_record
@@ -126,23 +126,62 @@ def resolve_start_position(value: str | None) -> str:
     return raw
 
 
-async def _remove_splash(app: "FirewallLogApp") -> None:
-    """Remove the ConnectingDialog from the screen stack.
+# ── splash vs. other dialogs ─────────────────────────────────────────────────
+# The connecting splash is transient, while dialogs such as the update notice
+# or the enrichment notice want an answer. They may end up in either order on
+# the screen stack (the notice is pushed on mount, the splash from the worker
+# once the SDK import is done). Both helpers below keep the splash *below*
+# those dialogs: they pop everything above a point, do their job, and push each
+# dialog that knows how to ``recreate()`` itself again as a fresh instance with
+# its original result callback, so it stays visible and its answer still lands.
 
-    An UpdateDialog may sit on top of the splash; it is re-pushed afterwards
-    so it stays visible. Screen-stack errors are ignored because the stack may
-    already be torn down when the worker is cancelled during app shutdown.
+
+async def _pop_dialogs_above(app: "FirewallLogApp", is_anchor: "Callable[[Screen], bool]") -> list[tuple[Any, Any]]:
+    """Pop screens until ``is_anchor(app.screen)``; return (screen, callback) topmost first."""
+    popped: list[tuple[Any, Any]] = []
+    while not is_anchor(app.screen):
+        screen = app.screen
+        callbacks = getattr(screen, "_result_callbacks", None)
+        popped.append((screen, callbacks[-1].callback if callbacks else None))
+        await app.pop_screen()
+    return popped
+
+
+async def _repush_dialogs(app: "FirewallLogApp", popped: list[tuple[Any, Any]]) -> None:
+    for screen, callback in reversed(popped):
+        recreate = getattr(screen, "recreate", None)
+        if recreate is not None:
+            await app.push_screen(recreate(), callback=callback)
+
+
+async def _show_splash(app: "FirewallLogApp", splash: ConnectingDialog) -> None:
+    """Push the splash directly above the main screen, beneath any open dialog."""
+    from textual.app import ScreenStackError
+
+    try:
+        base = app.screen_stack[0]
+        lifted = await _pop_dialogs_above(app, lambda s: s is base)
+        await app.push_screen(splash)
+        await _repush_dialogs(app, lifted)
+    except ScreenStackError:
+        pass
+
+
+async def _remove_splash(app: "FirewallLogApp") -> None:
+    """Remove the ConnectingDialog wherever it sits in the screen stack.
+
+    Popping blindly would close whichever dialog is on top and leave the splash
+    behind. Screen-stack errors are ignored because the stack may already be
+    torn down when the worker is cancelled during app shutdown.
     """
     from textual.app import ScreenStackError
 
     try:
-        if isinstance(app.screen, UpdateDialog):
-            upd_tag, upd_url = app.screen._latest, app.screen._url
-            app.pop_screen()   # remove UpdateDialog
-            app.pop_screen()   # remove ConnectingDialog
-            await app.push_screen(UpdateDialog(upd_tag, upd_url))
-        else:
-            app.pop_screen()   # remove ConnectingDialog
+        if not any(isinstance(s, ConnectingDialog) for s in app.screen_stack):
+            return
+        lifted = await _pop_dialogs_above(app, lambda s: isinstance(s, ConnectingDialog))
+        await app.pop_screen()  # the splash itself
+        await _repush_dialogs(app, lifted)
     except ScreenStackError:
         pass
 
@@ -204,7 +243,7 @@ async def run_stream(app: "FirewallLogApp") -> None:
 
     # Show the connecting splash and keep a flag so we know when to dismiss it.
     _dialog = ConnectingDialog(namespace, hub)
-    await app.push_screen(_dialog)
+    await _show_splash(app, _dialog)
     _splash_shown = True
     _credential = None  # track credential for cleanup on error
 

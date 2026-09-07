@@ -173,7 +173,7 @@ class FirewallLogApp(App[None]):
         self._mgmt_loaded: bool = False
         self._snapshot: CachedSnapshot | None = None
         self._known_rules: set[tuple[str, str, str]] = set()  # (rcg, rc, rule) of the loaded policy chain
-        self._last_auto_refresh = 0.0  # monotonic; auto refreshes are rate-limited
+        self._last_auto_refresh: float | None = None  # monotonic time of the last automatic re-fetch
 
     # ── layout ─────────────────────────────────────────────────────────────────
     def compose(self) -> ComposeResult:
@@ -337,7 +337,9 @@ class FirewallLogApp(App[None]):
         if not self._policy_context or self._firewall_id is None or not self._mgmt_loaded:
             return False
         now = time.monotonic()
-        if now - self._last_auto_refresh < self._AUTO_REFRESH_INTERVAL:
+        # None, not 0.0: monotonic time counts from boot, and a fresh machine
+        # (CI runners, VMs) may be younger than the interval.
+        if self._last_auto_refresh is not None and now - self._last_auto_refresh < self._AUTO_REFRESH_INTERVAL:
             return False
         self._last_auto_refresh = now
         self.query_one("#status", StatusBar).meta = f"refreshing metadata ({reason})…"

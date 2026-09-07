@@ -71,8 +71,9 @@ app. The setup wizard runs automatically if `.env` is not yet configured.
 ## 🧙 The setup wizard
 
 The wizard runs the first time you launch the app, or whenever `.env` is missing.
-It is a full TUI: navigate with the arrow keys, `Enter` confirms, `Escape` or `Q`
-goes back. Re-run it any time with:
+It is a full TUI: pick with the arrow keys, **Next →** moves on, and every screen
+has a **Back** button. `Ctrl` + `Q` quits; on the confirmation dialogs `Escape` or
+`q` dismisses. Re-run the wizard any time with:
 
 ```bash
 ./az-firewall-watch --reconfigure
@@ -83,40 +84,30 @@ it, and decide whether the viewer may read policy context from Azure.
 
 ### Step 1: Pick an Event Hub
 
-#### Use an existing Event Hub
+The first screen is a single list of four options, grouped into hubs that already
+exist and one the wizard builds for you:
 
 <!-- markdownlint-disable MD060 -->
-| Option                               | What it does                                                                                          | Azure CLI required |
-| ------------------------------------ | ----------------------------------------------------------------------------------------------------- | ------------------ |
-| **Discover Event Hub automatically** | Lists your subscriptions, namespaces and hubs so you can pick one from a menu                         | ✅                  |
-| **Enter existing Event Hub data**    | Type namespace + hub name manually (handy when your identity can read the hub but not list resources) | no                 |
-| **Paste SAS connection string**      | Paste a full `Endpoint=sb://…;EntityPath=…` string, written verbatim to `.env`                       | no                 |
+| Option                                            | What it does                                                                                            | Azure CLI |
+| ------------------------------------------------- | --------------------------------------------------------------------------------------------------------- | --------- |
+| **Discover Event Hub automatically**              | Lists your subscriptions, namespaces and hubs so you can pick one from a menu                             | yes       |
+| **Enter existing Event Hub data**                 | Type namespace and hub name yourself, handy when your identity can read the hub but not list resources    | no        |
+| **Paste SAS connection string**                   | Paste a full `Endpoint=sb://…;EntityPath=…` string, written verbatim to `.env`                            | no        |
+| **Deploy new Event Hub and Diagnostics settings** | Creates a Basic-tier namespace with a `firewall-logs` hub and points your firewall's Diagnostic Settings at it, using exactly the categories the viewer displays | yes       |
 <!-- markdownlint-enable MD060 -->
 
-#### Deploy a new Event Hub
-
-<!-- markdownlint-disable MD060 -->
-| Option                                            | What it does                                                                                                                                                             | Azure CLI required |
-| ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------ |
-| **Deploy new Event Hub and Diagnostics settings** | Discovers your Azure Firewall, creates a Basic-tier Event Hub namespace + `firewall-logs` hub, and wires up Diagnostic Settings for exactly the log categories the viewer displays (no Policy Analytics aggregation logs) | ✅                  |
-<!-- markdownlint-enable MD060 -->
+The deploy option is the only one that changes anything in Azure. It needs rights
+to create the namespace and to update Diagnostic Settings on the firewall (see
+[required Azure permissions](configuration.md#required-azure-permissions)), and
+once it finishes it can take 10 to 15 minutes before the first events arrive in
+the hub.
 
 > [!NOTE]
-> If your environment uses Azure Policy to enforce specific naming conventions,
-> settings, or resource tags (as it should 😉), the automatic deployment may fail
-> since it creates a new Event Hub with default settings within the same
-> subscription as the firewall.
->
-> In that case, create the Event Hub manually or via IaC according to your
-> policies, and then use the *Discover* or *Enter existing* options to connect it
-> to the app.
-
-> [!NOTE]
-> Deployment requires permissions to create an Event Hub namespace and hub, and to
-> update Diagnostic Settings on the firewall, see
-> [required Azure permissions](configuration.md#required-azure-permissions). It can
-> take *up to 10–15 minutes at the first launch* for the Event Hub to be fully
-> provisioned and start receiving logs from the firewall.
+> If your environment uses Azure Policy to enforce naming conventions, settings or
+> resource tags (as it should 😉), that deployment may fail: it creates the
+> namespace with default settings in the firewall's own subscription. Build the
+> Event Hub manually or via IaC to match your policies instead, then come back and
+> connect it with *Discover* or *Enter existing*.
 
 ### Step 2: Authentication method
 

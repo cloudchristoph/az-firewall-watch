@@ -2,13 +2,8 @@
 
 The [setup wizard](getting-started.md#-the-setup-wizard) writes all of this for
 you, so reach for this page when you would rather configure the viewer by hand:
-
-- You already have an Event Hub and only need the matching `.env`.
-- Your Event Hub comes from Terraform or Bicep, and you want to generate `.env`
-  from those outputs instead of clicking through a wizard.
-- The machine has no Azure CLI, or no `az login`, which the wizard needs for its
-  discovery and deployment paths.
-- You hand a prepared `.env` to colleagues so nobody has to run the wizard at all.
+your Event Hub already exists or comes out of Terraform or Bicep, or the machine
+has no Azure CLI, which the wizard needs for discovery and deployment.
 
 ## Writing `.env` yourself
 
@@ -40,7 +35,7 @@ a managed identity, environment variables and so on.
 > Never commit `.env` to source control. A SAS connection string grants access to
 > your Event Hub, so protect the file and rotate keys regularly.
 
-### Without a `.env` file
+## Without a `.env` file
 
 `.env` is optional. The viewer reads plain environment variables too, and values
 already present in the environment win over the file. Useful when you would rather
@@ -58,10 +53,11 @@ As soon as either `EVENT_HUB_CONNECTION_STRING` or
 `EVENT_HUB_NAMESPACE` + `EVENT_HUB_NAME` is set, the wizard stays out of the way.
 
 > [!NOTE]
-> Set `POLICY_CONTEXT` explicitly when you run without a `.env` file. Without the
-> key the viewer shows its one-time policy-context notice at start-up, and it can
-> only save your answer to an existing `.env` file, so the notice would come back
-> on every launch.
+> Decide [policy context](policy-context.md) explicitly when you run without a
+> `.env` file, either with `POLICY_CONTEXT` as above or with the
+> `--policy-context` / `--no-policy-context` flag. Without an explicit answer the
+> viewer shows its one-time notice at start-up, and it can only save your reply to
+> an existing `.env` file, so the notice would come back on every launch.
 
 ## Environment variables
 
@@ -72,7 +68,7 @@ As soon as either `EVENT_HUB_CONNECTION_STRING` or
 | `EVENT_HUB_NAMESPACE`         | Fully qualified namespace (e.g. `mynamespace.servicebus.windows.net`), for Entra ID auth | n/a        |
 | `EVENT_HUB_NAME`              | Event Hub name, for Entra ID auth                                                         | n/a        |
 | `EVENT_HUB_CONSUMER_GROUP`    | Consumer group                                                                            | `$Default` |
-| `EVENT_HUB_START_POSITION`    | `latest` (only new events) or `earliest` (replay the hub's full retention first); any other value is passed to the SDK as a raw offset | `latest`   |
+| `EVENT_HUB_START_POSITION`    | `latest` (only new events) or `earliest` (replay the hub's full retention first), case-insensitive and also accepted as the SDK spellings `@latest` / `@earliest`, with `-1` as a synonym for earliest. Anything else is passed to the SDK unchanged, so a raw offset or sequence number works | `latest`   |
 | `POLICY_CONTEXT`              | `on` / `off`: [policy context](policy-context.md) via Azure Resource Manager (tabs, trace, cache). If the key is missing, the viewer asks once at start-up and saves your answer | `on`       |
 <!-- markdownlint-enable MD060 -->
 
@@ -89,7 +85,8 @@ As soon as either `EVENT_HUB_CONNECTION_STRING` or
 | `--no-policy-context` | Force it **off** for this run: no ARM requests, no cache, Logs tab only       |
 
 Command-line flags win over `.env` and are never written back, so they affect a
-single run.
+single run. Either policy-context flag also counts as an explicit answer, so the
+one-time notice stays away even when `.env` has no `POLICY_CONTEXT` key.
 
 ## Required Azure permissions
 

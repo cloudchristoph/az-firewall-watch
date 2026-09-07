@@ -25,6 +25,10 @@ resource ID from the first log record it receives and fetches from there.
   for the selected group the rules that reference it. `Enter` on a rule jumps to it
   in the Policy tab.
 
+![The Policy tab: rule collection groups and collections in priority order on the left, the selected rule's definition on the right](policy-tab.png)
+
+![The IP Groups tab: every group with its entry and usage count, and the rules that reference the selected group](ip-groups-tab.png)
+
 ### Richer log rows
 
 The metadata also feeds back into the **Logs** tab:
@@ -45,23 +49,15 @@ Threat Intelligence first, then three passes over all rule collection groups
 stopping at the first match. The Application pass only runs for HTTP, HTTPS and
 MSSQL flows.
 
-```text
-Threat Intelligence   mode Alert — no hit
-DNAT rules   no collections of this type
-Network rules   ✓ matched
-├─ [2000] cclab-network-rule-collection-group
-│  ├─ ✗ [100] priority-demo-net-rules  deny    1 rule · nearest miss: deny-bad
-│  │  └─ ✗ deny-bad   destination: 10.0.2.4 not in 10.0.9.0/24
-│  └─ ✓ [200] azure-monitor-access  allow
-│     ├─ ? allow-azure-monitor   destination: service tag AzureMonitor
-│     └─ ✓ allow-web   ✓ source  ✓ destination  ✓ port  ✓ protocol   ← logged
-Application rules   not evaluated — a rule already matched
-✓ evaluation stopped at the logged rule
-```
+![The detail dialog: the log entry's fields on the left, the evaluation trace on the right, ending at the rule the firewall logged](evaluation-trace.png)
 
+The log entry's own fields sit on the left, the trace on the right. Each pass
+reports its own verdict (`✓ matched`, `✗ no match`, `? no certain match`), and
+under it the rule collection groups with their collections in priority order.
 The collection's own action is the short tag after its name (`deny` in red,
 `allow` quiet, `dnat` in yellow): the ✓ or ✗ in front says whether the flow
-matched, the tag says what a match would have meant.
+matched, the tag says what a match would have meant. Collections that did not
+match name their nearest miss, so you can see how close each one came.
 
 ### What you are looking at
 

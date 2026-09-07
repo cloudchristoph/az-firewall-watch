@@ -5,6 +5,8 @@ events, a filter bar above it, and a status bar at the bottom. Everything on thi
 page works without Azure Resource Manager access. The extra tabs and the
 evaluation trace are described in [Policy context](policy-context.md).
 
+![The Logs tab with the filter bar, colour-coded categories and the status bar](logs-tab.png)
+
 ## The log table
 
 New events are appended as they arrive and the table stays sorted newest-first.

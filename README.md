@@ -10,12 +10,12 @@ Built by [CloudChristoph](https://github.com/cloudchristoph).
 > This project is based on the excellent work by [Nicola Delfino](https://github.com/nicolgit) and his
 > [azure-firewall-mon](https://github.com/nicolgit/azure-firewall-mon) project.
 
-![Azure Firewall Watch screenshot](docs/screenshot.png)
+![The Logs tab: firewall events streaming in, colour-coded by category, with the filter bar set to the Decisions preset](docs/logs-tab.png)
 
 ## ✨ What it does
 
-- **Live log stream** from an Event Hub: structured and legacy log formats, ten
-  categories from `NetworkRule` to `FatFlow`, with automatic reconnect.
+- **Live log stream** from an Event Hub: structured and legacy log formats, every
+  category from `NetworkRule` to `FatFlow`, with automatic reconnect.
 - **Instant filters** on source, destination, action, category, protocol and port,
   plus one-click presets that separate decisions from observations and DNS noise.
 - **Policy context**: Firewall, Policy and IP Groups tabs built from Azure

@@ -1,4 +1,4 @@
-"""Modal screen rendering an evaluation trace as a compact tree.
+"""Evaluation trace rendered as a compact tree, embedded in the row detail dialog.
 
 Default is the *path view*: only the branch leading to the logged rule (or,
 for "no rule matched", the nearest misses) is expanded; everything else is a
@@ -8,9 +8,9 @@ view and a fully expanded tree.
 from __future__ import annotations
 
 from rich.markup import escape
-from textual import events
 from textual.app import ComposeResult
-from textual.screen import ModalScreen
+from textual.containers import Vertical
+from textual.message import Message
 from textual.widgets import Static, Tree
 from textual.widgets.tree import TreeNode
 
@@ -22,48 +22,55 @@ from ..trace import (
 )
 
 _ICON = {MATCH: "[green]✓[/]", MISS: "[red]✗[/]", UNKNOWN: "[yellow]?[/]", NA: "[dim]–[/]"}
-_PASS_TITLE = {"dnat": "Pass 1 · DNAT", "network": "Pass 2 · Network", "application": "Pass 3 · Application"}
-LEGEND = "[green]✓[/] match   [red]✗[/] miss   [yellow]?[/] cannot evaluate   [dim]–[/] not in log      Enter: open rule · a: toggle full tree · Esc/q/t: close"
+# Azure Firewall's processing order top to bottom; the tree keeps it.
+_PASS_TITLE = {"dnat": "DNAT rules", "network": "Network rules", "application": "Application rules"}
+LEGEND = ("[green]✓[/] match   [red]✗[/] miss   [yellow]?[/] cannot evaluate   [dim]–[/] not in log      "
+          "Enter: expand · Enter on an open rule: show in Policy tab · Space: fold · a: full tree · Esc/q: close")
+# Leaves render without the ▶/▼ marker, so their text would sit two cells left of
+# sibling nodes. Pad root-level leaves to keep one column.
+_LEAF_PAD = "  "
+_INLINE_DETAIL_MAX = 40  # collapsed rule lines stay short; the full text is on the child leaf
 
 
-class TraceScreen(ModalScreen[str | None]):
-    """Dismisses with a rule ref (``policy|rcg|rc|rule``, the same key the
-    Policy tab uses) when a rule node is selected, else ``None``."""
+def _short(text: str, limit: int = _INLINE_DETAIL_MAX) -> str:
+    return text if len(text) <= limit else text[: limit - 1].rstrip() + "…"
+
+
+class TracePanel(Vertical):
+    """Header, tree and legend for one :class:`Trace`.
+
+    Posts :class:`TracePanel.RuleChosen` when an expanded rule node is selected;
+    the payload is the rule ref (``policy|rcg|rc|rule``) the Policy tab understands.
+    """
 
     DEFAULT_CSS = """
-    TraceScreen {
-        align: center middle;
-    }
-    TraceScreen > #dialog {
-        width: 110;
-        max-width: 96%;
-        height: 90%;
-        background: $surface;
-        border: thick $primary;
-        padding: 1 2;
-    }
-    TraceScreen > #dialog > #trace-title {
+    TracePanel > #trace-title {
         text-style: bold;
     }
-    TraceScreen > #dialog > #trace-meta {
+    TracePanel > #trace-meta {
         color: $text-muted;
         margin-bottom: 1;
     }
-    TraceScreen > #dialog > #trace-warnings {
+    TracePanel > #trace-warnings {
         color: $warning;
         margin-bottom: 1;
     }
-    TraceScreen > #dialog > Tree {
+    TracePanel > Tree {
         height: 1fr;
     }
-    TraceScreen > #dialog > #trace-legend {
+    TracePanel > #trace-legend {
         color: $text-muted;
         margin-top: 1;
     }
     """
 
-    def __init__(self, trace: Trace, metadata_note: str = "") -> None:
-        super().__init__()
+    class RuleChosen(Message):
+        def __init__(self, rule_ref: str) -> None:
+            super().__init__()
+            self.rule_ref = rule_ref
+
+    def __init__(self, trace: Trace, metadata_note: str = "", **kwargs) -> None:
+        super().__init__(**kwargs)
         self._trace = trace
         self._metadata_note = metadata_note
         self._expand_all = False
@@ -78,44 +85,51 @@ class TraceScreen(ModalScreen[str | None]):
             icon = "[magenta]![/]"
         else:
             icon = "[red]✗[/]"
-        with Static(id="dialog"):
-            # Everything dynamic (names, FQDNs, outcome) is escaped: labels are Rich markup.
-            port = f":{f.dst_port}" if f.dst_port and f.dst_port != "-" else ""  # ICMP has none
-            yield Static(
-                escape(f"{f.src_ip} → {f.dst_fqdn or f.dst_ip}{port} {f.protocol}".rstrip())
-                + f"    {icon} {escape(t.outcome)}",
-                id="trace-title", markup=True,
-            )
-            yield Static(escape(self._metadata_note or ""), id="trace-meta", markup=True)
-            if t.warnings:
-                yield Static("\n".join(f"⚠ {escape(w)}" for w in t.warnings), id="trace-warnings", markup=True)
-            yield Tree("Policy evaluation", id="trace-tree")
-            yield Static(LEGEND, id="trace-legend", markup=True)
+        # Everything dynamic (names, FQDNs, outcome) is escaped: labels are Rich markup.
+        port = f":{f.dst_port}" if f.dst_port and f.dst_port != "-" else ""  # ICMP has none
+        yield Static(
+            escape(f"{f.src_ip} → {f.dst_fqdn or f.dst_ip}{port} {f.protocol}".rstrip())
+            + f"    {icon} {escape(t.outcome)}",
+            id="trace-title", markup=True,
+        )
+        yield Static(escape(self._metadata_note or ""), id="trace-meta", markup=True)
+        if t.warnings:
+            yield Static("\n".join(f"⚠ {escape(w)}" for w in t.warnings), id="trace-warnings", markup=True)
+        yield Tree("Policy evaluation", id="trace-tree")
+        yield Static(LEGEND, id="trace-legend", markup=True)
 
     def on_mount(self) -> None:
         self._build()
+
+    def toggle_expand_all(self) -> None:
+        self._expand_all = not self._expand_all
+        self._build()
+
+    def focus_tree(self) -> None:
+        self.query_one("#trace-tree", Tree).focus()
 
     # ── tree construction ───────────────────────────────────────────────────
     def _build(self) -> None:
         tree = self.query_one("#trace-tree", Tree)
         tree.clear()
         tree.show_root = False
+        tree.auto_expand = False  # Enter is handled below: expand first, open the rule second
         t = self._trace
         root = tree.root
         highlight = {id(r) for r in nearest_rules(t)} if t.matched_rule is None else set()
         show_origin = len({c.policy_name for p in t.passes for c in p.collections}) > 1
 
-        root.add_leaf(f"Threat Intelligence   [dim]{escape(t.threat_intel)}[/]")
+        root.add_leaf(f"{_LEAF_PAD}Threat Intelligence   [dim]{escape(t.threat_intel)}[/]")
         for p in t.passes:
             self._add_pass(root, p, highlight, show_origin)
         if t.infrastructure:
-            root.add_leaf(f"Infrastructure rule collection   [dim]{escape(t.infrastructure)}[/]")
+            root.add_leaf(f"{_LEAF_PAD}Built-in infrastructure FQDNs   [dim]{escape(t.infrastructure)}[/]")
         if t.matched_rule is not None:
-            root.add_leaf("[green]✓[/] evaluation stopped at the logged rule")
+            root.add_leaf(f"{_LEAF_PAD}[green]✓[/] evaluation stopped at the logged rule")
         elif t.flow.threat_intel:
-            root.add_leaf(f"[magenta]![/] {escape(t.outcome)}")
+            root.add_leaf(f"{_LEAF_PAD}[magenta]![/] {escape(t.outcome)}")
         else:
-            root.add_leaf(f"[red]✗[/] {escape(t.outcome)}")
+            root.add_leaf(f"{_LEAF_PAD}[red]✗[/] {escape(t.outcome)}")
         root.expand()
 
         matched = self._find_node(root, lambda d: isinstance(d, dict) and d.get("logged"))
@@ -129,10 +143,10 @@ class TraceScreen(ModalScreen[str | None]):
     def _add_pass(self, root: TreeNode, p: PassTrace, highlight: set[int], show_origin: bool) -> None:
         title = _PASS_TITLE[p.kind]
         if not p.evaluated:
-            root.add_leaf(f"[dim]{title}   {escape(p.note)}[/]")
+            root.add_leaf(f"{_LEAF_PAD}[dim]{title}   {escape(p.note)}[/]")
             return
         if not p.collections:
-            root.add_leaf(f"{title}   [dim]{escape(p.note or 'no collections')}[/]")
+            root.add_leaf(f"{_LEAF_PAD}{title}   [dim]{escape(p.note or 'no collections')}[/]")
             return
         if p.stopped_here:
             summary = "[green]✓ matched[/]"
@@ -194,7 +208,8 @@ class TraceScreen(ModalScreen[str | None]):
             label = f"[green]✓[/] {name}   [dim]would match[/]"
         else:
             problem = first_problem(r)
-            detail = f"   [dim]{problem.name}: {escape(problem.detail)}[/]" if problem else ""
+            # keep the collapsed line short; the child leaf carries the full detail
+            detail = f"   [dim]{problem.name}: {escape(_short(problem.detail))}[/]" if problem else ""
             star = " [yellow]★ nearest[/]" if id(r) in highlight else ""
             label = f"{_ICON.get(r.verdict, '')} {name}{detail}{star}"
         node = parent.add(label, data={"rule_ref": ref, "logged": r.logged}, expand=self._expand_all or r.logged)
@@ -206,23 +221,21 @@ class TraceScreen(ModalScreen[str | None]):
         if pred(node.data):
             return node
         for child in node.children:
-            found = TraceScreen._find_node(child, pred)
+            found = TracePanel._find_node(child, pred)
             if found is not None:
                 return found
         return None
 
     # ── interaction ─────────────────────────────────────────────────────────
     def on_tree_node_selected(self, event: Tree.NodeSelected) -> None:
-        data = event.node.data
-        if isinstance(data, dict) and data.get("rule_ref"):
-            event.stop()
-            self.dismiss(data["rule_ref"])
-
-    def on_key(self, event: events.Key) -> None:
-        if event.key in ("escape", "q", "t"):
-            event.stop()
-            self.dismiss(None)
-        elif event.key == "a":
-            event.stop()
-            self._expand_all = not self._expand_all
-            self._build()
+        """Enter expands a collapsed node; on an already open rule it opens the rule."""
+        event.stop()
+        node = event.node
+        data = node.data
+        is_rule = isinstance(data, dict) and bool(data.get("rule_ref"))
+        if node.allow_expand and not node.is_expanded:
+            node.expand()
+        elif is_rule:
+            self.post_message(self.RuleChosen(data["rule_ref"]))
+        elif node.allow_expand:
+            node.collapse()

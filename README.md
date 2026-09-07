@@ -198,9 +198,9 @@ EVENT_HUB_START_POSITION=latest
 | `Escape`     | Clear all filter inputs               |
 | `f`          | Jump focus to the filters             |
 | `Tab`        | Move between filter inputs            |
-| `Enter`      | Open detail view for the selected row (`Escape` or `q` closes it) |
+| `Enter`      | Open the row details — with the evaluation trace beside them when metadata is loaded (`Escape` or `q` closes it) |
 | `c`          | Clear all rows from the table         |
-| `t`          | Open the evaluation trace for the selected row (needs metadata) |
+| `t`          | Same dialog as `Enter`, with the trace tree focused |
 | `Ctrl` + `r` | Re-fetch firewall / policy / IP-group metadata (bypasses the cache) |
 
 The status bar at the bottom shows the connection state, total events received,
@@ -245,15 +245,15 @@ match. The Application pass is only run for HTTP, HTTPS and MSSQL flows.
 ```text
 Policy evaluation
 ├─ Threat Intelligence   mode Alert — no hit
-├─ Pass 1 · DNAT rules   no collections of this type
-├─ Pass 2 · Network rules
+├─ DNAT rules   no collections of this type
+├─ Network rules
 │  ├─ ✗ [2000] cclab-network-rule-collection-group » [100] priority-demo-net-rules (Deny)
 │  │   └─ ✗ deny-bad   ✓ source  ✗ destination  ✓ port  ✓ protocol
 │  ├─ ✓ [2000] cclab-network-rule-collection-group » [200] azure-monitor-access (Allow)
 │  │   ├─ ? allow-azure-monitor   ✓ source  ? destination  ✓ port  ✓ protocol
 │  │   └─ ✓ allow-web   ✓ source  ✓ destination  ✓ port  ✓ protocol   ← logged match
 │  └─ evaluation stops here — rule matched
-├─ Pass 3 · Application rules   not evaluated — a rule already matched
+├─ Application rules   not evaluated — a rule already matched
 └─ ✓ Allow by cclab-network-rule-collection-group » azure-monitor-access » allow-web
 ```
 
@@ -263,9 +263,11 @@ cannot be evaluated here — service tags such as `AzureMonitor`, FQDNs in
 network rules, FQDN tags, web categories, target URLs, and IP groups your
 identity cannot read. For `Deny · no rule matched` rows the whole path is
 computed and the near misses show which criterion failed (for example
-`port: 8443 not in 443`). `Enter` on a rule opens it in the Policy tab. The
-trace explains the *cached* policy; if the logged rule is missing from it, a
-warning suggests `Ctrl+R`.
+`port: 8443 not in 443`). `Enter` unfolds a rule; `Enter` on an unfolded rule
+opens it in the Policy tab, `Space` folds it again. The trace sits to the right
+of the log entry's own fields in the same dialog, so `Enter` and `t` open the
+same view. The trace explains the *cached* policy; if the logged rule is
+missing from it, a warning suggests `Ctrl+R`.
 
 **How it authenticates.** The ARM client uses `DefaultAzureCredential` (Azure
 CLI login, managed identity, environment credentials, …) and falls back to a

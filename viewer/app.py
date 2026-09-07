@@ -24,7 +24,7 @@ from textual.widgets import (
 
 from pathlib import Path
 
-from dialogs import DetailDialog, EnrichmentNoticeDialog, StatusBar
+from dialogs import EnrichmentNoticeDialog, StatusBar
 from fw_parser import FirewallDataRow
 from helpers import _category_text, _highlight, _to_local
 
@@ -36,7 +36,7 @@ from .trace import Flow, LoggedMatch, build_trace, find_logged_rule
 from .streaming import run_stream
 from .updates import check_for_update
 from .views import FirewallView, IpGroupsView, PolicyView
-from .views.trace_screen import TraceScreen
+from .views.detail_screen import DetailDialog
 
 
 class TimeCell(Text):
@@ -610,7 +610,20 @@ class FirewallLogApp(App[None]):
             return
         row = self._row_index.get(rowid)
         if row is not None:
-            self.push_screen(DetailDialog(row, enrichment=self._compute_enrichment(row)))
+            self._open_detail(row)
+
+    def _open_detail(self, row: FirewallDataRow) -> None:
+        """Open the row detail dialog; the evaluation trace sits beside it when possible."""
+        status = self.query_one("#status", StatusBar)
+        trace = None
+        if self._enrichment and self._mgmt_loaded and self._policy_info is not None:
+            trace = build_trace(self._flow_from_row(row), self._policy_info, self._ip_groups,
+                                self._logged_from_row(row))
+        self.push_screen(
+            DetailDialog(row, enrichment=self._compute_enrichment(row), trace=trace,
+                         metadata_note=status.meta if trace is not None else ""),
+            callback=self._on_trace_result,
+        )
 
     @staticmethod
     def _flow_from_row(row: FirewallDataRow) -> Flow:
@@ -666,7 +679,6 @@ class FirewallLogApp(App[None]):
                     out["rule_policy"] = f"{policy_name} (inherited)"
             elif logged is not None:
                 out["rule_definition"] = "logged rule not in loaded policy (Ctrl+R to refresh)"
-            out["trace_hint"] = "press t for the evaluation trace"
         return out
 
     def _rule_definition(self, rule) -> str:
@@ -727,11 +739,13 @@ class FirewallLogApp(App[None]):
             tabs.active = "tab-logs"
 
     def action_trace(self) -> None:
-        """Open the evaluation trace for the selected log row."""
+        """Open the detail dialog for the selected row with the trace in focus.
+
+        Same dialog as Enter; the status bar explains when no trace can be built.
+        """
         status = self.query_one("#status", StatusBar)
         if not self._enrichment:
             status.meta = "trace needs enrichment (ENRICHMENT=on or --enrichment)"
-            return
         row = self._row_index.get(self._selected_rowid or "")
         if row is None:
             # No highlight event yet (cursor never moved): use the cursor row.
@@ -740,14 +754,12 @@ class FirewallLogApp(App[None]):
                 key = tbl.coordinate_to_cell_key(tbl.cursor_coordinate).row_key.value
                 row = self._row_index.get(key or "")
         if row is None:
-            status.meta = "trace: select a log row first"
+            if self._enrichment:
+                status.meta = "trace: select a log row first"
             return
-        if not self._mgmt_loaded or self._policy_info is None:
+        if self._enrichment and (not self._mgmt_loaded or self._policy_info is None):
             status.meta = "trace needs policy metadata (not loaded)"
-            return
-        trace = build_trace(self._flow_from_row(row), self._policy_info, self._ip_groups,
-                            self._logged_from_row(row))
-        self.push_screen(TraceScreen(trace, metadata_note=status.meta), callback=self._on_trace_result)
+        self._open_detail(row)
 
     def _on_trace_result(self, rule_ref: str | None) -> None:
         if not rule_ref:

@@ -9,14 +9,14 @@ import pytest
 from textual.widgets import DataTable, Input, Static, TabbedContent, Tree
 
 import viewer.app as app_module
-from dialogs import DetailDialog, StatusBar
+from dialogs import StatusBar
 from fw_parser import parse_record
 from viewer.app import FirewallLogApp
 from viewer.azure_resources import FirewallInfo, FirewallPolicyInfo, IpGroupInfo, Rule, RuleCollection, RuleCollectionGroup
 from viewer.cache import CachedSnapshot
 from viewer.views import FirewallView, IpGroupsView, PolicyView
 from viewer.views.ip_groups import IpGroupDetailDialog
-from viewer.views.trace_screen import TraceScreen
+from viewer.views.detail_screen import DetailDialog
 
 pytestmark = pytest.mark.usefixtures("no_eventhub_env", "no_update_check")
 
@@ -229,7 +229,7 @@ async def test_detail_dialog_shows_logged_rule_definition(structured_record, mgm
         assert enr["rule_priority"] == "RCG:2000 » RC:100"
         assert enr["rule_action"] == "Allow"
         assert enr["rule_definition"] == "TCP  443  from ipgroup-all-spokes  to *"
-        assert enr["trace_hint"].startswith("press t")
+        assert "trace_hint" not in enr  # the trace sits in the dialog itself now
         renamed = parse_record(structured_record(
             "AZFWNetworkRule", SourceIp="10.3.5.4", DestinationIp="1.1.1.1", Action="Allow",
             Policy="fwp-hub-premium-gwc", RuleCollectionGroup="rcg-net", RuleCollection="rc-web", Rule="gone",
@@ -239,7 +239,7 @@ async def test_detail_dialog_shows_logged_rule_definition(structured_record, mgm
 
 # ── evaluation trace ─────────────────────────────────────────────────────────
 
-async def _open_trace(app: FirewallLogApp, pilot, row) -> TraceScreen:
+async def _open_trace(app: FirewallLogApp, pilot, row) -> DetailDialog:
     app._pending.append(row)
     await app._flush_rows()
     await pilot.pause()
@@ -248,7 +248,7 @@ async def _open_trace(app: FirewallLogApp, pilot, row) -> TraceScreen:
     tbl.move_cursor(row=0, animate=False)
     await pilot.pause()
     await pilot.press("t")
-    await wait_until(pilot, lambda: isinstance(app.screen, TraceScreen))
+    await wait_until(pilot, lambda: isinstance(app.screen, DetailDialog) and app.screen.has_trace)
     await pilot.pause(0.2)
     return app.screen
 
@@ -288,7 +288,10 @@ async def test_trace_requires_selection_and_metadata(structured_record, mgmt, fi
         await pilot.press("t")
         await pilot.pause()
         assert status.meta == "trace needs policy metadata (not loaded)"
-        assert not isinstance(app.screen, TraceScreen)
+        # the plain detail dialog still opens — just without the trace column
+        await wait_until(pilot, lambda: isinstance(app.screen, DetailDialog))
+        assert not app.screen.has_trace
+        assert not app.screen.query("#trace-tree")
 
 
 async def test_trace_screen_shows_logged_match_and_closes(structured_record, mgmt, firewall_id):
@@ -301,15 +304,18 @@ async def test_trace_screen_shows_logged_match_and_closes(structured_record, mgm
         labels = _tree_labels(tree)
         joined = "\n".join(labels)
         assert "Threat Intelligence   mode Alert" in joined
-        assert "Pass 1 · DNAT   no collections" in joined
-        assert "Pass 2 · Network   ✓ matched" in joined
+        assert "DNAT rules   no collections" in joined
+        assert "Network rules   ✓ matched" in joined
         assert "[2000] rcg-net" in joined and "✓ [100] rc-web (Allow)" in joined  # group once, collection below it
         assert "allow-web" in joined and "← logged" in joined
-        assert "Pass 3 · Application   not evaluated" in joined
+        assert "Application rules   not evaluated" in joined
         assert "evaluation stopped at the logged rule" in joined
         header = _text(screen)
         assert "10.3.5.4 → 1.1.1.1:443 TCP" in header and "Allow by rcg-net » rc-web » allow-web" in header
-        assert "Enter: open rule · a: toggle full tree" in header
+        assert "Enter: expand · Enter on an open rule: show in Policy tab" in header
+        # top-level leaves are padded so their text lines up with expandable siblings
+        assert any(l.startswith("  Threat Intelligence") for l in labels)
+        assert any(l.startswith("  DNAT rules") for l in labels)
         # path view: the missed collection before the match is one collapsed line with the reason
         deny = next(n for n in _tree_nodes(tree) if n.label.plain.startswith("✗ [50] rc-deny"))
         assert "1 rule · nearest miss: destination" in deny.label.plain
@@ -320,8 +326,8 @@ async def test_trace_screen_shows_logged_match_and_closes(structured_record, mgm
         deny = next(n for n in _tree_nodes(screen.query_one("#trace-tree", Tree)) if n.label.plain.startswith("✗ [50] rc-deny"))
         assert deny.is_expanded and deny.children[0].is_expanded
         await pilot.press("escape")
-        await pilot.pause(0.2)
-        assert not isinstance(app.screen, TraceScreen)
+        await pilot.press("escape")
+        await wait_until(pilot, lambda: not isinstance(app.screen, DetailDialog))
 
 
 async def test_trace_screen_enter_jumps_to_policy_rule(structured_record, mgmt, firewall_id):
@@ -333,11 +339,39 @@ async def test_trace_screen_enter_jumps_to_policy_rule(structured_record, mgmt, 
         tree = screen.query_one("#trace-tree", Tree)
         assert tree.cursor_node is not None and "allow-web" in tree.cursor_node.label.plain  # pre-selected
         await pilot.press("enter")
-        await wait_until(pilot, lambda: not isinstance(app.screen, TraceScreen))
+        await wait_until(pilot, lambda: not isinstance(app.screen, DetailDialog))
         await pilot.pause()
         assert app.query_one("#main-tabs", TabbedContent).active == "tab-policy"
         policy_tree = app.query_one("#policy-tree", Tree)
         assert policy_tree.cursor_node is not None and policy_tree.cursor_node.label.plain == "allow-web"
+
+
+async def test_enter_on_collapsed_rule_expands_before_it_opens(structured_record, mgmt, firewall_id):
+    app = FirewallLogApp()
+    async with app.run_test(size=(160, 45)) as pilot:
+        await pilot.pause()
+        await _load(app, pilot, firewall_id)
+        row = parse_record(structured_record(
+            "AZFWNetworkRule", Protocol="TCP", SourceIp="10.3.5.4", SourcePort=1, DestinationIp="1.1.1.1",
+            DestinationPort=8443, Action="Deny", ActionReason="No rule matched. Proceeding with default action.",
+        ))
+        screen = await _open_trace(app, pilot, row)
+        tree = screen.query_one("#trace-tree", Tree)
+        rule = next(n for n in _tree_nodes(tree) if n.label.plain.startswith("✗ allow-web"))
+        assert not rule.is_expanded
+        tree.move_cursor(rule)
+        await pilot.pause()
+        await pilot.press("enter")
+        await pilot.pause()
+        assert rule.is_expanded and app.screen is screen  # first Enter only unfolds the checks
+        await pilot.press("space")
+        await pilot.pause()
+        assert not rule.is_expanded  # Space folds again
+        await pilot.press("enter")
+        await pilot.pause()
+        await pilot.press("enter")
+        await wait_until(pilot, lambda: not isinstance(app.screen, DetailDialog))
+        assert app.query_one("#main-tabs", TabbedContent).active == "tab-policy"
 
 
 async def test_trace_for_no_rule_matched_row_shows_near_miss(structured_record, mgmt, firewall_id):
@@ -352,7 +386,7 @@ async def test_trace_for_no_rule_matched_row_shows_near_miss(structured_record, 
         screen = await _open_trace(app, pilot, row)
         tree = screen.query_one("#trace-tree", Tree)
         joined = "\n".join(_tree_labels(tree))
-        assert "Pass 2 · Network   ✗ no match" in joined
+        assert "Network rules   ✗ no match" in joined
         assert "✗ [100] rc-web (Allow)   2 rules · nearest miss: port" in joined
         assert "✗ allow-web   port: 8443 not in 443 ★ nearest" in joined   # first problem inline, ranked
         assert "skipped — protocol TCP is not HTTP, HTTPS or MSSQL" in joined
@@ -377,7 +411,7 @@ async def test_trace_header_omits_missing_port(structured_record, mgmt, firewall
         assert "10.3.5.4 → 1.1.1.1 ICMP" in header and ":-" not in header
 
 
-async def test_detail_dialog_t_opens_trace(structured_record, mgmt, firewall_id):
+async def test_enter_opens_entry_and_trace_side_by_side(structured_record, mgmt, firewall_id):
     app = FirewallLogApp()
     async with app.run_test(size=(160, 45)) as pilot:
         await pilot.pause()
@@ -389,8 +423,53 @@ async def test_detail_dialog_t_opens_trace(structured_record, mgmt, firewall_id)
         await pilot.press("enter")
         await wait_until(pilot, lambda: isinstance(app.screen, DetailDialog))
         await pilot.pause(0.2)
-        await pilot.press("t")
-        await wait_until(pilot, lambda: isinstance(app.screen, TraceScreen))
+        screen = app.screen
+        assert screen.has_trace and screen.has_class("-with-trace")
+        left = "\n".join(str(s.content) for s in screen.query("#detail-pane Static"))
+        assert "Log Entry — NetworkRule" in left and "Rule Priority" in left
+        tree = screen.query_one("#trace-tree", Tree)
+        assert tree.has_focus  # Enter on the tree opens the rule right away
+        assert tree.cursor_node is not None and "allow-web" in tree.cursor_node.label.plain
+        # the pane sits left of the trace, both inside the same dialog
+        assert screen.query_one("#detail-pane").region.x < tree.region.x
+        await pilot.press("t")  # same dialog: t only (re)focuses the trace
+        await pilot.pause()
+        assert app.screen is screen and tree.has_focus
+
+
+async def test_long_rule_details_are_shortened_on_collapsed_lines():
+    """The collapsed rule line keeps a short reason; the full text lives on the child leaf."""
+    from textual.app import App
+    from viewer.trace import Flow, build_trace
+    from viewer.views.trace_screen import TracePanel, _short
+
+    assert _short("short") == "short"
+    assert _short("x" * 60).endswith("…") and len(_short("x" * 60)) == 40
+
+    many = [str(8000 + i) for i in range(14)]  # long port list → long miss detail
+    policy = FirewallPolicyInfo(id="/p", name="p", sku_tier="Standard", threat_intel_mode="Alert",
+                                rule_collection_groups=[
+        RuleCollectionGroup(id="/p/g", name="g", priority=100, rule_collections=[
+            RuleCollection(name="rc", priority=100, action="Allow", rule_collection_type="Filter", rules=[
+                Rule(name="allow-many", rule_type="NetworkRule", source_addresses=["*"],
+                     destination_addresses=["*"], destination_ports=many, protocols=["Any"]),
+            ]),
+        ]),
+    ])
+    trace = build_trace(Flow(category="NetworkRule", protocol="TCP", src_ip="10.3.5.4", dst_ip="1.1.1.1",
+                             dst_port="443", action="Deny"), policy, {}, None)
+
+    class _Host(App):
+        def compose(self):
+            yield TracePanel(trace)
+
+    app = _Host()
+    async with app.run_test(size=(120, 30)) as pilot:
+        await pilot.pause()
+        labels = _tree_labels(app.query_one("#trace-tree", Tree))
+    rule_line = next(l for l in labels if l.startswith("✗ allow-many"))
+    assert "…" in rule_line and len(rule_line) < 80, rule_line
+    assert any(l.startswith("✗ port:") and many[-1] in l for l in labels)  # full detail on the leaf
 
 
 def test_rule_definition_formats_dnat_targets_without_trailing_colon():

@@ -9,7 +9,8 @@ import pytest
 from textual.widgets import DataTable, Input, Static
 
 import viewer.app as app_module
-from dialogs import DetailDialog, StatusBar
+from dialogs import StatusBar
+from viewer.views.detail_screen import DetailDialog
 from fw_parser import parse_record
 from viewer.app import FirewallLogApp
 

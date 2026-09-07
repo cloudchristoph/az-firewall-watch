@@ -185,6 +185,9 @@ class PolicyContextNoticeDialog(ModalScreen[bool]):
         """Fresh copy for re-pushing after the connecting splash is removed."""
         return PolicyContextNoticeDialog()
 
+    def on_mount(self) -> None:
+        self.query_one("#btn-keep", Button).focus()  # so 'Enter' really means 'Keep enabled'
+
     def on_button_pressed(self, event: Button.Pressed) -> None:
         self.dismiss(event.button.id == "btn-keep")
 

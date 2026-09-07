@@ -45,7 +45,7 @@ CATEGORY_OPTIONS: list[tuple[str, str]] = [
     ("FatFlow", "fatflow"),
 ]
 
-# ── enrichment flag ───────────────────────────────────────────────────────────
+# ── policy context flag ──────────────────────────────────────────────────────
 POLICY_CONTEXT_KEY = "POLICY_CONTEXT"
 _ON_VALUES = ("on", "true", "1", "yes")
 

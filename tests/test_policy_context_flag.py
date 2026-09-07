@@ -186,6 +186,18 @@ async def test_notice_keep_persists_on(tmp_path: Path, arm_calls):
     assert _values(env)["EVENT_HUB_CONNECTION_STRING"] == CONN
 
 
+async def test_notice_enter_means_keep_enabled(tmp_path: Path, arm_calls):
+    app, env = await _open_notice(tmp_path, arm_calls)
+    async with app.run_test(size=(160, 45)) as pilot:
+        await wait_until(pilot, lambda: isinstance(app.screen, PolicyContextNoticeDialog))
+        await pilot.pause()
+        assert app.screen.query_one("#btn-keep").has_focus  # the hint '(Enter)' must be true
+        await pilot.press("enter")
+        await wait_until(pilot, lambda: not isinstance(app.screen, PolicyContextNoticeDialog))
+        assert app.query_one(TabbedContent)
+    assert _values(env)["POLICY_CONTEXT"] == "on"
+
+
 @pytest.mark.parametrize("key", ["escape", "q"])
 async def test_notice_close_keys_keep_enabled(tmp_path: Path, arm_calls, key):
     app, env = await _open_notice(tmp_path, arm_calls)

@@ -133,7 +133,8 @@ def resolve_start_position(value: str | None) -> str:
 # once the SDK import is done). Both helpers below keep the splash *below*
 # those dialogs: they pop everything above a point, do their job, and push each
 # dialog that knows how to ``recreate()`` itself again as a fresh instance with
-# its original result callback, so it stays visible and its answer still lands.
+# the callback stored in its ``repush_callback`` attribute (set by whoever pushed
+# it), so it stays visible and its answer still lands.
 
 
 async def _pop_dialogs_above(app: "FirewallLogApp", is_anchor: "Callable[[Screen], bool]") -> list[tuple[Any, Any]]:
@@ -141,8 +142,7 @@ async def _pop_dialogs_above(app: "FirewallLogApp", is_anchor: "Callable[[Screen
     popped: list[tuple[Any, Any]] = []
     while not is_anchor(app.screen):
         screen = app.screen
-        callbacks = getattr(screen, "_result_callbacks", None)
-        popped.append((screen, callbacks[-1].callback if callbacks else None))
+        popped.append((screen, getattr(screen, "repush_callback", None)))
         await app.pop_screen()
     return popped
 
@@ -151,7 +151,9 @@ async def _repush_dialogs(app: "FirewallLogApp", popped: list[tuple[Any, Any]]) 
     for screen, callback in reversed(popped):
         recreate = getattr(screen, "recreate", None)
         if recreate is not None:
-            await app.push_screen(recreate(), callback=callback)
+            fresh = recreate()
+            fresh.repush_callback = callback  # survives the next lift as well
+            await app.push_screen(fresh, callback=callback)
 
 
 async def _show_splash(app: "FirewallLogApp", splash: ConnectingDialog) -> None:

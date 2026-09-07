@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Callable
+
 from textual import events
 from textual.app import ComposeResult
 from textual.containers import Horizontal
@@ -132,6 +134,9 @@ class PolicyContextNoticeDialog(ModalScreen[bool]):
     """
 
     AUTO_FOCUS = "#btn-keep"  # so 'Enter' really means 'Keep enabled'
+    # Result callback to re-attach when the connecting splash re-pushes this
+    # dialog (see streaming._repush_dialogs). Set by whoever pushes the dialog.
+    repush_callback: "Callable[[bool | None], None] | None" = None
 
     DEFAULT_CSS = """
     PolicyContextNoticeDialog {
@@ -261,6 +266,8 @@ class UpdateDialog(ModalScreen[None]):
         super().__init__()
         self._latest = latest
         self._url = url
+
+    repush_callback = None  # pushed without a result callback; kept for the splash re-push protocol
 
     def recreate(self) -> "UpdateDialog":
         """Fresh copy for re-pushing after the connecting splash is removed."""

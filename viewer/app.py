@@ -222,7 +222,9 @@ class FirewallLogApp(App[None]):
         self.set_interval(1.0, self._flush_rows)
         self._check_update()
         if self._policy_context_notice:
-            self.push_screen(PolicyContextNoticeDialog(), callback=self._on_policy_context_notice)
+            notice = PolicyContextNoticeDialog()
+            notice.repush_callback = self._on_policy_context_notice  # keeps working if the splash lifts it
+            self.push_screen(notice, callback=self._on_policy_context_notice)
 
     # ── enrichment switch ──────────────────────────────────────────────────────
     def _on_policy_context_notice(self, keep: bool | None) -> None:

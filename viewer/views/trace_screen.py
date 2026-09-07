@@ -164,7 +164,7 @@ class TracePanel(Vertical):
                     pending_skipped = 0
                 current_key = key
                 origin = f"   [dim]· {escape(c.policy_name)}[/]" if show_origin and c.policy_name else ""
-                group_node = pass_node.add(f"[{c.group.priority}] {escape(c.group.name)}{origin}", expand=True)
+                group_node = pass_node.add(escape(f"[{c.group.priority}] {c.group.name}") + origin, expand=True)
             if not c.evaluated:
                 pending_skipped += 1
                 continue

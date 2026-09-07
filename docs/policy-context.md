@@ -40,11 +40,11 @@ resource ID from the first log record it receives and fetches from there.
   for the selected group the rules that reference it. `Enter` on a rule jumps to it
   in the Policy tab.
 
-![The Firewall tab in four blocks: Instance, Networking, Policy and Logging, the last one ending in the Not to Event Hub line. Subscription ID and public IP addresses are blacked out](firewall-tab.png)
+![The Firewall tab in four blocks: Instance, Networking, Policy and Logging, the last one ending in the Not to Event Hub line. Subscription ID and public IP addresses are blacked out](images/firewall-tab.png)
 
-![The Policy tab: rule collection groups and collections in priority order on the left, the selected rule's definition on the right](policy-tab.png)
+![The Policy tab: rule collection groups and collections in priority order on the left, the selected rule's definition on the right](images/policy-tab.png)
 
-![The IP Groups tab: every group with its entry and usage count, and the rules that reference the selected group](ip-groups-tab.png)
+![The IP Groups tab: every group with its entry and usage count, and the rules that reference the selected group](images/ip-groups-tab.png)
 
 ### Richer log rows
 
@@ -67,7 +67,7 @@ Threat Intelligence first, then three passes over all rule collection groups
 stopping at the first match. The Application pass only runs for HTTP, HTTPS and
 MSSQL flows.
 
-![The detail dialog: the log entry's fields on the left, the evaluation trace on the right, ending at the rule the firewall logged](evaluation-trace.png)
+![The detail dialog: the log entry's fields on the left, the evaluation trace on the right, ending at the rule the firewall logged](images/evaluation-trace.png)
 
 The log entry's own fields sit on the left, the trace on the right. Each pass
 reports its own verdict (`✓ matched`, `✗ no match`, `? no certain match`), and

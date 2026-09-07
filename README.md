@@ -10,7 +10,7 @@ Built by [CloudChristoph](https://github.com/cloudchristoph).
 > This project is based on the excellent work by [Nicola Delfino](https://github.com/nicolgit) and his
 > [azure-firewall-mon](https://github.com/nicolgit/azure-firewall-mon) project.
 
-![The Logs tab: firewall events streaming in, colour-coded by category, with the filter bar set to the Decisions preset](docs/logs-tab.png)
+![The Logs tab: firewall events streaming in, colour-coded by category, with the filter bar set to the Decisions preset](docs/images/logs-tab.png)
 
 ## ✨ What it does
 
@@ -25,6 +25,14 @@ Built by [CloudChristoph](https://github.com/cloudchristoph).
 - **Setup wizard** that finds or deploys the Event Hub, wires up Diagnostic
   Settings and writes your `.env`.
 - **Single binary** for Windows, macOS and Linux, with no Python install required.
+
+![The detail dialog: the log entry on the left, and on the right every rule collection the firewall walked through, ending at the rule that matched](docs/images/evaluation-trace.png)
+
+The trace is computed against your real policy, so it also works the other way
+round: on a `Deny · no rule matched` row it walks the whole path and names the
+criterion that kept each near miss out, down to `port: 8443 not in 443`. That is
+usually faster than reading the policy yourself.
+→ [Policy context](docs/policy-context.md)
 
 ## 🏗️ How it works
 

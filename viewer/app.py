@@ -373,7 +373,8 @@ class FirewallLogApp(App[None]):
         if not self._policy_context:
             return
         self.query_one("#firewall-view", FirewallView).render_data(
-            self._fw_info, self._policy_info, self._subnet_cidrs
+            self._fw_info, self._policy_info, self._subnet_cidrs,
+            self._snapshot.diagnostics if self._snapshot else [],
         )
         self.query_one("#policy-view", PolicyView).render_data(self._policy_info, self._ip_groups)
         self.query_one("#ipgroups-view", IpGroupsView).render_data(

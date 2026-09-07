@@ -112,6 +112,25 @@ def test_invalidate_tolerates_unwritable_file(cache_file, monkeypatch):
     assert cache.load(FW_ID) is not None  # entry still on disk, that is acceptable
 
 
+def test_round_trip_keeps_firewall_details_and_diagnostics(cache_file):
+    from viewer.azure_resources import DiagnosticSetting, IpConfig
+    snap = _snapshot()
+    snap.firewall.ip_configs = [IpConfig(name="c0", private_ip="10.2.0.4", public_ip_id="/pip", public_ip_name="pip", public_ip_address="1.2.3.4")]
+    snap.firewall.management_ip = IpConfig(name="mgmt", subnet_id="/mgmt")
+    snap.firewall.zones = ["1", "2"]
+    snap.firewall.tags = {"env": "lab"}
+    snap.policy.dns_proxy = True
+    snap.policy.idps_mode = "Deny"
+    snap.diagnostics = [DiagnosticSetting(name="d", event_hub="ns/hub", categories=["AZFWNetworkRule"])]
+    cache.save(FW_ID, snap)
+    back = cache.load(FW_ID)
+    assert back is not None
+    assert back.firewall.ip_configs[0].public_ip_address == "1.2.3.4" and back.firewall.management_ip.name == "mgmt"
+    assert back.firewall.zones == ["1", "2"] and back.firewall.tags == {"env": "lab"}
+    assert back.policy.dns_proxy and back.policy.idps_mode == "Deny"
+    assert back.diagnostics[0].event_hub == "ns/hub" and back.diagnostics[0].categories == ["AZFWNetworkRule"]
+
+
 def test_ttl(cache_file):
     old = _snapshot(fetched_at=time.time() - cache.DEFAULT_TTL_SECONDS - 5)
     assert not old.is_fresh()

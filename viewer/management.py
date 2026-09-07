@@ -15,7 +15,9 @@ from .arm import ArmClient, ArmError
 from .azure_resources import (
     collect_ip_group_ids,
     fetch_all_subnet_cidrs,
+    fetch_diagnostic_settings,
     fetch_firewall,
+    fetch_public_ips,
     fetch_ip_groups,
     fetch_policy_chain as fetch_policy,  # policy plus inherited parent chain
 )
@@ -57,6 +59,11 @@ async def load_management_data(firewall_id: str, *, force: bool = False) -> Cach
             subnet_task = asyncio.create_task(
                 fetch_all_subnet_cidrs(arm, firewall.subnet_ids)
             )
+            pip_ids = [c.public_ip_id for c in firewall.ip_configs if c.public_ip_id]
+            if firewall.management_ip and firewall.management_ip.public_ip_id:
+                pip_ids.append(firewall.management_ip.public_ip_id)
+            pip_task = asyncio.create_task(fetch_public_ips(arm, pip_ids))
+            diag_task = asyncio.create_task(fetch_diagnostic_settings(arm, firewall_id))
             policy = None
             if firewall.policy_id:
                 try:
@@ -65,6 +72,16 @@ async def load_management_data(firewall_id: str, *, force: bool = False) -> Cach
                     policy = None
 
             subnet_cidrs = await subnet_task
+            try:
+                addresses = await pip_task
+            except ArmError:
+                addresses = {}
+            for cfg in firewall.ip_configs + ([firewall.management_ip] if firewall.management_ip else []):
+                cfg.public_ip_address = addresses.get(cfg.public_ip_id, "")
+            try:
+                diagnostics = await diag_task
+            except ArmError:
+                diagnostics = []
 
             ip_groups: dict = {}
             if policy is not None:
@@ -80,6 +97,7 @@ async def load_management_data(firewall_id: str, *, force: bool = False) -> Cach
                 ip_groups=ip_groups,
                 subnet_cidrs=subnet_cidrs,
                 fetched_at=time.time(),
+                diagnostics=diagnostics,
             )
             try:
                 save(firewall_id, snap)

@@ -7,7 +7,9 @@ from viewer.arm import ArmError
 from viewer.azure_resources import (
     collect_ip_group_ids,
     fetch_all_subnet_cidrs,
+    fetch_diagnostic_settings,
     fetch_firewall,
+    fetch_public_ips,
     fetch_ip_group,
     fetch_ip_groups,
     fetch_policy,
@@ -103,6 +105,56 @@ def _routes(**extra):
     return routes
 
 
+PIP = f"{SUB}/resourceGroups/rg-hub-network-gwc/providers/Microsoft.Network/publicIPAddresses/pip-fw-hub-gwc-001"
+PIP6 = f"{SUB}/resourceGroups/rg-hub-network-gwc/providers/Microsoft.Network/publicIPAddresses/pip-fw-hub-gwc-ipv6-001"
+PIP_MGMT = f"{SUB}/resourceGroups/rg-hub-network-gwc/providers/Microsoft.Network/publicIPAddresses/pip-fw-mgmt"
+EHNS_RULE = f"{SUB}/resourceGroups/rg-hub-network-gwc/providers/Microsoft.EventHub/namespaces/ehns-fw-gwc/authorizationRules/RootManageSharedAccessKey"
+
+FIREWALL_FULL_JSON = {
+    "id": FW_ID, "name": "fw-hub-gwc", "location": "germanywestcentral", "zones": ["2", "3", "1"],
+    "tags": {"environment": "prod", "project": "cclab"},
+    "properties": {
+        "provisioningState": "Succeeded", "threatIntelMode": "Alert",
+        "sku": {"name": "AZFW_VNet", "tier": "Premium"},
+        "additionalProperties": {"Network.AdditionalLogs.EnableFatFlowLogging": "true"},
+        "ipConfigurations": [
+            {"name": "AzureFirewallIpConfiguration0", "properties": {
+                "privateIPAddress": "10.2.0.4", "subnet": {"id": SUBNET}, "publicIPAddress": {"id": PIP}}},
+            {"name": "AzureFirewallIpConfiguration1", "properties": {
+                "privateIPAddress": "fd10:2:0:1::4", "subnet": {"id": SUBNET}, "publicIPAddress": {"id": PIP6}}},
+        ],
+        "managementIpConfiguration": {"name": "AzureFirewallMgmtIpConfiguration", "properties": {
+            "subnet": {"id": MGMT_SUBNET}, "publicIPAddress": {"id": PIP_MGMT}}},
+        "firewallPolicy": {"id": POLICY_ID},
+    },
+}
+
+POLICY_FULL_JSON = {
+    "id": POLICY_ID, "name": "fwp-hub-premium-gwc",
+    "properties": {
+        "sku": {"tier": "Premium"}, "threatIntelMode": "Alert", "provisioningState": "Succeeded",
+        "threatIntelWhitelist": {"fqdns": ["ok.example"], "ipAddresses": ["1.1.1.1", "8.8.8.8"]},
+        "dnsSettings": {"enableProxy": True, "servers": ["10.0.0.53"]},
+        "intrusionDetection": {"mode": "Alert", "configuration": {
+            "bypassTrafficSettings": [{"name": "b1"}], "signatureOverrides": [{"id": "1"}, {"id": "2"}]}},
+        "transportSecurity": {"certificateAuthority": {"name": "fw-tls-intermediate-ca", "keyVaultSecretId": "https://kv/x"}},
+        "snat": {"privateRanges": ["IANAPrivateRanges", "100.64.0.0/10"]},
+        "explicitProxy": {"enableExplicitProxy": True},
+        "childPolicies": [{"id": "/c1"}],
+    },
+}
+
+DIAG_JSON = {"value": [
+    {"name": "diag-fw-eventhub", "properties": {
+        "eventHubAuthorizationRuleId": EHNS_RULE, "eventHubName": "firewall-logs",
+        "logs": [{"category": "AZFWNetworkRule", "enabled": True}, {"category": "AZFWApplicationRule", "enabled": True},
+                 {"category": "AZFWFlowTrace", "enabled": False}]}},
+    {"name": "diag-fw-law", "properties": {
+        "workspaceId": f"{SUB}/resourceGroups/rg-mon/providers/Microsoft.OperationalInsights/workspaces/law-cclab",
+        "logs": [{"categoryGroup": "allLogs", "enabled": True}]}},
+]}
+
+
 # ── parse_resource_id ────────────────────────────────────────────────────────
 
 def test_parse_resource_id():
@@ -149,6 +201,51 @@ async def test_fetch_firewall_minimal_payload_falls_back_to_id_parts():
     assert fw.id == FW_ID
     assert fw.name == "fw-hub-gwc"
     assert fw.subnet_ids == [] and fw.private_ips == [] and fw.policy_id == ""
+
+
+async def test_fetch_firewall_reads_instance_details():
+    fw = await fetch_firewall(FakeArm({FW_ID: FIREWALL_FULL_JSON}), FW_ID)
+    assert (fw.sku_name, fw.sku_tier, fw.zones, fw.provisioning_state) == ("AZFW_VNet", "Premium", ["1", "2", "3"], "Succeeded")
+    assert fw.threat_intel_mode == "Alert" and fw.tags == {"environment": "prod", "project": "cclab"}
+    assert fw.additional_properties == {"Network.AdditionalLogs.EnableFatFlowLogging": "true"}
+    assert [c.private_ip for c in fw.ip_configs] == ["10.2.0.4", "fd10:2:0:1::4"]
+    assert fw.ip_configs[0].public_ip_name == "pip-fw-hub-gwc-001" and fw.ip_configs[0].public_ip_id == PIP
+    assert fw.ip_configs[0].public_ip_address == ""          # resolved separately
+    assert fw.management_ip is not None and fw.management_ip.public_ip_name == "pip-fw-mgmt"
+    assert fw.private_ips == ["10.2.0.4", "fd10:2:0:1::4"] and fw.subnet_ids == [SUBNET, MGMT_SUBNET]
+
+
+async def test_fetch_firewall_without_management_config():
+    fw = await fetch_firewall(FakeArm({FW_ID: FIREWALL_JSON}), FW_ID)
+    assert fw.management_ip is not None  # FIREWALL_JSON has one without a name
+    minimal = await fetch_firewall(FakeArm({FW_ID: {"properties": {"ipConfigurations": []}}}), FW_ID)
+    assert minimal.management_ip is None and minimal.ip_configs == [] and minimal.zones == []
+
+
+async def test_fetch_public_ips_skips_unreadable_ones():
+    arm = FakeArm({PIP: {"properties": {"ipAddress": "72.144.131.50"}}, PIP6: {"properties": {}}})
+    assert await fetch_public_ips(arm, [PIP, PIP6, PIP_MGMT]) == {PIP: "72.144.131.50"}
+
+
+async def test_fetch_diagnostic_settings():
+    arm = FakeArm({f"{FW_ID}/providers/Microsoft.Insights/diagnosticSettings": DIAG_JSON})
+    eh, law = await fetch_diagnostic_settings(arm, FW_ID)
+    assert eh.name == "diag-fw-eventhub" and eh.event_hub == "ehns-fw-gwc/firewall-logs"
+    assert eh.categories == ["AZFWNetworkRule", "AZFWApplicationRule"] and not eh.all_logs  # disabled one dropped
+    assert law.workspace == "law-cclab" and law.all_logs and law.categories == [] and law.event_hub == ""
+    assert await fetch_diagnostic_settings(FakeArm({}), FW_ID) == []
+
+
+async def test_fetch_policy_reads_policy_settings():
+    arm = FakeArm({POLICY_ID: POLICY_FULL_JSON, f"{POLICY_ID}/ruleCollectionGroups": {"value": []}})
+    pol = await fetch_policy(arm, POLICY_ID)
+    assert pol.provisioning_state == "Succeeded"
+    assert pol.dns_proxy and pol.dns_servers == ["10.0.0.53"]
+    assert pol.threat_intel_allow_fqdns == ["ok.example"] and pol.threat_intel_allow_ips == ["1.1.1.1", "8.8.8.8"]
+    assert (pol.idps_mode, pol.idps_bypass_count, pol.idps_override_count) == ("Alert", 1, 2)
+    assert pol.tls_ca_name == "fw-tls-intermediate-ca"
+    assert pol.snat_private_ranges == ["IANAPrivateRanges", "100.64.0.0/10"] and pol.explicit_proxy
+    assert pol.child_policy_count == 1
 
 
 async def test_fetch_firewall_propagates_arm_error():

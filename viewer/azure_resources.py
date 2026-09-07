@@ -15,7 +15,8 @@ from .arm import ArmClient, ArmError
 
 # API versions — pinned for predictable shapes.
 _API_FW = "2024-01-01"          # azureFirewalls, firewallPolicies, ipGroups
-_API_NET = "2024-01-01"         # virtualNetworks / subnets
+_API_NET = "2024-01-01"         # virtualNetworks / subnets / publicIPAddresses
+_API_DIAG = "2021-05-01-preview"  # Microsoft.Insights/diagnosticSettings
 
 
 @dataclass
@@ -100,6 +101,19 @@ class FirewallPolicyInfo:
     threat_intel_mode: str = ""
     base_policy_id: str = ""
     rule_collection_groups: list[RuleCollectionGroup] = field(default_factory=list)
+    # policy-level settings shown on the Firewall tab
+    provisioning_state: str = ""
+    dns_proxy: bool = False
+    dns_servers: list[str] = field(default_factory=list)
+    threat_intel_allow_fqdns: list[str] = field(default_factory=list)
+    threat_intel_allow_ips: list[str] = field(default_factory=list)
+    idps_mode: str = ""
+    idps_bypass_count: int = 0
+    idps_override_count: int = 0
+    tls_ca_name: str = ""
+    snat_private_ranges: list[str] = field(default_factory=list)
+    explicit_proxy: bool = False
+    child_policy_count: int = 0
     # Inherited (parent) policy, if any. Its groups are always evaluated
     # before this policy's groups, per rule type.
     parent: "FirewallPolicyInfo | None" = None
@@ -116,6 +130,28 @@ class FirewallPolicyInfo:
 
 
 @dataclass
+class IpConfig:
+    """One firewall IP configuration (data plane or management)."""
+    name: str
+    private_ip: str = ""
+    public_ip_id: str = ""
+    public_ip_name: str = ""
+    public_ip_address: str = ""   # filled by fetch_public_ips (needs Reader on the PIP)
+    subnet_id: str = ""
+
+
+@dataclass
+class DiagnosticSetting:
+    """A diagnostic setting on the firewall: where which log categories go."""
+    name: str
+    event_hub: str = ""           # "namespace/hub" when the setting targets an Event Hub
+    workspace: str = ""           # Log Analytics workspace name
+    storage: str = ""             # storage account name
+    categories: list[str] = field(default_factory=list)   # enabled categories
+    all_logs: bool = False        # categoryGroup allLogs / audit covers everything
+
+
+@dataclass
 class FirewallInfo:
     id: str
     name: str
@@ -127,6 +163,15 @@ class FirewallInfo:
     subnet_ids: list[str] = field(default_factory=list)
     subnet_cidrs: list[str] = field(default_factory=list)
     policy_id: str = ""
+    # instance details (all from the same GET)
+    sku_name: str = ""            # AZFW_VNet | AZFW_Hub
+    zones: list[str] = field(default_factory=list)
+    provisioning_state: str = ""
+    threat_intel_mode: str = ""   # firewall-level (classic) mode; the policy's wins when a policy is attached
+    ip_configs: list[IpConfig] = field(default_factory=list)
+    management_ip: IpConfig | None = None
+    additional_properties: dict[str, str] = field(default_factory=dict)
+    tags: dict[str, str] = field(default_factory=dict)
 
 
 def parse_resource_id(resource_id: str) -> dict[str, str]:
@@ -147,29 +192,31 @@ def parse_resource_id(resource_id: str) -> dict[str, str]:
 async def fetch_firewall(arm: ArmClient, firewall_id: str) -> FirewallInfo:
     raw = await arm.get(firewall_id, _API_FW)
     props = raw.get("properties") or {}
-    ids = parse_resource_id(firewall_id)
+    # ARM returns the id with its real casing; the diagnostics resourceId is upper-cased
+    ids = parse_resource_id(raw.get("id") or firewall_id)
 
     private_ips: list[str] = []
     subnet_ids: list[str] = []
+    ip_configs: list[IpConfig] = []
     for cfg in props.get("ipConfigurations") or []:
-        cprops = cfg.get("properties") or {}
-        pip = cprops.get("privateIPAddress")
-        if pip:
-            private_ips.append(pip)
-        subnet = (cprops.get("subnet") or {}).get("id")
-        if subnet and subnet not in subnet_ids:
-            subnet_ids.append(subnet)
+        ipc = _parse_ip_config(cfg)
+        ip_configs.append(ipc)
+        if ipc.private_ip:
+            private_ips.append(ipc.private_ip)
+        if ipc.subnet_id and ipc.subnet_id not in subnet_ids:
+            subnet_ids.append(ipc.subnet_id)
     mgmt = props.get("managementIpConfiguration") or {}
-    if isinstance(mgmt, dict):
-        cprops = mgmt.get("properties") or {}
-        subnet = (cprops.get("subnet") or {}).get("id")
-        if subnet and subnet not in subnet_ids:
-            subnet_ids.append(subnet)
+    management_ip: IpConfig | None = None
+    if isinstance(mgmt, dict) and mgmt:
+        management_ip = _parse_ip_config(mgmt)
+        if management_ip.subnet_id and management_ip.subnet_id not in subnet_ids:
+            subnet_ids.append(management_ip.subnet_id)
 
     # The REST API returns the firewall SKU under properties.sku; the Azure
     # CLI flattens it to the top level, so accept both.
-    sku_tier = ((raw.get("sku") or props.get("sku") or {}).get("tier")) or ""
+    sku = raw.get("sku") or props.get("sku") or {}
     policy_id = ((props.get("firewallPolicy") or {}).get("id")) or ""
+    extra = props.get("additionalProperties") or {}
 
     return FirewallInfo(
         id=raw.get("id") or firewall_id,
@@ -177,11 +224,82 @@ async def fetch_firewall(arm: ArmClient, firewall_id: str) -> FirewallInfo:
         subscription_id=ids.get("subscription_id", ""),
         resource_group=ids.get("resource_group", ""),
         location=raw.get("location") or "",
-        sku_tier=sku_tier,
+        sku_tier=sku.get("tier") or "",
         private_ips=private_ips,
         subnet_ids=subnet_ids,
         policy_id=policy_id,
+        sku_name=sku.get("name") or "",
+        zones=sorted(str(z) for z in (raw.get("zones") or [])),
+        provisioning_state=props.get("provisioningState") or "",
+        threat_intel_mode=props.get("threatIntelMode") or "",
+        ip_configs=ip_configs,
+        management_ip=management_ip,
+        additional_properties={str(k): str(v) for k, v in extra.items()} if isinstance(extra, dict) else {},
+        tags={str(k): str(v) for k, v in (raw.get("tags") or {}).items()},
     )
+
+
+def _parse_ip_config(cfg: dict) -> IpConfig:
+    cprops = cfg.get("properties") or {}
+    pip_id = ((cprops.get("publicIPAddress") or {}).get("id")) or ""
+    return IpConfig(
+        name=cfg.get("name") or "",
+        private_ip=cprops.get("privateIPAddress") or "",
+        public_ip_id=pip_id,
+        public_ip_name=pip_id.rsplit("/", 1)[-1] if pip_id else "",
+        subnet_id=((cprops.get("subnet") or {}).get("id")) or "",
+    )
+
+
+async def fetch_public_ips(arm: ArmClient, pip_ids: list[str]) -> dict[str, str]:
+    """Resolve public IP resource ids to addresses; unreadable ones are left out."""
+    out: dict[str, str] = {}
+    for pid in pip_ids:
+        try:
+            raw = await arm.get(pid, _API_NET)
+        except ArmError:
+            continue
+        addr = (raw.get("properties") or {}).get("ipAddress")
+        if addr:
+            out[pid] = addr
+    return out
+
+
+def _segment_after(resource_id: str, key: str) -> str:
+    parts = (resource_id or "").split("/")
+    for i, p in enumerate(parts):
+        if p.lower() == key.lower() and i + 1 < len(parts):
+            return parts[i + 1]
+    return ""
+
+
+async def fetch_diagnostic_settings(arm: ArmClient, firewall_id: str) -> list[DiagnosticSetting]:
+    """The firewall's diagnostic settings: which categories go where (Reader suffices)."""
+    items = await arm.get_all(f"{firewall_id}/providers/Microsoft.Insights/diagnosticSettings", _API_DIAG)
+    out: list[DiagnosticSetting] = []
+    for item in items:
+        props = item.get("properties") or {}
+        rule_id = props.get("eventHubAuthorizationRuleId") or ""
+        ns = _segment_after(rule_id, "namespaces")
+        hub = props.get("eventHubName") or ""
+        categories: list[str] = []
+        all_logs = False
+        for log in props.get("logs") or []:
+            if not log.get("enabled"):
+                continue
+            if log.get("categoryGroup"):
+                all_logs = True
+            elif log.get("category"):
+                categories.append(log["category"])
+        out.append(DiagnosticSetting(
+            name=item.get("name") or "",
+            event_hub=f"{ns}/{hub}" if ns and hub else (ns or hub),
+            workspace=(props.get("workspaceId") or "").rsplit("/", 1)[-1],
+            storage=(props.get("storageAccountId") or "").rsplit("/", 1)[-1],
+            categories=categories,
+            all_logs=all_logs,
+        ))
+    return out
 
 
 async def fetch_subnet_cidrs(arm: ArmClient, subnet_id: str) -> list[str]:
@@ -268,6 +386,13 @@ async def fetch_policy(arm: ArmClient, policy_id: str) -> FirewallPolicyInfo:
     sku_tier = ((raw.get("sku") or props.get("sku") or {}).get("tier")) or ""
     threat_intel_mode = props.get("threatIntelMode") or ""
     base_policy_id = ((props.get("basePolicy") or {}).get("id")) or ""
+    dns = props.get("dnsSettings") or {}
+    allow = props.get("threatIntelWhitelist") or {}
+    idps = props.get("intrusionDetection") or {}
+    idps_cfg = idps.get("configuration") or {}
+    tls = ((props.get("transportSecurity") or {}).get("certificateAuthority") or {})
+    snat = props.get("snat") or {}
+    explicit = props.get("explicitProxy") or {}
 
     rcg_items = await arm.get_all(f"{policy_id}/ruleCollectionGroups", _API_FW)
     groups: list[RuleCollectionGroup] = []
@@ -288,6 +413,18 @@ async def fetch_policy(arm: ArmClient, policy_id: str) -> FirewallPolicyInfo:
         name=raw.get("name") or ids.get("name", ""),
         sku_tier=sku_tier,
         threat_intel_mode=threat_intel_mode,
+        provisioning_state=props.get("provisioningState") or "",
+        dns_proxy=bool(dns.get("enableProxy")),
+        dns_servers=list(dns.get("servers") or []),
+        threat_intel_allow_fqdns=list(allow.get("fqdns") or []),
+        threat_intel_allow_ips=list(allow.get("ipAddresses") or []),
+        idps_mode=idps.get("mode") or "",
+        idps_bypass_count=len(idps_cfg.get("bypassTrafficSettings") or []),
+        idps_override_count=len(idps_cfg.get("signatureOverrides") or []),
+        tls_ca_name=tls.get("name") or "",
+        snat_private_ranges=list(snat.get("privateRanges") or []),
+        explicit_proxy=bool(explicit.get("enableExplicitProxy")),
+        child_policy_count=len(props.get("childPolicies") or []),
         base_policy_id=base_policy_id,
         rule_collection_groups=groups,
     )

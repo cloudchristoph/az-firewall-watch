@@ -9,6 +9,8 @@ from pathlib import Path
 from typing import Any
 
 from .azure_resources import (
+    DiagnosticSetting,
+    IpConfig,
     FirewallInfo,
     FirewallPolicyInfo,
     IpGroupInfo,
@@ -22,7 +24,7 @@ from .config import BASE_DIR
 # One hour: the evaluation trace explains the *cached* policy, so a long TTL
 # would explain yesterday's rules. Ctrl+R refreshes on demand.
 DEFAULT_TTL_SECONDS = 60 * 60
-_CACHE_VERSION = 3  # v3: application-rule targetFqdns parsed (v2 caches lost them)
+_CACHE_VERSION = 4  # v4: firewall/policy details, public IPs, diagnostic settings
 
 
 @dataclass
@@ -32,6 +34,7 @@ class CachedSnapshot:
     ip_groups: dict[str, IpGroupInfo] = field(default_factory=dict)
     subnet_cidrs: list[str] = field(default_factory=list)
     fetched_at: float = 0.0
+    diagnostics: list[DiagnosticSetting] = field(default_factory=list)
 
     def age_seconds(self) -> float:
         return max(0.0, time.time() - self.fetched_at)
@@ -137,6 +140,7 @@ def _serialize(snap: CachedSnapshot) -> dict[str, Any]:
         "ip_groups": {k: asdict(v) for k, v in snap.ip_groups.items()},
         "subnet_cidrs": list(snap.subnet_cidrs),
         "fetched_at": snap.fetched_at,
+        "diagnostics": [asdict(d) for d in snap.diagnostics],
     }
 
 
@@ -163,20 +167,21 @@ def _hydrate_policy(pol_raw: dict[str, Any] | None) -> FirewallPolicyInfo | None
             priority=int(g.get("priority") or 0),
             rule_collections=rcs,
         ))
+    simple = {k: v for k, v in pol_raw.items()
+              if k in FirewallPolicyInfo.__dataclass_fields__ and k not in ("rule_collection_groups", "parent")}
     return FirewallPolicyInfo(
-        id=pol_raw.get("id", ""),
-        name=pol_raw.get("name", ""),
-        sku_tier=pol_raw.get("sku_tier", ""),
-        threat_intel_mode=pol_raw.get("threat_intel_mode", ""),
-        base_policy_id=pol_raw.get("base_policy_id", ""),
+        **simple,
         rule_collection_groups=rcg_list,
         parent=_hydrate_policy(pol_raw.get("parent")),
     )
 
 
 def _hydrate(entry: dict[str, Any]) -> CachedSnapshot:
-    fw_raw = entry["firewall"]
-    fw = FirewallInfo(**fw_raw)
+    fw_raw = dict(entry["firewall"])
+    fw_raw["ip_configs"] = [IpConfig(**c) for c in (fw_raw.get("ip_configs") or [])]
+    mgmt = fw_raw.get("management_ip")
+    fw_raw["management_ip"] = IpConfig(**mgmt) if isinstance(mgmt, dict) else None
+    fw = FirewallInfo(**{k: v for k, v in fw_raw.items() if k in FirewallInfo.__dataclass_fields__})
     policy = _hydrate_policy(entry.get("policy"))
     groups = {k: IpGroupInfo(**v) for k, v in (entry.get("ip_groups") or {}).items()}
     return CachedSnapshot(
@@ -185,4 +190,5 @@ def _hydrate(entry: dict[str, Any]) -> CachedSnapshot:
         ip_groups=groups,
         subnet_cidrs=list(entry.get("subnet_cidrs") or []),
         fetched_at=float(entry.get("fetched_at") or 0.0),
+        diagnostics=[DiagnosticSetting(**d) for d in (entry.get("diagnostics") or [])],
     )

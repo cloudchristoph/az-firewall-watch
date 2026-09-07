@@ -650,6 +650,42 @@ async def test_policy_view_clears_root_data_when_policy_disappears(structured_re
         assert tree.root.label.plain == "Policy data unavailable" and not tree.root.children
 
 
+async def test_firewall_tab_shows_instance_networking_policy_and_logging(structured_record, mgmt, firewall_id):
+    from viewer.azure_resources import DiagnosticSetting, IpConfig
+    snap = make_snapshot()
+    snap.firewall.sku_name, snap.firewall.zones, snap.firewall.provisioning_state = "AZFW_VNet", ["1", "2", "3"], "Succeeded"
+    snap.firewall.tags = {"project": "cclab"}
+    snap.firewall.additional_properties = {"Network.AdditionalLogs.EnableFatFlowLogging": "true"}
+    snap.firewall.ip_configs = [
+        IpConfig(name="AzureFirewallIpConfiguration0", private_ip="10.2.0.4", public_ip_id="/p0",
+                 public_ip_name="pip-fw-hub-gwc-001", public_ip_address="72.144.131.50", subnet_id="/sn"),
+        IpConfig(name="AzureFirewallIpConfiguration1", private_ip="fd10:2:0:1::4", public_ip_id="/p1",
+                 public_ip_name="pip-fw-hub-gwc-ipv6-001", subnet_id="/sn"),
+    ]
+    snap.policy.dns_proxy = True
+    snap.policy.idps_mode, snap.policy.idps_override_count = "Alert", 2
+    snap.policy.tls_ca_name = "fw-tls-intermediate-ca"
+    snap.diagnostics = [DiagnosticSetting(name="diag-fw", event_hub="ehns-fw-gwc/firewall-logs",
+                                          categories=["AZFWNetworkRule", "AZFWApplicationRule", "AZFWDnsQuery"])]
+    mgmt["snapshot"] = snap
+    app = FirewallLogApp()
+    async with app.run_test(size=(160, 45)) as pilot:
+        await pilot.pause()
+        await _load(app, pilot, firewall_id)
+        text = _text(app.query_one("#firewall-view", FirewallView))
+    assert "Premium · AZFW_VNet" in text and "1, 2, 3" in text and "Succeeded" in text and "project=cclab" in text
+    assert "10.2.0.4  →  pip-fw-hub-gwc-001 (72.144.131.50)" in text
+    assert "fd10:2:0:1::4  →  pip-fw-hub-gwc-ipv6-001" in text          # no address resolved: name only
+    assert "EnableFatFlowLogging=true" in text
+    assert "DNS proxy" in text and "on" in text and "Azure DNS" in text
+    assert "IDPS" in text and "2 signature overrides" in text
+    assert "CA: fw-tls-intermediate-ca" in text
+    assert "Event Hub ehns-fw-gwc/firewall-logs" in text
+    assert "Not to Event Hub" in text and "AZFWFlowTrace" in text and "AZFWNatRule" in text
+    assert "AZFWNetworkRule, AZFWApplicationRule, AZFWDnsQuery" in text
+    assert "/sn" not in text.replace("Subnets", "")                       # ids are shown as names only
+
+
 async def test_views_render_metadata(structured_record, mgmt, firewall_id):
     app = FirewallLogApp()
     async with app.run_test(size=(160, 45)) as pilot:

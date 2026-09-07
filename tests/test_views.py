@@ -213,10 +213,12 @@ async def test_detail_dialog_shows_enrichment(structured_record, mgmt, firewall_
         await pilot.pause(0.2)
         text = _text(app.screen)
         assert "Src IP Groups" in text and "ipgroup-all-spokes" in text
-        assert "Rule Priority" in text and "RCG:2000 » RC:100" in text
-        assert "Rule Action" in text and "Allow" in text
-        assert "Policy SKU" in text and "Premium" in text
+        assert "Rule Def." in text and "TCP  443  from ipgroup-all-spokes  to *" in text
         assert "Dst IP Groups" not in text  # 1.1.1.1 is in no group
+        # priorities, action and policy path are shown once — in the trace, not the fields
+        assert "Rule Priority" not in text
+        labels = "\n".join(_tree_labels(app.screen.query_one("#trace-tree", Tree)))
+        assert "[2000] rcg-net" in labels and "[100] rc-web (Allow)" in labels
 
 
 async def test_detail_dialog_shows_logged_rule_definition(structured_record, mgmt, firewall_id):
@@ -426,7 +428,13 @@ async def test_enter_opens_entry_and_trace_side_by_side(structured_record, mgmt,
         screen = app.screen
         assert screen.has_trace and screen.has_class("-with-trace")
         left = "\n".join(str(s.content) for s in screen.query("#detail-pane Static"))
-        assert "Log Entry — NetworkRule" in left and "Rule Priority" in left
+        assert "Log Entry — NetworkRule" in left and "Rule Def." in left
+        # nothing twice: the policy path, priorities, action and SKU live in the trace
+        for dup in ("Policy       ", "RCG          ", "Rule Coll.", "Rule         ", "Rule Priority", "Rule Action", "Policy SKU"):
+            assert dup not in left, dup
+        title = str(screen.query_one("#trace-title", Static).content)
+        assert title.startswith("[b]▸ 10.3.5.4 → 1.1.1.1:443 TCP[/b]\n[green]✓[/] Allow by rcg-net » rc-web » allow-web")
+        assert not screen.query("#trace-meta")  # the status bar already shows the metadata line
         tree = screen.query_one("#trace-tree", Tree)
         assert tree.has_focus  # Enter on the tree opens the rule right away
         assert tree.cursor_node is not None and "allow-web" in tree.cursor_node.label.plain

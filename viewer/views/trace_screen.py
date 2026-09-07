@@ -46,9 +46,6 @@ class TracePanel(Vertical):
     DEFAULT_CSS = """
     TracePanel > #trace-title {
         text-style: bold;
-    }
-    TracePanel > #trace-meta {
-        color: $text-muted;
         margin-bottom: 1;
     }
     TracePanel > #trace-warnings {
@@ -69,10 +66,9 @@ class TracePanel(Vertical):
             super().__init__()
             self.rule_ref = rule_ref
 
-    def __init__(self, trace: Trace, metadata_note: str = "", **kwargs) -> None:
+    def __init__(self, trace: Trace, **kwargs) -> None:
         super().__init__(**kwargs)
         self._trace = trace
-        self._metadata_note = metadata_note
         self._expand_all = False
 
     # ── layout ──────────────────────────────────────────────────────────────
@@ -86,13 +82,10 @@ class TracePanel(Vertical):
         else:
             icon = "[red]✗[/]"
         # Everything dynamic (names, FQDNs, outcome) is escaped: labels are Rich markup.
+        # Two lines, each starting with a symbol: the flow, then the verdict.
         port = f":{f.dst_port}" if f.dst_port and f.dst_port != "-" else ""  # ICMP has none
-        yield Static(
-            escape(f"{f.src_ip} → {f.dst_fqdn or f.dst_ip}{port} {f.protocol}".rstrip())
-            + f"    {icon} {escape(t.outcome)}",
-            id="trace-title", markup=True,
-        )
-        yield Static(escape(self._metadata_note or ""), id="trace-meta", markup=True)
+        flow_line = escape(f"{f.src_ip} → {f.dst_fqdn or f.dst_ip}{port} {f.protocol}".rstrip())
+        yield Static(f"[b]▸ {flow_line}[/b]\n{icon} {escape(t.outcome)}", id="trace-title", markup=True)
         if t.warnings:
             yield Static("\n".join(f"⚠ {escape(w)}" for w in t.warnings), id="trace-warnings", markup=True)
         yield Tree("Policy evaluation", id="trace-tree")

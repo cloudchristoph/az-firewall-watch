@@ -51,7 +51,7 @@ class DetailDialog(ModalScreen[str | None]):
         height: auto;
     }
     DetailDialog.-with-trace > #dialog > #detail-pane {
-        width: 46;
+        width: 52;
         height: 100%;
         overflow-y: auto;
         margin-right: 2;
@@ -76,12 +76,11 @@ class DetailDialog(ModalScreen[str | None]):
     """
 
     def __init__(self, row: FirewallDataRow, *, enrichment: dict | None = None,
-                 trace: Trace | None = None, metadata_note: str = "") -> None:
+                 trace: Trace | None = None) -> None:
         super().__init__()
         self._row = row
         self._enrichment: dict = enrichment or {}
         self._trace = trace
-        self._metadata_note = metadata_note
         if trace is not None:
             self.add_class("-with-trace")
 
@@ -100,10 +99,13 @@ class DetailDialog(ModalScreen[str | None]):
                 yield from self._entry_fields()
                 yield Button("Close  (Esc)", variant="primary", id="btn-close")
             if self._trace is not None:
-                yield TracePanel(self._trace, self._metadata_note, id="trace-panel")
+                yield TracePanel(self._trace, id="trace-panel")
 
     def _entry_fields(self) -> ComposeResult:
+        """The row's own fields; with a trace beside them, whatever the trace
+        already shows (policy path, priorities, action, SKU) is left out."""
         row = self._row
+        with_trace = self._trace is not None
         yield Static(f"Log Entry — {row.category}", id="title")
 
         yield self._field("Time (UTC)   ", row.time)
@@ -114,13 +116,13 @@ class DetailDialog(ModalScreen[str | None]):
         yield self._field("Destination  ", _endpoint(row.targetip, row.targetport))
         yield self._field("Action       ", row.action)
 
-        if row.fw_policy:
+        if row.fw_policy and not with_trace:
             yield self._field("Policy       ", row.fw_policy)
-        if row.rule_collection_group:
+        if row.rule_collection_group and not with_trace:
             yield self._field("RCG          ", row.rule_collection_group)
-        if row.rule_collection:
+        if row.rule_collection and not with_trace:
             yield self._field("Rule Coll.   ", row.rule_collection)
-        if row.rule_name:
+        if row.rule_name and not with_trace:
             yield self._field("Rule         ", row.rule_name)
         if not any([row.fw_policy, row.rule_collection_group, row.rule_collection, row.rule_name]) and row.policy:
             yield self._field("Policy / Info", row.policy)
@@ -138,15 +140,15 @@ class DetailDialog(ModalScreen[str | None]):
                 yield self._field("Src IP Groups", ", ".join(enr["source_ip_groups"]))
             if enr.get("dest_ip_groups"):
                 yield self._field("Dst IP Groups", ", ".join(enr["dest_ip_groups"]))
-            if enr.get("rule_policy"):
+            if enr.get("rule_policy") and not with_trace:
                 yield self._field("Rule Policy  ", enr["rule_policy"])
-            if enr.get("rule_priority"):
+            if enr.get("rule_priority") and not with_trace:
                 yield self._field("Rule Priority", enr["rule_priority"])
-            if enr.get("rule_action"):
+            if enr.get("rule_action") and not with_trace:
                 yield self._field("Rule Action  ", enr["rule_action"])
             if enr.get("rule_definition"):
-                yield self._field("Rule Def.    ", enr["rule_definition"])
-            if enr.get("policy_sku_tier"):
+                yield self._field("Rule Def.    ", enr["rule_definition"])  # the tree shows checks, not the whole rule
+            if enr.get("policy_sku_tier") and not with_trace:
                 yield self._field("Policy SKU   ", enr["policy_sku_tier"])
 
     def on_mount(self) -> None:

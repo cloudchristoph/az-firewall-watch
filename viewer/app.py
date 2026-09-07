@@ -620,8 +620,7 @@ class FirewallLogApp(App[None]):
             trace = build_trace(self._flow_from_row(row), self._policy_info, self._ip_groups,
                                 self._logged_from_row(row))
         self.push_screen(
-            DetailDialog(row, enrichment=self._compute_enrichment(row), trace=trace,
-                         metadata_note=status.meta if trace is not None else ""),
+            DetailDialog(row, enrichment=self._compute_enrichment(row), trace=trace),
             callback=self._on_trace_result,
         )
 

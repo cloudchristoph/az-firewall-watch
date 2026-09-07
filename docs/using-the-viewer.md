@@ -117,8 +117,8 @@ authentication errors stop immediately with a hint rather than retrying.
 
 | Key          | Action                                                                                     |
 | ------------ | ------------------------------------------------------------------------------------------ |
-| `Ctrl` + `q` | Quit                                                                                       |
-| `q`          | Quit as well, from the log table. In a dialog the same key closes the dialog instead        |
+| `q`          | Quit. In a dialog the same key closes the dialog instead                                    |
+| `Ctrl` + `q` | Quit as well, and it works from inside a filter input where `q` would be typed text         |
 | `Ctrl` + `p` | Pause / resume streaming, same as clicking the status bar                                   |
 | `Ctrl` + `s` | Save an SVG screenshot of the current view                                                 |
 | `Enter`      | Open the row details, with the evaluation trace beside them when policy metadata is loaded |

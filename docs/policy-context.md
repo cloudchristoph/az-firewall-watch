@@ -16,8 +16,9 @@ resource ID from the first log record it receives and fetches from there.
 
 ### Three extra tabs
 
-- **Firewall**: name, resource group, location, SKU, attached policy, private IPs
-  and the firewall subnets.
+- **Firewall**: name, resource group, subscription, location, SKU tier, attached
+  policy, the private IPs of the firewall instances, and the subnets it sits in,
+  as CIDRs and as resource IDs.
 - **Policy**: a tree of rule collection groups → rule collections → rules, ordered
   by priority, with a detail pane showing sources, destinations, ports, protocols,
   and IP groups resolved to their actual addresses.
@@ -97,8 +98,9 @@ row's fields alone and the status bar says why, either
 
 > [!NOTE]
 > The trace explains the **cached** policy. If the rule the firewall logged is
-> missing from it (because the policy changed since the last fetch), the dialog
-> warns you and suggests `Ctrl` + `R`.
+> missing from it, the trace says so and suggests `Ctrl` + `R`, since the rule may
+> just have been renamed. A row naming an unknown rule also triggers a re-fetch on
+> its own, see [Caching and staying current](#caching-and-staying-current).
 
 ## Authentication and permissions
 
@@ -114,14 +116,35 @@ Without ARM access nothing breaks: the status bar says *metadata unavailable
 (no ARM access)*, the extra tabs stay empty and the viewer behaves exactly as it
 does with policy context switched off.
 
-## Caching
+## Caching and staying current
 
 Metadata is cached for **one hour** in `~/.az-firewall-watch/cache.json` (file mode
 `0600`, directory `0700`). If your home directory is not writable, the cache falls
 back to `.azfw-cache.json` next to the binary.
 
-Press `Ctrl` + `R` to invalidate the cache and re-fetch. Do this after changing
-rules or IP groups, or when the trace warns that the logged rule is unknown to it.
+You rarely have to think about it, because the viewer keeps the cache current on
+its own:
+
+| Trigger                                                    | What happens                                                                 |
+| ---------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| A log row names a rule the loaded policy does not know      | Re-fetch, status bar *refreshing metadata (new rule …)…*                      |
+| The one-hour TTL runs out (checked once a minute)           | Re-fetch, status bar *refreshing metadata (cache expired)…*                   |
+| `Ctrl` + `R`                                                | Re-fetch on demand, for instance right after you changed a rule in the portal |
+
+Automatic re-fetches are rate-limited to one every five minutes, so a burst of
+rows against a stale policy does not turn into a burst of ARM requests. `Ctrl` + `R`
+is not rate-limited.
+
+The status bar carries the cache age (`fresh` under a minute, then `cache 12m`),
+so you can always see how old the policy behind the tabs and the trace is. Two
+more states worth recognising:
+
+- *refresh failed · showing previous metadata*: the re-fetch did not work, for
+  example because the token expired. The previous data stays on screen rather
+  than disappearing, so remember it is the older picture.
+- *refresh skipped: no firewall seen yet*, meaning `Ctrl` + `R` came before the first log
+  record arrived. The viewer learns the firewall from the records, so there is
+  nothing to refresh yet.
 
 ## Turning it off
 
@@ -143,3 +166,8 @@ answers in the status bar with *policy context off (POLICY_CONTEXT=on or
 has no `POLICY_CONTEXT` key. The viewer then shows a one-time notice at start-up
 explaining what policy context does (it is on by default) with a *Disable* button,
 and saves your choice to `.env`, so you are only asked once.
+
+While that notice is open **nothing is read from Azure**: no token, no ARM request,
+no cache file. Logs keep streaming, and the firewall the records point at is simply
+remembered. Answering *Keep enabled* fetches it once; *Disable* discards it and
+ignores every firewall seen later.

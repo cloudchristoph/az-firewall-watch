@@ -153,6 +153,12 @@ def test_threat_intel_http_hit_shows_the_fqdn(structured_record):
     assert row.action == "Alert"
 
 
+def test_fqdn_resolve_failure_table_name_is_an_alias(structured_record):
+    """Log Analytics names the table AZFWInternalFqdnResolutionFailure; the category is AZFWFqdnResolveFailure."""
+    row = parse_record(structured_record("AZFWInternalFqdnResolutionFailure", Fqdn="nope.invalid", Error="NXDOMAIN", **RULE_PROPS))
+    assert row is not None and row.category == "DnsFailure" and row.action == "ResolveFail"
+
+
 def test_fqdn_resolve_failure_is_dnsfailure_with_resolvefail(structured_record):
     row = parse_record(structured_record(
         "AZFWFqdnResolveFailure",

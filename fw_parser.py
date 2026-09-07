@@ -100,7 +100,7 @@ def parse_record(record: dict) -> Optional[FirewallDataRow]:
     structured = {
         "AZFWNetworkRule", "AZFWApplicationRule", "AZFWNatRule",
         "AZFWDnsQuery", "AZFWIdpsSignature", "AZFWThreatIntel",
-        "AZFWFqdnResolveFailure", "AZFWFlowTrace", "AZFWFatFlow",
+        "AZFWFqdnResolveFailure", "AZFWInternalFqdnResolutionFailure", "AZFWFlowTrace", "AZFWFatFlow",
     }
     if category in structured:
         return _parse_structured(record, category, time, resource_id)
@@ -274,7 +274,10 @@ def _parse_structured(record: dict, category: str, time: str, resource_id: str =
             resource_id=resource_id,
         )
 
-    if category == "AZFWFqdnResolveFailure":
+    if category in ("AZFWFqdnResolveFailure", "AZFWInternalFqdnResolutionFailure"):
+        # The diagnostic *category* is AZFWFqdnResolveFailure (what Event Hub
+        # records carry); the Log Analytics *table* is named
+        # AZFWInternalFqdnResolutionFailure. Accept both, just in case.
         fw_policy = _s(props, "Policy")
         rcg = _s(props, "RuleCollectionGroup")
         rc = _s(props, "RuleCollection")

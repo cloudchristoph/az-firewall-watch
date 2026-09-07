@@ -26,8 +26,10 @@ displayed.
 > [!NOTE]
 > **Reading FatFlow rows.** Records are sampled every 3 minutes, and rates well
 > below 1 Mbit/s do appear. Most records describe the return direction, i.e.
-> `<internet>:443 → <firewall instance>:<SNAT port>`, so the spoke client often
-> shows up only as the destination, or not at all.
+> `<internet>:443 → <firewall instance>:<SNAT port>`, so in the table the spoke
+> client often shows up only as the destination, or not at all. Open the row with
+> `Enter`: the dialog reads the direction and shows the connection as
+> `client → server` regardless of which way the logged packet went.
 
 ## Enabling flow trace and fat flow
 

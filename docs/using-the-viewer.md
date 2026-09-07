@@ -64,7 +64,7 @@ switch sits at the end of the filter bar and is **on by default**, so `DnsQuery`
 rows are filtered out until you explicitly ask for them. `DnsFailure` rows (the
 firewall failing to resolve an FQDN from a rule) stay visible regardless.
 
-The toggle is smart about it:
+How it interacts with the rest of the filter bar:
 
 - Flipping it **off** instantly shows all DNS rows.
 - Picking **DnsQuery** or the **DNS** preset in the Category dropdown flips it off
@@ -77,6 +77,17 @@ The toggle is smart about it:
 `Enter` on the highlighted row opens the detail dialog with the full record: every
 field the firewall logged, formatted and labelled. `Escape` or `q` closes it.
 
+The fields adapt to the category, because the raw log means different things
+depending on it:
+
+- **FlowTrace and FatFlow** rows show the connection as `Flow: client → server`
+  and, below it, which way this particular packet went. Azure logs source and
+  destination of the packet, not of the connection, so a return-direction record
+  would otherwise look like the server initiated the flow.
+- **NATRule** rows show the destination the client actually addressed, its ports,
+  and a `Translated` line with what the firewall turned it into.
+- Everything else shows source, destination and ports as logged.
+
 When [policy context](policy-context.md) is available, the same dialog also carries
 the IP groups containing source and destination, the definition of the logged rule,
 and the evaluation trace beside the record's own fields.
@@ -84,20 +95,6 @@ and the evaluation trace beside the record's own fields.
 Rows that are not a policy decision (`DnsQuery`, `DnsFailure`, `IDPS`, `FlowTrace`,
 `FatFlow`) show their fields alone, and the status bar says why, for example
 *no policy evaluation for FlowTrace rows*.
-
-## Key bindings
-
-| Key          | Action                                                                                     |
-| ------------ | ------------------------------------------------------------------------------------------ |
-| `Ctrl` + `q` | Quit                                                                                       |
-| `Ctrl` + `p` | Pause / resume streaming                                                                   |
-| `Ctrl` + `s` | Save an SVG screenshot of the current view                                                 |
-| `Enter`      | Open the row details, with the evaluation trace beside them when policy metadata is loaded |
-| `Escape`     | Clear all filter inputs (or close the open dialog)                                         |
-| `f`          | Jump focus to the filters                                                                  |
-| `Tab`        | Move between filter inputs                                                                 |
-| `c`          | Clear all rows from the table                                                              |
-| `Ctrl` + `r` | Re-fetch firewall / policy / IP-group metadata, bypassing the cache                        |
 
 ## Status bar
 
@@ -107,9 +104,26 @@ records were skipped (unknown or non-firewall categories). With policy context
 enabled it also carries a short metadata summary such as
 `policy Premium · 11 IP groups · fresh`.
 
+Clicking the status bar pauses and resumes the stream, the same as `Ctrl` + `P`.
+
 ## Reconnects
 
 If an established connection drops, the app reconnects on its own with a capped
 backoff (2 s → 5 s → 10 s → 30 s → 60 s) and reports the countdown in the status
 bar. Only the very first connection gives up after three attempts, and
 authentication errors stop immediately with a hint rather than retrying.
+
+## Key bindings
+
+| Key          | Action                                                                                     |
+| ------------ | ------------------------------------------------------------------------------------------ |
+| `Ctrl` + `q` | Quit                                                                                       |
+| `q`          | Quit as well, from the log table. In a dialog the same key closes the dialog instead        |
+| `Ctrl` + `p` | Pause / resume streaming, same as clicking the status bar                                   |
+| `Ctrl` + `s` | Save an SVG screenshot of the current view                                                 |
+| `Enter`      | Open the row details, with the evaluation trace beside them when policy metadata is loaded |
+| `Escape`     | Clear all filter inputs (or close the open dialog)                                         |
+| `f`          | Jump focus to the filters                                                                  |
+| `Tab`        | Move between filter inputs                                                                 |
+| `c`          | Clear all rows from the table                                                              |
+| `Ctrl` + `r` | Re-fetch firewall / policy / IP-group metadata, bypassing the cache                        |

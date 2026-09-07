@@ -2,10 +2,10 @@
 from __future__ import annotations
 
 import sys
+from collections.abc import Mapping
 from pathlib import Path
 
 from helpers import load_env  # re-exported for main.py
-
 
 # ── base directory (works both from source and as a PyInstaller binary) ───────
 if getattr(sys, "frozen", False):
@@ -32,7 +32,19 @@ TABLE_TRIM_SLACK = 250
 
 
 # ── category dropdown options ─────────────────────────────────────────────────
+# Presets come first: one pick hides whole classes of rows (FlowTrace and DNS
+# can flood the table) without another switch in the filter bar. Values with the
+# ``group:`` prefix are looked up in CATEGORY_GROUPS; plain values match the
+# category name.
+CATEGORY_GROUPS: dict[str, frozenset[str]] = {
+    "decisions": frozenset({"networkrule", "apprule", "natrule", "threatintel", "idps"}),
+    "traffic": frozenset({"flowtrace", "fatflow"}),
+    "dns": frozenset({"dnsquery", "dnsfailure"}),
+}
 CATEGORY_OPTIONS: list[tuple[str, str]] = [
+    ("Decisions", "group:decisions"),  # rules, ThreatIntel, IDPS
+    ("Traffic", "group:traffic"),      # FlowTrace, FatFlow
+    ("DNS", "group:dns"),              # DnsQuery, DnsFailure
     ("NetworkRule", "networkrule"),
     ("AppRule", "apprule"),
     ("NATRule", "natrule"),
@@ -44,4 +56,28 @@ CATEGORY_OPTIONS: list[tuple[str, str]] = [
     ("FatFlow", "fatflow"),
 ]
 
-__all__ = ["BASE_DIR", "SRC_DIR", "VERSION", "MAX_ROWS", "TABLE_TRIM_SLACK", "CATEGORY_OPTIONS", "load_env"]
+# ── policy context flag ──────────────────────────────────────────────────────
+POLICY_CONTEXT_KEY = "POLICY_CONTEXT"
+_ON_VALUES = ("on", "true", "1", "yes")
+
+
+def policy_context_setting(argv: list[str], environ: Mapping[str, str]) -> tuple[bool, bool]:
+    """Resolve the policy-context flag.
+
+    Returns ``(enabled, explicit)``. ``--no-policy-context`` / ``--policy-context`` on
+    the command line win, then ``POLICY_CONTEXT=on|off`` from the environment (or
+    ``.env``). A missing value means *enabled* but *not explicit* — the viewer
+    then shows a one-time notice so the user knows what is switched on.
+    """
+    if "--no-policy-context" in argv:
+        return False, True
+    if "--policy-context" in argv:
+        return True, True
+    raw = (environ.get(POLICY_CONTEXT_KEY) or "").strip().lower()
+    if not raw:
+        return True, False
+    return raw in _ON_VALUES, True
+
+
+__all__ = ["BASE_DIR", "SRC_DIR", "VERSION", "MAX_ROWS", "TABLE_TRIM_SLACK", "CATEGORY_OPTIONS", "CATEGORY_GROUPS",
+           "POLICY_CONTEXT_KEY", "policy_context_setting", "load_env"]

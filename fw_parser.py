@@ -11,8 +11,7 @@ Ported from azure-firewall-mon/firewall-mon-app/src/app/services/event-hub-sourc
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass, field
-from typing import Optional
+from dataclasses import dataclass
 
 _counter = 0
 
@@ -21,6 +20,34 @@ _RESOLVE_FAIL_RE = re.compile(
     r"Failed to resolve FQDN (?P<fqdn>\S+?)\.?(?:\s+Error\s+(?P<error>.*))?$",
     re.DOTALL,
 )
+
+
+_FLOWTRACE_BOILERPLATE = "Log Additional TCP Log"
+
+
+def tcp_direction(flag: str, sport: str, dport: str) -> str:
+    """Which way a FlowTrace packet went: ``client → server`` or ``server → client``.
+
+    SYN and SYN-ACK are unambiguous. For everything else the side with the
+    ephemeral (higher) port is taken as the client; equal ports give ``""``.
+    """
+    f = (flag or "").upper()
+    if f == "SYN":
+        return "client → server"
+    if f == "SYN-ACK":
+        return "server → client"
+    try:
+        s, d = int(sport), int(dport)
+    except (TypeError, ValueError):
+        return ""
+    if s == d:
+        return ""
+    return "client → server" if s > d else "server → client"
+
+
+def _capitalise(value: str) -> str:
+    """'alert' → 'Alert'; values that are already cased stay as they are."""
+    return value[:1].upper() + value[1:] if value else value
 
 
 def _next_id() -> str:
@@ -48,9 +75,13 @@ class FirewallDataRow:
     rule_collection_group: str = ""
     rule_collection: str = ""
     rule_name: str = ""
+    # DNAT rows only: the public destination the client actually hit (the
+    # DNAT rule matches on it); targetip/targetport carry the translated target.
+    nat_dst_ip: str = ""
+    nat_dst_port: str = ""
 
 
-def parse_record(record: dict) -> Optional[FirewallDataRow]:
+def parse_record(record: dict) -> FirewallDataRow | None:
     """Parse a single Azure Firewall log record into a FirewallDataRow.
 
     Returns None only if the record dict itself is malformed; skipped records
@@ -65,14 +96,14 @@ def parse_record(record: dict) -> Optional[FirewallDataRow]:
         return FirewallDataRow(
             rowid=_next_id(),
             time=time,
-            category=f"SKIP:ResourceType",
+            category="SKIP:ResourceType",
         )
 
     # ── Structured log format (new) ──────────────────────────────────────────
     structured = {
         "AZFWNetworkRule", "AZFWApplicationRule", "AZFWNatRule",
         "AZFWDnsQuery", "AZFWIdpsSignature", "AZFWThreatIntel",
-        "AZFWFqdnResolveFailure", "AZFWFlowTrace", "AZFWFatFlow",
+        "AZFWFqdnResolveFailure", "AZFWInternalFqdnResolutionFailure", "AZFWFlowTrace", "AZFWFatFlow",
     }
     if category in structured:
         return _parse_structured(record, category, time, resource_id)
@@ -206,6 +237,8 @@ def _parse_structured(record: dict, category: str, time: str, resource_id: str =
             rule_collection_group=rcg,
             rule_collection=rc,
             rule_name=rule,
+            nat_dst_ip=_s(props, "DestinationIp"),
+            nat_dst_port=_port(props, "DestinationPort"),
         )
 
     if category == "AZFWIdpsSignature":
@@ -218,17 +251,20 @@ def _parse_structured(record: dict, category: str, time: str, resource_id: str =
             srcport=_port(props, "SourcePort"),
             targetip=_s(props, "DestinationIp"),
             targetport=_port(props, "DestinationPort"),
-            action=_s(props, "Action"),
-            moreinfo=(
-                f"SEV:{_s(props, 'Severity')} "
-                f"{_s(props, 'SignatureId')} "
-                f"{_s(props, 'Category')} "
-                f"{_s(props, 'Description')}"
-            ).strip(),
+            action=_capitalise(_s(props, "Action")),  # the firewall sends "alert" / "deny"
+            # " · " separated so the detail dialog can split it back into fields
+            moreinfo=" · ".join(filter(None, [
+                f"SEV:{_s(props, 'Severity')}" if _s(props, "Severity") else "",
+                _s(props, "SignatureId"),
+                _s(props, "Category"),
+                _s(props, "Description"),
+            ])),
             resource_id=resource_id,
         )
 
     if category == "AZFWThreatIntel":
+        # HTTP/HTTPS hits carry the FQDN (DestinationIp is then empty); show it
+        # like an application-rule row. IP-based indicators keep the address.
         return FirewallDataRow(
             rowid=_next_id(),
             time=time,
@@ -236,14 +272,17 @@ def _parse_structured(record: dict, category: str, time: str, resource_id: str =
             protocol=_s(props, "Protocol"),
             sourceip=_s(props, "SourceIp"),
             srcport=_port(props, "SourcePort"),
-            targetip=_s(props, "DestinationIp"),
+            targetip=_s(props, "Fqdn") or _s(props, "DestinationIp"),
             targetport=_port(props, "DestinationPort"),
-            action=_s(props, "Action"),
+            action=_capitalise(_s(props, "Action")),
             moreinfo=_s(props, "ThreatDescription"),
             resource_id=resource_id,
         )
 
-    if category == "AZFWFqdnResolveFailure":
+    if category in ("AZFWFqdnResolveFailure", "AZFWInternalFqdnResolutionFailure"):
+        # The diagnostic *category* is AZFWFqdnResolveFailure (what Event Hub
+        # records carry); the Log Analytics *table* is named
+        # AZFWInternalFqdnResolutionFailure. Accept both, just in case.
         fw_policy = _s(props, "Policy")
         rcg = _s(props, "RuleCollectionGroup")
         rc = _s(props, "RuleCollection")
@@ -268,20 +307,28 @@ def _parse_structured(record: dict, category: str, time: str, resource_id: str =
         )
 
     if category == "AZFWFlowTrace":
-        # Flag: FIN / FIN-ACK / SYN-ACK / RST / INVALID …; Action/ActionReason
-        # describe why the flow was logged (e.g. "Additional TCP Log").
+        # Flag: FIN / FIN-ACK / SYN-ACK / RST / INVALID …. Source and destination
+        # are the *packet's*, so a SYN-ACK lists the server as source. The info
+        # column says which way the packet went; Azure's own Action/ActionReason
+        # ("Log Additional TCP Log") is the same boilerplate on every row and is
+        # only kept when it says something else.
+        flag = _s(props, "Flag") or "-"
+        sport, dport = _port(props, "SourcePort"), _port(props, "DestinationPort")
         reason = " ".join(filter(None, [_s(props, "Action"), _s(props, "ActionReason")]))
+        info = tcp_direction(flag, sport, dport)
+        if reason and reason != _FLOWTRACE_BOILERPLATE:
+            info = f"{info} · {reason}" if info else reason
         return FirewallDataRow(
             rowid=_next_id(),
             time=time,
             category="FlowTrace",
             protocol=_s(props, "Protocol"),
             sourceip=_s(props, "SourceIp"),
-            srcport=_port(props, "SourcePort"),
+            srcport=sport,
             targetip=_s(props, "DestinationIp"),
-            targetport=_port(props, "DestinationPort"),
-            action=_s(props, "Flag") or "-",
-            moreinfo=reason,
+            targetport=dport,
+            action=flag,
+            moreinfo=info,
             resource_id=resource_id,
         )
 
@@ -291,17 +338,18 @@ def _parse_structured(record: dict, category: str, time: str, resource_id: str =
         # common in practice, so keep three decimals below 1 Mbit/s.
         rate = _s(props, "FlowRate")
         rate_txt = _format_mbps(rate)
+        sport, dport = _port(props, "SourcePort"), _port(props, "DestinationPort")
         return FirewallDataRow(
             rowid=_next_id(),
             time=time,
             category="FatFlow",
             protocol=_s(props, "Protocol"),
             sourceip=_s(props, "SourceIp"),
-            srcport=_port(props, "SourcePort"),
+            srcport=sport,
             targetip=_s(props, "DestinationIp"),
-            targetport=_port(props, "DestinationPort"),
+            targetport=dport,
             action=rate_txt,
-            moreinfo="Top flow by bandwidth",
+            moreinfo=tcp_direction("", sport, dport),  # like FlowTrace: which way this flow's packets go
             resource_id=resource_id,
         )
 

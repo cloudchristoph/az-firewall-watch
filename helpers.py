@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import re
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -20,7 +20,7 @@ def load_env(path: Path, override: bool = False) -> None:
 _FRACTION_RE = re.compile(r"\.(\d+)")
 
 
-def _normalise_fraction(match: "re.Match[str]") -> str:
+def _normalise_fraction(match: re.Match[str]) -> str:
     return "." + match.group(1)[:6].ljust(6, "0")
 
 
@@ -32,6 +32,21 @@ def _to_local(ts: str) -> str:
         return dt.astimezone().strftime("%Y-%m-%d %H:%M:%S")
     except (ValueError, TypeError):
         return ts[:19]
+
+
+def _utc_short(ts: str) -> str:
+    """UTC ISO-8601 timestamp trimmed to seconds (``2026-09-07T16:14:09Z``).
+
+    Azure writes up to seven fractional digits; nobody reads them in a dialog.
+    """
+    try:
+        normalised = _FRACTION_RE.sub(_normalise_fraction, ts.replace("Z", "+00:00"), count=1)
+        dt = datetime.fromisoformat(normalised)
+        if dt.tzinfo is not None:
+            dt = dt.astimezone(timezone.utc)
+        return dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+    except (ValueError, TypeError):
+        return ts
 
 
 def _highlight(text: str, term: str) -> Text:

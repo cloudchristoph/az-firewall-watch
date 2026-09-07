@@ -8,7 +8,52 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-_(nothing yet)_
+Nothing yet.
+
+## [0.5.0] - 2026-09-07
+
+Until now the viewer showed what the firewall logged and nothing else. A row said *Allow by rcg-net » rc-web » allow-web* and left the rest to you: which other rules the packet passed on the way, why the deny above did not fire, what that IP group actually contains, whether the firewall would have allowed the flow at all if the logged rule were not there.
+
+0.5.0 adds the **policy context**: the viewer reads the firewall, its policy with the inherited parent chain, the referenced IP groups, the public IPs and the diagnostic settings from Azure Resource Manager, keeps them in a local cache, and uses them to explain the rows. Press `Enter` on a row and the dialog shows, next to the row's own fields, the path the flow took through the policy in the order Azure Firewall really uses — Threat Intelligence first, then DNAT, network and application rules by priority — with every criterion of every rule on the way marked as match, miss, or not decidable from here. What the viewer cannot know locally (service tags, FQDN tags, web categories) it marks as unknown rather than guessing. Three new tabs show the firewall, the policy tree and the IP groups; the log rows themselves gain the firewall's own addresses as `AzFw.<n>` and the IP groups a row belongs to.
+
+All of it is one switch, `POLICY_CONTEXT`, on by default: the setup wizard asks before writing `.env`, an existing `.env` triggers a one-time notice, and with the switch off the viewer never leaves the Event Hub — no ARM requests, no Azure CLI token, no cache file, and the Logs tab looks like 0.4.1.
+
+### Added
+
+- **Row detail dialog with the evaluation trace.** `Enter` shows the log entry's fields on the left and, when policy context is loaded, the trace on the right: Threat Intelligence, then DNAT → Network → Application rules, inherited policy first, by priority, stopping at the logged rule. Each rule shows ✓ / ✗ / ? for source, destination, port and protocol; on *no rule matched* rows the nearest misses are marked so the failing criterion is one glance away. Collection actions are coloured tags (`deny` red, `allow` dimmed, `dnat` yellow). `Enter` unfolds a rule, `Enter` on an unfolded rule opens it in the Policy tab, `Space` folds, `a` expands everything. Threat Intelligence rows short-circuit to two lines; FlowTrace, FatFlow, DNS and IDPS rows are observations, not decisions, and get no tree.
+- **Firewall tab** — a 2×2 grid: *Instance* (SKU name and tier, zones, provisioning state, resource group, subscription, location, tags, additional properties such as fat-flow logging), *Networking* (every IP configuration — IPv6 ones included — with private IP, public IP name and address, the management IP for forced tunneling, subnets and CIDRs), *Policy* (base policy, rule collection groups, Threat Intelligence mode and allowlist, DNS proxy and servers, IDPS mode with bypass and override counts, TLS inspection CA, SNAT ranges, explicit proxy, child policies) and *Logging* (the firewall's diagnostic settings with targets and category counts, plus the viewer categories that reach no Event Hub — the usual reason a category never shows up). Classic rules attached directly to the firewall are ignored on purpose.
+- **Policy tab** — the rule collection groups → collections → rules as a tree, inherited parent policy first, exactly as the firewall evaluates it, with a detail pane per node. Groups open on demand, so large policies stay fast.
+- **IP Groups tab** — every group with its member count and usage count and, per group, the rules that reference it; selecting a rule jumps to it in the Policy tab.
+- **Enriched log rows.** Addresses inside the firewall's own subnets render as `AzFw.<last octet>` so traffic from the firewall instances (DNS proxy, probes, SNAT return traffic) stands out. The detail dialog adds the IP groups containing source and destination and the logged rule's definition with IP groups resolved to names.
+- **`POLICY_CONTEXT` feature flag** (default `on`), also `--policy-context` / `--no-policy-context` per run. The setup wizard asks on every path before writing `.env`, shows the choice in the Deploy summary, and writes the key with a two-line comment explaining what it switches on. A `.env` from 0.4.x has no such key, so the viewer shows a one-time notice that says what policy context does and offers to disable it; the answer is saved to `.env`, and nothing reaches ARM before it is given.
+- **Metadata cache** at `~/.az-firewall-watch/cache.json` (mode `0600`, 1 h TTL), falling back to `.azfw-cache.json` next to the binary when the home directory is not writable. It keeps itself current: a log row naming a rule the cached policy does not know triggers a re-fetch (at most every five minutes), a minute timer refreshes the cache age in the status bar and re-fetches once the TTL is over, and `Ctrl+R` forces one at any time.
+- **Status bar segment** `Policy: Premium · 11 IP groups · cache 3m` next to the untouched connection status; the title shows the firewall's real, case-preserved name from ARM instead of the upper-cased one from the diagnostic records.
+- **ARM client** on `DefaultAzureCredential` with a fallback to a token from the Azure CLI (`az account get-access-token`), so policy context also works when the Event Hub is read with a SAS connection string. The identity needs **Reader** on the firewall, its policy (and base policy), the IP groups and the public IPs; nothing is ever written. Every read beyond the firewall itself is optional: without ARM access the status bar says *metadata unavailable*; without rights on a public IP or the diagnostic settings only those details are missing.
+- **Category presets** in the filter dropdown — *Decisions* (rules, Threat Intelligence, IDPS), *Traffic* (FlowTrace, FatFlow) and *DNS* — so a flood of FlowTrace or DNS rows is one pick away from gone, without another switch. Picking *DNS* turns the Hide-DNS toggle off for you.
+- **Optional live integration tests** (`tests/live`, gated by `AZFW_LIVE_*` environment variables) against a real firewall and Event Hub; **ruff and mypy** as a lint job in CI, configured in `pyproject.toml`.
+- 378 test functions (207 in 0.4.1; 527 cases with parametrisation).
+
+### Changed
+
+- **Row detail dialog.** Labels follow the category: *Flag*, *Rate*, *Response*, *Result* instead of *Action*; *Query type*, *Client*, *Query* for DNS rows; *Threat*, *Error* and the IDPS signature split into *Severity*, *Signature*, *Class*, *Description* instead of *More Info*. Source and destination show the address alone and the ports on one line (`47972 → 443`), so long FQDNs no longer break mid-word. FlowTrace and FatFlow rows show the connection client → server and the packet direction (SYN and SYN-ACK are certain, otherwise the ephemeral-port side is taken as the client). DNAT rows show the public destination the client hit, the ports and the translated target. Timestamps are trimmed to seconds, long values get their own line, the Close button is small and right-aligned.
+- **Info column** for FlowTrace rows shows the packet direction (`server → client`) instead of Azure's boilerplate `Log Additional TCP Log`; for FatFlow rows the direction instead of `Top flow by bandwidth`. The IDPS signature is `SEV:2 · 2032081 · Potentially Bad Traffic · …`.
+- **Filter bar** sits inside the Logs tab now that there are tabs, so the tab strip never moves. `q` is advertised in the footer; `Ctrl+Q` remains the alias that also works inside inputs.
+- **Firewall FQDN-resolution failures** are also recognised under the Log Analytics table name `AZFWInternalFqdnResolutionFailure` (the diagnostic category stays `AZFWFqdnResolveFailure`).
+- `aiohttp` is now an explicit runtime dependency (used by the ARM client).
+- **Documentation restructured.** The README is now a landing page (what it does, how it works, quick start, doc index); the details moved into `docs/`: [getting-started](docs/getting-started.md), [using-the-viewer](docs/using-the-viewer.md), [policy-context](docs/policy-context.md), [configuration](docs/configuration.md), [log-categories](docs/log-categories.md), [event-hub](docs/event-hub.md) and [development](docs/development.md). `POLICY_CONTEXT` is documented in one place, the required Azure roles are collected in a single table, and the command-line options are documented at all.
+
+### Fixed
+
+- **Threat Intelligence rows for HTTP/HTTPS hits had an empty destination**: the firewall puts the name into `Fqdn` and leaves `DestinationIp` empty. The FQDN is shown now, like on application-rule rows.
+- **Threat Intelligence and IDPS actions arrived lower-case** (`alert`, `deny`) and were the only ones rendered that way; they are capitalised like every other action.
+
+### Known limitations
+
+- **One firewall per session.** The policy context is loaded for the first firewall `resourceId` seen on the stream; a hub whose Event Hub carries several firewalls gets the first one's context for every row.
+- **Not everything can be evaluated locally.** Service tags (`AzureMonitor`, …), FQDN tags, web categories, target URLs, the built-in infrastructure FQDNs and IP groups the identity cannot read are shown as `?`, never as a match or a miss. Network rules with FQDN targets are compared by name only when the log row itself carries an FQDN.
+- **The trace explains the cached policy.** Rules changed after the last fetch are explained as they were; a log row naming an unknown rule triggers a re-fetch, and a warning in the trace says when the logged rule is missing from the cache.
+- **Classic rules** attached directly to the firewall (outside a policy) are ignored, in the trace and on the Firewall tab.
+- **No IPv6 support in the log parser yet.** IPv6 addresses in structured rows are shown as logged, but the legacy log parser splits `host:port` at the first colon and the filters compare substrings; a plan is in `docs/ipv6-plan.md`.
 
 ## [0.4.1] - 2026-09-05
 
@@ -130,7 +175,8 @@ This release adds passwordless Entra ID authentication, better Azure Firewall lo
 
 [Full diff](https://github.com/cloudchristoph/az-firewall-watch/commits/v0.1.0)
 
-[Unreleased]: https://github.com/cloudchristoph/az-firewall-watch/compare/v0.4.1...HEAD
+[Unreleased]: https://github.com/cloudchristoph/az-firewall-watch/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/cloudchristoph/az-firewall-watch/compare/v0.4.1...v0.5.0
 [0.4.1]: https://github.com/cloudchristoph/az-firewall-watch/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/cloudchristoph/az-firewall-watch/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/cloudchristoph/az-firewall-watch/releases/tag/v0.3.0

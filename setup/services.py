@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional
 
 
 def _read_env_text(env_file: Path) -> str:
@@ -13,7 +12,7 @@ def _read_env_text(env_file: Path) -> str:
         return env_file.read_text(encoding="latin-1")
 
 
-def get_existing_conn_str(env_file: Path) -> Optional[str]:
+def get_existing_conn_str(env_file: Path) -> str | None:
     """Return a non-empty connection string from .env, or None."""
     if not env_file.exists():
         return None
@@ -37,7 +36,17 @@ def has_entra_config(env_file: Path) -> bool:
     return found_ns and found_name
 
 
-def write_env(env_file: Path, conn_str: str) -> None:
+_POLICY_CONTEXT_COMMENT = (
+    "# POLICY_CONTEXT=on reads the firewall, its policy and IP groups via Azure Resource Manager\n"
+    "# (Reader role), may use an Azure CLI token, and caches the result in ~/.az-firewall-watch.\n"
+)
+
+
+def _policy_context_line(policy_context: bool) -> str:
+    return f"POLICY_CONTEXT={'on' if policy_context else 'off'}\n"
+
+
+def write_env(env_file: Path, conn_str: str, policy_context: bool = True) -> None:
     """Write a connection-string-based .env file."""
     ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     env_file.write_text(
@@ -45,12 +54,13 @@ def write_env(env_file: Path, conn_str: str) -> None:
         "# Do NOT commit this file - it contains a shared access key.\n"
         f"EVENT_HUB_CONNECTION_STRING={conn_str}\n"
         "EVENT_HUB_CONSUMER_GROUP=$Default\n"
-        "EVENT_HUB_START_POSITION=latest\n",
+        "EVENT_HUB_START_POSITION=latest\n"
+        + _POLICY_CONTEXT_COMMENT + _policy_context_line(policy_context),
         encoding="utf-8",
     )
 
 
-def write_env_entra(env_file: Path, namespace: str, hub_name: str) -> None:
+def write_env_entra(env_file: Path, namespace: str, hub_name: str, policy_context: bool = True) -> None:
     """Write an Entra ID (passwordless) .env file."""
     ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     env_file.write_text(
@@ -60,6 +70,32 @@ def write_env_entra(env_file: Path, namespace: str, hub_name: str) -> None:
         f"EVENT_HUB_NAMESPACE={namespace}\n"
         f"EVENT_HUB_NAME={hub_name}\n"
         "EVENT_HUB_CONSUMER_GROUP=$Default\n"
-        "EVENT_HUB_START_POSITION=latest\n",
+        "EVENT_HUB_START_POSITION=latest\n"
+        + _POLICY_CONTEXT_COMMENT + _policy_context_line(policy_context),
         encoding="utf-8",
     )
+
+
+def set_env_value(env_file: Path, key: str, value: str) -> None:
+    """Set ``KEY=value`` in .env, replacing an existing line or appending one.
+
+    Comments and other keys are preserved. Creates the file if it is missing.
+    """
+    lines = _read_env_text(env_file).splitlines() if env_file.exists() else []
+    prefix = f"{key}="
+    replaced = False
+    kept: list[str] = []
+    for line in lines:
+        if line.startswith(prefix):
+            if replaced:
+                continue  # drop duplicates (e.g. from manual edits) so the key is unambiguous
+            kept.append(f"{key}={value}")
+            replaced = True
+        else:
+            kept.append(line)
+    lines = kept
+    if not replaced:
+        if key == "POLICY_CONTEXT":
+            lines.extend(_POLICY_CONTEXT_COMMENT.rstrip("\n").splitlines())
+        lines.append(f"{key}={value}")
+    env_file.write_text("\n".join(lines) + "\n", encoding="utf-8")

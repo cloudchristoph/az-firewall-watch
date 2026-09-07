@@ -10,13 +10,16 @@ from __future__ import annotations
 import asyncio
 import json
 import os
-from typing import TYPE_CHECKING
+from collections.abc import Callable
+from typing import TYPE_CHECKING, Any
 
-from dialogs import ConnectingDialog, ErrorDialog, StatusBar, UpdateDialog
+from dialogs import ConnectingDialog, ErrorDialog, StatusBar
 from fw_parser import parse_record
 from helpers import _parse_eventhub_endpoint
 
 if TYPE_CHECKING:
+    from textual.screen import Screen
+
     from .app import FirewallLogApp
 
 
@@ -126,23 +129,64 @@ def resolve_start_position(value: str | None) -> str:
     return raw
 
 
-async def _remove_splash(app: "FirewallLogApp") -> None:
-    """Remove the ConnectingDialog from the screen stack.
+# ── splash vs. other dialogs ─────────────────────────────────────────────────
+# The connecting splash is transient, while dialogs such as the update notice
+# or the policy-context notice want an answer. They may end up in either order on
+# the screen stack (the notice is pushed on mount, the splash from the worker
+# once the SDK import is done). Both helpers below keep the splash *below*
+# those dialogs: they pop everything above a point, do their job, and push each
+# dialog that knows how to ``recreate()`` itself again as a fresh instance with
+# the callback stored in its ``repush_callback`` attribute (set by whoever pushed
+# it), so it stays visible and its answer still lands.
 
-    An UpdateDialog may sit on top of the splash; it is re-pushed afterwards
-    so it stays visible. Screen-stack errors are ignored because the stack may
-    already be torn down when the worker is cancelled during app shutdown.
+
+async def _pop_dialogs_above(app: FirewallLogApp, is_anchor: Callable[[Screen], bool]) -> list[tuple[Any, Any]]:
+    """Pop screens until ``is_anchor(app.screen)``; return (screen, callback) topmost first."""
+    popped: list[tuple[Any, Any]] = []
+    while not is_anchor(app.screen):
+        screen = app.screen
+        popped.append((screen, getattr(screen, "repush_callback", None)))
+        await app.pop_screen()
+    return popped
+
+
+async def _repush_dialogs(app: FirewallLogApp, popped: list[tuple[Any, Any]]) -> None:
+    for screen, callback in reversed(popped):
+        recreate = getattr(screen, "recreate", None)
+        if recreate is not None:
+            fresh = recreate()
+            fresh.repush_callback = callback  # survives the next lift as well
+            await app.push_screen(fresh, callback=callback)
+
+
+async def _show_splash(app: FirewallLogApp, splash: ConnectingDialog) -> None:
+    """Push the splash directly above the main screen, beneath any open dialog."""
+    from textual.app import ScreenStackError
+
+    try:
+        base = app.screen_stack[0]
+        lifted = await _pop_dialogs_above(app, lambda s: s is base)
+        await app.push_screen(splash)
+        await _repush_dialogs(app, lifted)
+    except ScreenStackError:
+        pass
+
+
+async def _remove_splash(app: FirewallLogApp) -> None:
+    """Remove the ConnectingDialog wherever it sits in the screen stack.
+
+    Popping blindly would close whichever dialog is on top and leave the splash
+    behind. Screen-stack errors are ignored because the stack may already be
+    torn down when the worker is cancelled during app shutdown.
     """
     from textual.app import ScreenStackError
 
     try:
-        if isinstance(app.screen, UpdateDialog):
-            upd_tag, upd_url = app.screen._latest, app.screen._url
-            app.pop_screen()   # remove UpdateDialog
-            app.pop_screen()   # remove ConnectingDialog
-            await app.push_screen(UpdateDialog(upd_tag, upd_url))
-        else:
-            app.pop_screen()   # remove ConnectingDialog
+        if not any(isinstance(s, ConnectingDialog) for s in app.screen_stack):
+            return
+        lifted = await _pop_dialogs_above(app, lambda s: isinstance(s, ConnectingDialog))
+        await app.pop_screen()  # the splash itself
+        await _repush_dialogs(app, lifted)
     except ScreenStackError:
         pass
 
@@ -169,9 +213,9 @@ def _error_hint(exc: Exception, use_entra: bool) -> str:
     )
 
 
-async def run_stream(app: "FirewallLogApp") -> None:
+async def run_stream(app: FirewallLogApp) -> None:
     """Connect to Event Hub and stream events; reconnects automatically on error."""
-    from azure.eventhub.aio import EventHubConsumerClient  # type: ignore[import]
+    from azure.eventhub.aio import EventHubConsumerClient
 
     conn_str = os.environ.get("EVENT_HUB_CONNECTION_STRING", "")
     eh_namespace = os.environ.get("EVENT_HUB_NAMESPACE", "")  # fully qualified, e.g. mynamespace.servicebus.windows.net
@@ -204,7 +248,7 @@ async def run_stream(app: "FirewallLogApp") -> None:
 
     # Show the connecting splash and keep a flag so we know when to dismiss it.
     _dialog = ConnectingDialog(namespace, hub)
-    await app.push_screen(_dialog)
+    await _show_splash(app, _dialog)
     _splash_shown = True
     _credential = None  # track credential for cleanup on error
 
@@ -216,7 +260,7 @@ async def run_stream(app: "FirewallLogApp") -> None:
             # Build the client — prefer Entra ID when namespace+hub are set.
             if use_entra:
                 from azure.core.pipeline.transport import AsyncioRequestsTransport
-                from azure.identity.aio import DefaultAzureCredential  # type: ignore[import]
+                from azure.identity.aio import DefaultAzureCredential
                 _credential = DefaultAzureCredential(transport=AsyncioRequestsTransport())
                 client = EventHubConsumerClient(
                     fully_qualified_namespace=eh_namespace,
@@ -246,7 +290,7 @@ async def run_stream(app: "FirewallLogApp") -> None:
                         raise TimeoutError(
                             "Event Hub did not respond within 15 s — "
                             "check connection string and network"
-                        )
+                        ) from None
 
                     # Azure Event Hubs silently accepts AMQP receiver links regardless
                     # of permissions (authorization is enforced at message delivery,
@@ -269,7 +313,7 @@ async def run_stream(app: "FirewallLogApp") -> None:
                     status.status = "Connected"
                     app.sub_title = "Live Log Monitor  |  connected"
 
-                    async def on_event(_partition_ctx, event) -> None:  # type: ignore[misc]
+                    async def on_event(_partition_ctx, event) -> None:
                         nonlocal _splash_shown
                         if event is None or app._paused:
                             return
@@ -287,6 +331,7 @@ async def run_stream(app: "FirewallLogApp") -> None:
                                     # kebab-case firewall names.
                                     app.sub_title = rid.split("/")[-1].lower()
                                     app._fw_name_set = True
+                                    app.request_mgmt_load(rid)
                             row = parse_record(rec)
                             if row is None:
                                 continue

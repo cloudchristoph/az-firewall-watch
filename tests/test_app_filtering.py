@@ -10,9 +10,10 @@ import pytest
 from textual.widgets import DataTable, Input, Select, Static, Switch
 
 import viewer.app as app_module
-from dialogs import DetailDialog, StatusBar
+from dialogs import StatusBar
 from fw_parser import parse_record
 from viewer.app import FirewallLogApp
+from viewer.views.detail_screen import DetailDialog
 
 pytestmark = pytest.mark.usefixtures("no_eventhub_env", "no_update_check")
 
@@ -92,6 +93,39 @@ async def test_action_filter_narrows_rows(structured_record):
         table = app.query_one("#log-table", DataTable)
         assert table.row_count == 2
         assert app.query_one("#status", StatusBar).visible_count == 2
+
+
+async def test_traffic_preset_hides_rule_rows(structured_record):
+    app = FirewallLogApp()
+    async with app.run_test(size=(140, 40)) as pilot:
+        await pilot.pause()
+        app._pending.append(_net(structured_record, "2026-09-05T08:00:00Z"))
+        app._pending.append(parse_record(structured_record(
+            "AZFWFlowTrace", Protocol="TCP", SourceIp="10.3.14.68", SourcePort=60759,
+            DestinationIp="51.116.242.155", DestinationPort=443, Flag="FIN",
+        )))
+        await app._flush_rows()
+        await pilot.pause()
+        tbl = app.query_one("#log-table", DataTable)
+        assert tbl.row_count == 2
+        app.query_one("#f-cat", Select).value = "group:traffic"
+        await pilot.pause()
+        assert tbl.row_count == 1
+        assert "FlowTrace" in str(tbl.get_row_at(0)[1])
+        app.query_one("#f-cat", Select).value = "group:decisions"
+        await pilot.pause()
+        assert tbl.row_count == 1
+        assert "NetworkRule" in str(tbl.get_row_at(0)[1])
+
+
+async def test_dns_preset_disables_hide_dns(structured_record):
+    app = FirewallLogApp()
+    async with app.run_test(size=(140, 40)) as pilot:
+        await pilot.pause()
+        assert app.query_one("#f-hide-dns", Switch).value is True
+        app.query_one("#f-cat", Select).value = "group:dns"
+        await pilot.pause()
+        assert app.query_one("#f-hide-dns", Switch).value is False
 
 
 async def test_selecting_dnsquery_category_disables_hide_dns(structured_record):

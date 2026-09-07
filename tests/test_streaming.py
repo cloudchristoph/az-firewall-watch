@@ -8,14 +8,15 @@ from __future__ import annotations
 import asyncio
 import io
 import json
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 import pytest
 from textual.widgets import Static
 
 import viewer.app as app_module
 import viewer.streaming as streaming
-from dialogs import ConnectingDialog, ErrorDialog, StatusBar, UpdateDialog
+from dialogs import ConnectingDialog, ErrorDialog, PolicyContextNoticeDialog, StatusBar, UpdateDialog
 from viewer.app import FirewallLogApp
 
 pytestmark = pytest.mark.usefixtures("no_eventhub_env", "no_update_check", "fast_backoff")
@@ -62,7 +63,7 @@ class FakeClient:
     blocks until cancelled (like the real long-running receiver).
     """
 
-    instances: list["FakeClient"] = []
+    instances: list[FakeClient] = []
     script: list[dict] = []
 
     def __init__(self, **kwargs: Any) -> None:
@@ -74,10 +75,10 @@ class FakeClient:
         self._step = FakeClient.script.pop(0) if FakeClient.script else {}
 
     @classmethod
-    def from_connection_string(cls, conn_str: str, **kwargs: Any) -> "FakeClient":
+    def from_connection_string(cls, conn_str: str, **kwargs: Any) -> FakeClient:
         return cls(conn_str=conn_str, **kwargs)
 
-    async def __aenter__(self) -> "FakeClient":
+    async def __aenter__(self) -> FakeClient:
         self.entered = True
         return self
 
@@ -112,7 +113,7 @@ def fake_client(monkeypatch):
 
 
 class FakeCredential:
-    instances: list["FakeCredential"] = []
+    instances: list[FakeCredential] = []
 
     def __init__(self, **kwargs: Any) -> None:
         self.closed = False
@@ -147,7 +148,9 @@ async def wait_until(pilot, cond: Callable[[], bool], timeout: float = 5.0) -> N
 async def wait_for_dialog(pilot, app, cls, timeout: float = 5.0) -> None:
     """Wait until *cls* is the active screen and its widgets are composed."""
     await wait_until(pilot, lambda: isinstance(app.screen, cls), timeout)
-    await wait_until(pilot, lambda: len(list(app.screen.query(Static))) > 0, timeout)
+    # The '#dialog' container is itself a Static with empty content and mounts
+    # before its children; wait for a child with text (flaky on slow CI runners).
+    await wait_until(pilot, lambda: any(str(s.content).strip() for s in app.screen.query(Static)), timeout)
 
 
 def _records(firewall_id: str, n: int = 2) -> list[dict]:
@@ -287,6 +290,35 @@ async def test_update_dialog_survives_first_event(monkeypatch, fake_client, fire
         assert app.screen._latest == "9.9.9"
         assert not any(isinstance(s, ConnectingDialog) for s in app.screen_stack)
         assert len(app.screen_stack) == 2
+
+
+async def test_policy_context_notice_survives_first_event(monkeypatch, fake_client, firewall_id, tmp_path):
+    """The policy-context notice is pushed on top of the splash at start-up. The first
+    event must remove the splash underneath it, keep the notice, and keep its
+    callback wired so the answer still lands in .env."""
+    monkeypatch.setenv("EVENT_HUB_CONNECTION_STRING", SAS_CONN)
+    fake_client.script = [{"events": []}]
+    env = tmp_path / ".env"
+    env.write_text(f"EVENT_HUB_CONNECTION_STRING={SAS_CONN}\n", encoding="utf-8")
+    app = FirewallLogApp(policy_context=True, policy_context_notice=True, env_file=env)
+    async with app.run_test(size=(140, 40)) as pilot:
+        await wait_until(pilot, lambda: app.query_one("#status", StatusBar).status == "Connected")
+        # the splash is pushed *beneath* the notice, so the question is visible at once
+        assert [type(s).__name__ for s in app.screen_stack] == ["Screen", "ConnectingDialog", "PolicyContextNoticeDialog"]
+
+        client = fake_client.instances[0]
+        await client.on_event(None, FakeEvent(_records(firewall_id, 1)))
+        await pilot.pause(0.2)
+
+        assert isinstance(app.screen, PolicyContextNoticeDialog)  # bug: used to be popped
+        assert not any(isinstance(s, ConnectingDialog) for s in app.screen_stack)  # bug: used to linger
+        assert len(app.screen_stack) == 2
+
+        await pilot.click("#btn-disable")
+        await wait_until(pilot, lambda: not isinstance(app.screen, PolicyContextNoticeDialog))
+        await pilot.pause()
+        assert [p.id for p in app.query("TabPane")] == ["tab-logs"]
+    assert "POLICY_CONTEXT=off" in env.read_text(encoding="utf-8")
 
 
 # ── retries and errors ───────────────────────────────────────────────────────

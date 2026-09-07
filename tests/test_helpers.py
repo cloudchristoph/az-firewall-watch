@@ -6,7 +6,7 @@ import time
 
 import pytest
 
-from helpers import _category_text, _highlight, _parse_eventhub_endpoint, _to_local, load_env
+from helpers import _category_text, _highlight, _parse_eventhub_endpoint, _to_local, _utc_short, load_env
 
 
 @pytest.fixture
@@ -18,6 +18,17 @@ def utc_tz(monkeypatch):
     yield
     if hasattr(time, "tzset"):
         time.tzset()
+
+
+@pytest.mark.parametrize("raw, expected", [
+    ("2026-09-07T16:14:09.903912+00:00", "2026-09-07T16:14:09Z"),   # ARM-style, six digits
+    ("2026-09-05T08:00:00.5000000Z", "2026-09-05T08:00:00Z"),       # seven digits, Z suffix
+    ("2026-09-05T08:00:00Z", "2026-09-05T08:00:00Z"),
+    ("2026-09-05T10:00:00+02:00", "2026-09-05T08:00:00Z"),          # converted to UTC
+    ("not a time", "not a time"),
+])
+def test_utc_short_trims_to_seconds(raw, expected):
+    assert _utc_short(raw) == expected
 
 
 def test_to_local_converts_iso_utc(utc_tz):

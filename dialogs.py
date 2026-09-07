@@ -1,14 +1,13 @@
 from __future__ import annotations
 
+from collections.abc import Callable
+
 from textual import events
 from textual.app import ComposeResult
 from textual.containers import Horizontal
 from textual.reactive import reactive
 from textual.screen import ModalScreen
 from textual.widgets import Button, LoadingIndicator, Static
-
-from fw_parser import FirewallDataRow
-from helpers import _to_local
 
 
 class ConnectingDialog(ModalScreen[None]):
@@ -127,79 +126,79 @@ class ErrorDialog(ModalScreen[None]):
             self.app.exit()
 
 
-class DetailDialog(ModalScreen[None]):
-    """Full details for a single log row, opened with Enter or double-click."""
+class PolicyContextNoticeDialog(ModalScreen[bool]):
+    """One-time notice: policy context is on and reaches beyond the Event Hub.
+
+    Dismisses with ``True`` to keep it enabled, ``False`` to switch it off.
+    """
+
+    AUTO_FOCUS = "#btn-keep"  # so 'Enter' really means 'Keep enabled'
+    # Result callback to re-attach when the connecting splash re-pushes this
+    # dialog (see streaming._repush_dialogs). Set by whoever pushes the dialog.
+    repush_callback: Callable[[bool | None], None] | None = None
 
     DEFAULT_CSS = """
-    DetailDialog {
+    PolicyContextNoticeDialog {
         align: center middle;
     }
-    DetailDialog > #dialog {
+    PolicyContextNoticeDialog > #dialog {
         width: 84;
+        max-width: 96%;
         height: auto;
         background: $surface;
-        border: thick $primary;
+        border: thick $warning;
         padding: 1 2;
     }
-    DetailDialog > #dialog > #title {
+    PolicyContextNoticeDialog > #dialog > #enr-title {
         text-style: bold;
+        color: $warning;
         margin-bottom: 1;
     }
-    DetailDialog > #dialog > .detail-row {
-        height: auto;
+    PolicyContextNoticeDialog > #dialog > #enr-body {
+        margin-bottom: 1;
     }
-    DetailDialog > #dialog > Button {
-        width: 100%;
-        margin-top: 1;
+    PolicyContextNoticeDialog > #dialog > #enr-hint {
+        color: $text-muted;
+        margin-bottom: 1;
+    }
+    PolicyContextNoticeDialog > #dialog > .btn-row {
+        height: 3;
+    }
+    PolicyContextNoticeDialog > #dialog > .btn-row > Button {
+        width: 1fr;
     }
     """
 
-    def __init__(self, row: FirewallDataRow) -> None:
-        super().__init__()
-        self._row = row
-
-    @staticmethod
-    def _field(label: str, value: str) -> Static:
-        safe = value.replace("[", "\\[")
-        return Static(f"[dim]{label}[/]  {safe}", markup=True, classes="detail-row")
-
     def compose(self) -> ComposeResult:
-        row = self._row
         with Static(id="dialog"):
-            yield Static(f"Log Entry — {row.category}", id="title")
+            yield Static("Policy context is ON", id="enr-title")
+            yield Static(
+                "Beyond reading the Event Hub, this viewer will:\n"
+                "• read the firewall, its policy and IP groups via Azure Resource Manager (Reader role)\n"
+                "• use a token from the Azure CLI as fallback (az account get-access-token)\n"
+                "• cache that metadata for one hour in ~/.az-firewall-watch/cache.json\n"
+                "\n"
+                "Nothing is written to Azure. In return you get the Firewall, Policy and "
+                "IP Groups tabs, enriched rows and the evaluation trace.",
+                id="enr-body",
+            )
+            yield Static("Saved to .env as POLICY_CONTEXT=on|off — change it there or run with --no-policy-context.", id="enr-hint")
+            with Horizontal(classes="btn-row"):
+                yield Button("Keep enabled  (Enter)", variant="success", id="btn-keep")
+                yield Button("Disable", variant="default", id="btn-disable")
 
-            yield self._field("Time (UTC)   ", row.time)
-            yield self._field("Time (Local) ", _to_local(row.time))
-            yield self._field("Category     ", row.category)
-            yield self._field("Protocol     ", row.protocol)
-            yield self._field("Source       ", f"{row.sourceip}:{row.srcport}")
-            yield self._field("Destination  ", f"{row.targetip}:{row.targetport}")
-            yield self._field("Action       ", row.action)
+    def recreate(self) -> PolicyContextNoticeDialog:
+        """Fresh copy for re-pushing after the connecting splash is removed."""
+        return PolicyContextNoticeDialog()
 
-            if row.fw_policy:
-                yield self._field("Policy       ", row.fw_policy)
-            if row.rule_collection_group:
-                yield self._field("RCG          ", row.rule_collection_group)
-            if row.rule_collection:
-                yield self._field("Rule Coll.   ", row.rule_collection)
-            if row.rule_name:
-                yield self._field("Rule         ", row.rule_name)
-            if not any([row.fw_policy, row.rule_collection_group, row.rule_collection, row.rule_name]) and row.policy:
-                yield self._field("Policy / Info", row.policy)
-            if row.moreinfo:
-                yield self._field("More Info    ", row.moreinfo)
 
-            yield Button("Close  (Esc)", variant="primary", id="btn-close")
-
-    def on_button_pressed(self, _event: Button.Pressed) -> None:
-        self.dismiss()
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        self.dismiss(event.button.id == "btn-keep")
 
     def on_key(self, event: events.Key) -> None:
-        if event.key in ("q", "escape"):
-            # Stop the key here: once the modal is gone the event would bubble
-            # on to the App and trigger its own q / escape bindings.
+        if event.key in ("escape", "q"):
             event.stop()
-            self.dismiss()
+            self.dismiss(True)  # closing means "leave it as it is"
 
 
 class StatusBar(Static):
@@ -210,17 +209,19 @@ class StatusBar(Static):
     visible_count: reactive[int] = reactive(-1)  # -1 = no filter active
     skipped: reactive[int] = reactive(0)
     paused: reactive[bool] = reactive(False)
+    meta: reactive[str] = reactive("")  # management-plane metadata summary
 
-    def render(self) -> str:  # type: ignore[override]
+    def render(self) -> str:
         icon = "⏸ PAUSED" if self.paused else "▶ LIVE"
         skipped_part = f"   Skipped: {self.skipped}" if self.skipped else ""
         if self.visible_count >= 0:
             events_part = f"Events (filtered): {self.visible_count}/{self.total}"
         else:
             events_part = f"Events: {self.total}"
+        meta_part = f"   │   {self.meta}" if self.meta else ""
         return (
             f" {icon}   {self.status}   │   "
-            f"{events_part}{skipped_part} "
+            f"{events_part}{skipped_part}{meta_part} "
         )
 
     def watch_paused(self, paused: bool) -> None:
@@ -264,6 +265,12 @@ class UpdateDialog(ModalScreen[None]):
         super().__init__()
         self._latest = latest
         self._url = url
+
+    repush_callback = None  # pushed without a result callback; kept for the splash re-push protocol
+
+    def recreate(self) -> UpdateDialog:
+        """Fresh copy for re-pushing after the connecting splash is removed."""
+        return UpdateDialog(self._latest, self._url)
 
     def compose(self) -> ComposeResult:
         with Static(id="dialog"):

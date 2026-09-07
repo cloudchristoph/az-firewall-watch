@@ -1,0 +1,242 @@
+"""Row detail dialog: the log entry on the left, its evaluation trace on the right.
+
+The trace column only exists when the app could build one (policy context on and
+policy metadata loaded). Without it the dialog is the plain, narrow entry view.
+"""
+from __future__ import annotations
+
+from textual import events
+from textual.app import ComposeResult
+from textual.containers import Horizontal, Vertical
+from textual.screen import ModalScreen
+from textual.widgets import Button, Static
+
+from fw_parser import FirewallDataRow, tcp_direction
+from helpers import _to_local, _utc_short
+
+from ..trace import Trace
+from .trace_screen import TracePanel
+
+# Values longer than this go on their own line under the label instead of
+# wrapping mid-word at the pane edge (long FQDNs, rule definitions).
+_INLINE_VALUE_MAX = 34
+
+# The columns mean different things per category; the labels say what a row's
+# value really is instead of the table's generic column names.
+_ACTION_LABEL = {"flowtrace": "Flag", "fatflow": "Rate", "dnsquery": "Response", "dnsfailure": "Result"}
+_INFO_LABEL = {"threatintel": "Threat", "dnsfailure": "Error"}
+_PROTOCOL_LABEL = {"dnsquery": "Query type"}
+_SOURCE_LABEL = {"dnsquery": "Client"}
+_DEST_LABEL = {"dnsquery": "Query", "dnsfailure": "FQDN"}
+_INFO_HIDDEN = {"flowtrace", "fatflow", "idps"}  # rendered in their own way below
+_IDPS_FIELDS = ("Severity", "Signature", "Class", "Description")  # "Class": the Category row names the log category
+
+
+def _ports_join(address: str, port: str) -> str:
+    return address if not port or port == "-" else f"{address}:{port}"
+
+
+def _ports(src: str, dst: str) -> str:
+    """``47972 → 443`` — one line for both ports, so long FQDNs stay unbroken.
+
+    Empty when the log has no ports (ICMP, DNS rows); a missing side shows as ``-``.
+    """
+    s = src if src and src != "-" else ""
+    d = dst if dst and dst != "-" else ""
+    if not s and not d:
+        return ""
+    return f"{s or '-'} → {d or '-'}"
+
+
+class DetailDialog(ModalScreen[str | None]):
+    """Opened with Enter or double-click on a log row.
+
+    Dismisses with a rule ref (``policy|rcg|rc|rule``, the key the Policy tab
+    understands) when a rule is chosen in the trace, else ``None``.
+    """
+
+    DEFAULT_CSS = """
+    DetailDialog {
+        align: center middle;
+    }
+    DetailDialog > #dialog {
+        width: 84;
+        height: auto;
+        max-height: 92%;
+        background: $surface;
+        border: thick $primary;
+        padding: 1 2;
+    }
+    DetailDialog.-with-trace > #dialog {
+        width: 96%;
+        height: 92%;
+    }
+    DetailDialog > #dialog > #detail-pane {
+        width: 100%;
+        height: auto;
+    }
+    DetailDialog.-with-trace > #dialog > #detail-pane {
+        width: 52;
+        height: 100%;
+        overflow-y: auto;
+        margin-right: 2;
+        border-right: solid $panel;
+        padding-right: 1;
+    }
+    DetailDialog > #dialog > TracePanel {
+        width: 1fr;
+        height: 100%;
+    }
+    DetailDialog #title {
+        text-style: bold;
+        margin-bottom: 1;
+    }
+    DetailDialog .detail-row {
+        height: auto;
+    }
+    DetailDialog #detail-pane > .btn-row {
+        height: 3;
+        margin-top: 1;
+        align-horizontal: right;
+    }
+    DetailDialog #detail-pane > .btn-row > Button {
+        width: auto;
+        min-width: 16;
+    }
+    """
+
+    def __init__(self, row: FirewallDataRow, *, enrichment: dict | None = None,
+                 trace: Trace | None = None) -> None:
+        super().__init__()
+        self._row = row
+        self._enrichment: dict = enrichment or {}
+        self._trace = trace
+        if trace is not None:
+            self.add_class("-with-trace")
+
+    @property
+    def has_trace(self) -> bool:
+        return self._trace is not None
+
+    @staticmethod
+    def _field(label: str, value: str) -> Static:
+        safe = value.replace("[", "\\[")
+        if len(value) > _INLINE_VALUE_MAX:
+            return Static(f"[dim]{label.rstrip()}[/]\n  {safe}", markup=True, classes="detail-row")
+        return Static(f"[dim]{label.ljust(13)}[/]  {safe}", markup=True, classes="detail-row")
+
+    def compose(self) -> ComposeResult:
+        with Horizontal(id="dialog"):
+            with Vertical(id="detail-pane"):
+                yield from self._entry_fields()
+                with Horizontal(classes="btn-row"):
+                    yield Button("Close  (Esc)", variant="primary", id="btn-close")
+            if self._trace is not None:
+                yield TracePanel(self._trace, id="trace-panel")
+
+    def _entry_fields(self) -> ComposeResult:
+        """The row's own fields; with a trace beside them, whatever the trace
+        already shows (policy path, priorities, action, SKU) is left out."""
+        row = self._row
+        with_trace = self._trace is not None
+        yield Static(f"Log Entry — {row.category}", id="title")
+
+        yield self._field("Time (UTC)   ", _utc_short(row.time))
+        yield self._field("Time (Local) ", _to_local(row.time))
+        cat = row.category.lower()
+        yield self._field("Category     ", row.category)
+        if row.protocol and row.protocol != "-":
+            yield self._field(_PROTOCOL_LABEL.get(cat, "Protocol").ljust(13), row.protocol)
+        if cat in ("flowtrace", "fatflow"):
+            # The log's source/destination are the packet's. Show the connection
+            # client → server, then say which way this packet went.
+            yield from self._flowtrace_fields(row)
+        elif cat == "natrule" and row.nat_dst_ip:
+            # what the client hit, then what the firewall turned it into
+            yield self._field("Source       ", row.sourceip)
+            yield self._field("Destination  ", row.nat_dst_ip)
+            ports = _ports(row.srcport, row.nat_dst_port)
+            if ports:
+                yield self._field("Ports        ", ports)
+            yield self._field("Translated   ", _ports_join(row.targetip, row.targetport))
+        else:
+            yield self._field(_SOURCE_LABEL.get(cat, "Source").ljust(13), row.sourceip)
+            yield self._field(_DEST_LABEL.get(cat, "Destination").ljust(13), row.targetip)
+            ports = _ports(row.srcport, row.targetport)
+            if ports:
+                yield self._field("Ports        ", ports)
+        yield self._field(_ACTION_LABEL.get(cat, "Action").ljust(13), row.action)
+        if cat == "idps" and row.moreinfo:
+            # parser joins "SEV:n · id · category · description"
+            for label, value in zip(_IDPS_FIELDS, row.moreinfo.split(" · "), strict=False):
+                yield self._field(label.ljust(13), value[4:] if label == "Severity" and value.startswith("SEV:") else value)
+
+        if row.fw_policy and not with_trace:
+            yield self._field("Policy       ", row.fw_policy)
+        if row.rule_collection_group and not with_trace:
+            yield self._field("RCG          ", row.rule_collection_group)
+        if row.rule_collection and not with_trace:
+            yield self._field("Rule Coll.   ", row.rule_collection)
+        if row.rule_name and not with_trace:
+            yield self._field("Rule         ", row.rule_name)
+        if not any([row.fw_policy, row.rule_collection_group, row.rule_collection, row.rule_name]) and row.policy:
+            yield self._field("Policy / Info", row.policy)
+        if row.moreinfo and cat not in _INFO_HIDDEN:
+            yield self._field(_INFO_LABEL.get(cat, "More Info").ljust(13), row.moreinfo)
+
+        enr = self._enrichment
+        if enr:
+            yield Static("")  # blank spacer
+            if enr.get("source_fw_instance"):
+                yield self._field("Source (FW)  ", enr["source_fw_instance"])
+            if enr.get("dest_fw_instance"):
+                yield self._field("Dest   (FW)  ", enr["dest_fw_instance"])
+            if enr.get("source_ip_groups"):
+                yield self._field("Src IP Groups", ", ".join(enr["source_ip_groups"]))
+            if enr.get("dest_ip_groups"):
+                yield self._field("Dst IP Groups", ", ".join(enr["dest_ip_groups"]))
+            if enr.get("rule_policy") and not with_trace:
+                yield self._field("Rule Policy  ", enr["rule_policy"])
+            if enr.get("rule_priority") and not with_trace:
+                yield self._field("Rule Priority", enr["rule_priority"])
+            if enr.get("rule_action") and not with_trace:
+                yield self._field("Rule Action  ", enr["rule_action"])
+            if enr.get("rule_definition"):
+                yield self._field("Rule Def.    ", enr["rule_definition"])  # the tree shows checks, not the whole rule
+
+    def _flowtrace_fields(self, row: FirewallDataRow) -> ComposeResult:
+        flag = row.action if row.category.lower() == "flowtrace" else ""  # FatFlow has a rate there
+        direction = tcp_direction(flag, row.srcport, row.targetport)
+        src = _ports_join(row.sourceip, row.srcport)
+        dst = _ports_join(row.targetip, row.targetport)
+        if direction == "server → client":
+            client, server = dst, src
+        else:
+            client, server = src, dst
+        yield self._field("Flow         ", f"{client} → {server}")
+        if direction:
+            yield self._field("Packet       ", f"{row.sourceip} → {row.targetip}  ({direction})")
+        else:
+            yield self._field("Packet       ", f"{row.sourceip} → {row.targetip}  (direction unknown)")
+
+    def on_mount(self) -> None:
+        if self._trace is None:
+            self.query_one("#btn-close", Button).focus()
+
+    # ── interaction ─────────────────────────────────────────────────────────
+    def on_button_pressed(self, _event: Button.Pressed) -> None:
+        self.dismiss(None)
+
+    def on_trace_panel_rule_chosen(self, event: TracePanel.RuleChosen) -> None:
+        event.stop()
+        self.dismiss(event.rule_ref)
+
+    def on_key(self, event: events.Key) -> None:
+        if event.key in ("q", "escape"):
+            # Stop the key here: once the modal is gone the event would bubble
+            # on to the App and trigger its own q / escape bindings.
+            event.stop()
+            self.dismiss(None)
+        elif event.key == "a" and self._trace is not None:
+            event.stop()
+            self.query_one(TracePanel).toggle_expand_all()

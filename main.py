@@ -11,6 +11,11 @@ Key bindings
   c        Clear all rows
   Escape   Clear all filter inputs
   f        Focus the Source-IP filter
+
+Options
+  --reconfigure     redo the setup wizard
+  --policy-context      force policy context on for this run
+  --no-policy-context   force it off (no ARM access, no cache, Logs tab only)
 """
 from __future__ import annotations
 
@@ -18,7 +23,7 @@ import os
 import sys
 
 from viewer import FirewallLogApp
-from viewer.config import BASE_DIR, load_env
+from viewer.config import BASE_DIR, load_env, policy_context_setting
 
 
 def _maybe_run_wizard() -> None:
@@ -36,7 +41,12 @@ def _maybe_run_wizard() -> None:
 def main() -> None:
     load_env(BASE_DIR / ".env")
     _maybe_run_wizard()
-    FirewallLogApp().run()
+    enabled, explicit = policy_context_setting(sys.argv, os.environ)
+    FirewallLogApp(
+        policy_context=enabled,
+        policy_context_notice=enabled and not explicit,  # nobody decided yet → say what is on
+        env_file=BASE_DIR / ".env",
+    ).run()
 
 
 if __name__ == "__main__":

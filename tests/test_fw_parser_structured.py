@@ -75,6 +75,7 @@ def test_nat_rule_shows_translated_target_and_dnat_action(structured_record):
     assert row.category == "NATRule"
     assert row.action == "DNAT"
     assert (row.targetip, row.targetport) == ("10.0.3.4", "3389")
+    assert (row.nat_dst_ip, row.nat_dst_port) == ("20.1.1.1", "3389")  # the public side, for the trace
     assert row.policy == "pol-hub»rcg-default»rc-allow»r-web"
 
 
@@ -118,7 +119,16 @@ def test_idps_signature_moreinfo_combines_severity_and_signature(structured_reco
     ))
     assert row.category == "IDPS"
     assert row.action == "Alert"
-    assert row.moreinfo == "SEV:1 2024897 Attempted User Privilege Gain ET TEST"
+    assert row.moreinfo == "SEV:1 · 2024897 · Attempted User Privilege Gain · ET TEST"
+
+
+def test_idps_lowercase_action_from_the_firewall_is_capitalised(structured_record):
+    row = parse_record(structured_record(
+        "AZFWIdpsSignature", Protocol="TCP", SourceIp="10.3.7.4", SourcePort=47524,
+        DestinationIp="10.3.6.4", DestinationPort=80, Action="alert", Severity=2, SignatureId=2032081,
+        Category="Potentially Bad Traffic", Description="HaxerMen",
+    ))
+    assert row.action == "Alert"
 
 
 def test_threat_intel(structured_record):
@@ -131,6 +141,23 @@ def test_threat_intel(structured_record):
     assert row.category == "ThreatIntel"
     assert row.action == "Deny"
     assert row.moreinfo == "Known malicious IP"
+
+
+def test_threat_intel_http_hit_shows_the_fqdn(structured_record):
+    """HTTP/HTTPS indicators arrive with Fqdn set and DestinationIp empty."""
+    row = parse_record(structured_record(
+        "AZFWThreatIntel", Protocol="HTTP", SourceIp="10.3.8.4", SourcePort=56266,
+        DestinationIp="", DestinationPort=80, Fqdn="testmaliciousdomain.eastus.cloudapp.azure.com",
+        Action="alert", ThreatDescription="This is a test indicator for a Microsoft Threat Intelligence test.",
+    ))
+    assert row.targetip == "testmaliciousdomain.eastus.cloudapp.azure.com"
+    assert row.action == "Alert"
+
+
+def test_fqdn_resolve_failure_table_name_is_an_alias(structured_record):
+    """Log Analytics names the table AZFWInternalFqdnResolutionFailure; the category is AZFWFqdnResolveFailure."""
+    row = parse_record(structured_record("AZFWInternalFqdnResolutionFailure", Fqdn="nope.invalid", Error="NXDOMAIN", **RULE_PROPS))
+    assert row is not None and row.category == "DnsFailure" and row.action == "ResolveFail"
 
 
 def test_fqdn_resolve_failure_is_dnsfailure_with_resolvefail(structured_record):
@@ -156,7 +183,28 @@ def test_flow_trace_shows_flag_as_action(structured_record):
     assert row.category == "FlowTrace"
     assert row.action == "INVALID"
     assert (row.sourceip, row.srcport, row.targetip, row.targetport) == ("10.0.1.4", "51000", "10.0.2.5", "443")
-    assert row.moreinfo == "Log Additional TCP Log"
+    assert row.moreinfo == "client → server"  # the boilerplate reason is dropped, direction shown instead
+
+
+@pytest.mark.parametrize("flag, sport, dport, expected", [
+    ("SYN", "50674", "443", "client → server"),
+    ("SYN-ACK", "443", "50674", "server → client"),
+    ("FIN", "50674", "443", "client → server"),      # ephemeral port side is the client
+    ("FIN", "443", "50674", "server → client"),
+    ("RST", "443", "443", ""),                        # cannot tell
+    ("FIN", "-", "443", ""),
+])
+def test_flowtrace_packet_direction(flag, sport, dport, expected):
+    from fw_parser import tcp_direction
+    assert tcp_direction(flag, sport, dport) == expected
+
+
+def test_flowtrace_keeps_a_non_boilerplate_reason(structured_record):
+    row = parse_record(structured_record(
+        "AZFWFlowTrace", Protocol="TCP", SourceIp="10.0.1.4", SourcePort=51000, DestinationIp="10.0.2.5",
+        DestinationPort=443, Flag="RST", Action="Log", ActionReason="Something unusual",
+    ))
+    assert row.moreinfo == "client → server · Log Something unusual"
     assert row.policy == ""
 
 
@@ -175,7 +223,7 @@ def test_fat_flow_real_record(structured_record):
     assert row.category == "FatFlow"
     assert row.action == "3.3 Mbps"
     assert (row.sourceip, row.srcport, row.targetip, row.targetport) == ("146.75.118.114", "443", "10.2.0.6", "13590")
-    assert row.moreinfo == "Top flow by bandwidth"
+    assert row.moreinfo == "server → client"  # 443 → high port
 
 
 @pytest.mark.parametrize(

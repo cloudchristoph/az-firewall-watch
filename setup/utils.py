@@ -3,10 +3,9 @@ from __future__ import annotations
 import asyncio
 import shutil
 import subprocess
-from typing import Optional
 
 
-def find_az() -> Optional[str]:
+def find_az() -> str | None:
     """Return the Azure CLI executable path if installed."""
     return shutil.which("az") or shutil.which("az.cmd")
 

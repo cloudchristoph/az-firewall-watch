@@ -83,6 +83,10 @@ A KQL query against `AZFWFqdnResolveFailure` fails with `SEM0100` because no suc
 table exists, and a diagnostic setting for `AZFWInternalFqdnResolutionFailure` is
 equally invalid. Every other category keeps its name as the table name.
 
+The parser accepts both spellings, so a record arriving under either name is
+rendered as a `DnsFailure` row. What you put in the diagnostic setting still has
+to be `AZFWFqdnResolveFailure`, since that is the only one Azure offers there.
+
 > [!NOTE]
 > `NATRule` rows only appear when a DNAT rule actually matches. A firewall with
 > DNAT rules that nothing hits produces no `AZFWNatRule` records at all, so an

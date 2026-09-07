@@ -695,6 +695,7 @@ async def test_policy_details_escape_markup(structured_record, mgmt, firewall_id
         await _load(app, pilot, firewall_id)
         view = app.query_one("#policy-view", PolicyView)
         assert view.focus_rule("fwp-hub-premium-gwc|rcg-net|rc-web|allow-web")
-        await pilot.pause()
+        # the cursor move and selection happen after the next refresh (slow on Windows CI)
+        await wait_until(pilot, lambda: "Rule: allow-web" in str(app.query_one("#policy-details", Static).content))
         details = str(app.query_one("#policy-details", Static).content)
         assert "ipgroup-all-spokes: (10.3.0.0/16)" in details   # parentheses, no bracket markup

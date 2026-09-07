@@ -17,6 +17,8 @@ from fw_parser import parse_record
 from helpers import _parse_eventhub_endpoint
 
 if TYPE_CHECKING:
+    from textual.screen import Screen
+
     from .app import FirewallLogApp
 
 

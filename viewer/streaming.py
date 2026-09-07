@@ -10,7 +10,8 @@ from __future__ import annotations
 import asyncio
 import json
 import os
-from typing import TYPE_CHECKING, Any, Callable
+from collections.abc import Callable
+from typing import TYPE_CHECKING, Any
 
 from dialogs import ConnectingDialog, ErrorDialog, StatusBar
 from fw_parser import parse_record
@@ -139,7 +140,7 @@ def resolve_start_position(value: str | None) -> str:
 # it), so it stays visible and its answer still lands.
 
 
-async def _pop_dialogs_above(app: "FirewallLogApp", is_anchor: "Callable[[Screen], bool]") -> list[tuple[Any, Any]]:
+async def _pop_dialogs_above(app: FirewallLogApp, is_anchor: Callable[[Screen], bool]) -> list[tuple[Any, Any]]:
     """Pop screens until ``is_anchor(app.screen)``; return (screen, callback) topmost first."""
     popped: list[tuple[Any, Any]] = []
     while not is_anchor(app.screen):
@@ -149,7 +150,7 @@ async def _pop_dialogs_above(app: "FirewallLogApp", is_anchor: "Callable[[Screen
     return popped
 
 
-async def _repush_dialogs(app: "FirewallLogApp", popped: list[tuple[Any, Any]]) -> None:
+async def _repush_dialogs(app: FirewallLogApp, popped: list[tuple[Any, Any]]) -> None:
     for screen, callback in reversed(popped):
         recreate = getattr(screen, "recreate", None)
         if recreate is not None:
@@ -158,7 +159,7 @@ async def _repush_dialogs(app: "FirewallLogApp", popped: list[tuple[Any, Any]]) 
             await app.push_screen(fresh, callback=callback)
 
 
-async def _show_splash(app: "FirewallLogApp", splash: ConnectingDialog) -> None:
+async def _show_splash(app: FirewallLogApp, splash: ConnectingDialog) -> None:
     """Push the splash directly above the main screen, beneath any open dialog."""
     from textual.app import ScreenStackError
 
@@ -171,7 +172,7 @@ async def _show_splash(app: "FirewallLogApp", splash: ConnectingDialog) -> None:
         pass
 
 
-async def _remove_splash(app: "FirewallLogApp") -> None:
+async def _remove_splash(app: FirewallLogApp) -> None:
     """Remove the ConnectingDialog wherever it sits in the screen stack.
 
     Popping blindly would close whichever dialog is on top and leave the splash
@@ -212,9 +213,9 @@ def _error_hint(exc: Exception, use_entra: bool) -> str:
     )
 
 
-async def run_stream(app: "FirewallLogApp") -> None:
+async def run_stream(app: FirewallLogApp) -> None:
     """Connect to Event Hub and stream events; reconnects automatically on error."""
-    from azure.eventhub.aio import EventHubConsumerClient  # type: ignore[import]
+    from azure.eventhub.aio import EventHubConsumerClient
 
     conn_str = os.environ.get("EVENT_HUB_CONNECTION_STRING", "")
     eh_namespace = os.environ.get("EVENT_HUB_NAMESPACE", "")  # fully qualified, e.g. mynamespace.servicebus.windows.net
@@ -259,7 +260,7 @@ async def run_stream(app: "FirewallLogApp") -> None:
             # Build the client — prefer Entra ID when namespace+hub are set.
             if use_entra:
                 from azure.core.pipeline.transport import AsyncioRequestsTransport
-                from azure.identity.aio import DefaultAzureCredential  # type: ignore[import]
+                from azure.identity.aio import DefaultAzureCredential
                 _credential = DefaultAzureCredential(transport=AsyncioRequestsTransport())
                 client = EventHubConsumerClient(
                     fully_qualified_namespace=eh_namespace,
@@ -312,7 +313,7 @@ async def run_stream(app: "FirewallLogApp") -> None:
                     status.status = "Connected"
                     app.sub_title = "Live Log Monitor  |  connected"
 
-                    async def on_event(_partition_ctx, event) -> None:  # type: ignore[misc]
+                    async def on_event(_partition_ctx, event) -> None:
                         nonlocal _splash_shown
                         if event is None or app._paused:
                             return

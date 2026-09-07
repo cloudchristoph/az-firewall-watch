@@ -2,8 +2,8 @@
 from __future__ import annotations
 
 from rich.markup import escape
-from textual.containers import Horizontal
 from textual.app import ComposeResult
+from textual.containers import Horizontal
 from textual.widgets import Static, Tree
 from textual.widgets.tree import TreeNode
 

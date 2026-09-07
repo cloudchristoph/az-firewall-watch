@@ -20,7 +20,7 @@ def load_env(path: Path, override: bool = False) -> None:
 _FRACTION_RE = re.compile(r"\.(\d+)")
 
 
-def _normalise_fraction(match: "re.Match[str]") -> str:
+def _normalise_fraction(match: re.Match[str]) -> str:
     return "." + match.group(1)[:6].ljust(6, "0")
 
 

@@ -38,7 +38,7 @@ class _WizardScreen(Screen):
     """Base screen that exposes a typed accessor for :class:`WizardApp`."""
 
     @property
-    def _wizard_app(self) -> "WizardApp":
+    def _wizard_app(self) -> WizardApp:
         return cast("WizardApp", self.app)
 
 
@@ -133,7 +133,7 @@ class ConfirmCreateRuleScreen(ModalScreen[bool]):
             return
         self.dismiss(False)
 
-    def on_key(self, event) -> None:  # type: ignore[override]
+    def on_key(self, event) -> None:
         if event.key in ("escape", "q"):
             self.dismiss(False)
 
@@ -181,7 +181,7 @@ class AuthMethodScreen(ModalScreen[str | None]):
                 case "opt-sas":
                     self.dismiss("sas")
 
-    def on_key(self, event) -> None:  # type: ignore[override]
+    def on_key(self, event) -> None:
         if event.key in ("escape", "q"):
             self.dismiss(None)
 
@@ -220,7 +220,7 @@ class PolicyContextScreen(ModalScreen[bool | None]):
                 return
             self.dismiss(radio.pressed_button.id == "opt-context-on")
 
-    def on_key(self, event) -> None:  # type: ignore[override]
+    def on_key(self, event) -> None:
         if event.key in ("escape", "q"):
             event.stop()
             self.dismiss(None)

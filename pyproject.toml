@@ -6,3 +6,19 @@ addopts = "-q"
 markers = [
     "live: optional integration tests against a real Azure environment (skipped unless AZFW_LIVE_* env vars are set)",
 ]
+
+[tool.ruff]
+line-length = 120
+target-version = "py310"
+extend-exclude = ["build", "dist"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP"]
+# E501: long lines are mostly TUI strings and table rows; E701: deliberate one-line guards
+ignore = ["E501", "E701"]
+
+[tool.mypy]
+python_version = "3.10"
+files = ["main.py", "fw_parser.py", "helpers.py", "dialogs.py", "viewer", "setup"]
+ignore_missing_imports = true
+warn_unused_ignores = true

@@ -286,7 +286,7 @@ def nearest_miss(c: CollectionTrace) -> Check | None:
     return first_problem(best)
 
 
-def nearest_rules(trace: "Trace", limit: int = 3) -> list[RuleTrace]:
+def nearest_rules(trace: Trace, limit: int = 3) -> list[RuleTrace]:
     """Closest rules that did *not* match (miss or unknown) across all evaluated
     collections — the candidates to look at on a 'no rule matched' row.
     Computed matches are excluded; the view flags those separately."""

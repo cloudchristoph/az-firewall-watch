@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional
 
 
 def _read_env_text(env_file: Path) -> str:
@@ -13,7 +12,7 @@ def _read_env_text(env_file: Path) -> str:
         return env_file.read_text(encoding="latin-1")
 
 
-def get_existing_conn_str(env_file: Path) -> Optional[str]:
+def get_existing_conn_str(env_file: Path) -> str | None:
     """Return a non-empty connection string from .env, or None."""
     if not env_file.exists():
         return None

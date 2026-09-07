@@ -18,7 +18,6 @@ from typing import Any
 
 import aiohttp
 
-
 _ARM_BASE = "https://management.azure.com"
 _ARM_SCOPE = "https://management.azure.com/.default"
 _ARM_RESOURCE = "https://management.azure.com"

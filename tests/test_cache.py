@@ -11,7 +11,14 @@ from pathlib import Path
 import pytest
 
 import viewer.cache as cache
-from viewer.azure_resources import FirewallInfo, FirewallPolicyInfo, IpGroupInfo, Rule, RuleCollection, RuleCollectionGroup
+from viewer.azure_resources import (
+    FirewallInfo,
+    FirewallPolicyInfo,
+    IpGroupInfo,
+    Rule,
+    RuleCollection,
+    RuleCollectionGroup,
+)
 
 FW_ID = "/subscriptions/s/resourceGroups/rg/providers/Microsoft.Network/azureFirewalls/fw"
 

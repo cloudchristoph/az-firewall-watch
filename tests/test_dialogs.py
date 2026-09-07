@@ -10,9 +10,9 @@ from textual.widgets import DataTable, Input, Static, Switch
 
 import viewer.app as app_module
 from dialogs import StatusBar
-from viewer.views.detail_screen import DetailDialog
 from fw_parser import parse_record
 from viewer.app import FirewallLogApp
+from viewer.views.detail_screen import DetailDialog
 
 pytestmark = pytest.mark.usefixtures("no_eventhub_env", "no_update_check")
 

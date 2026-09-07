@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Callable
+from collections.abc import Callable
 
 from textual import events
 from textual.app import ComposeResult
@@ -8,7 +8,6 @@ from textual.containers import Horizontal
 from textual.reactive import reactive
 from textual.screen import ModalScreen
 from textual.widgets import Button, LoadingIndicator, Static
-
 
 
 class ConnectingDialog(ModalScreen[None]):
@@ -136,7 +135,7 @@ class PolicyContextNoticeDialog(ModalScreen[bool]):
     AUTO_FOCUS = "#btn-keep"  # so 'Enter' really means 'Keep enabled'
     # Result callback to re-attach when the connecting splash re-pushes this
     # dialog (see streaming._repush_dialogs). Set by whoever pushes the dialog.
-    repush_callback: "Callable[[bool | None], None] | None" = None
+    repush_callback: Callable[[bool | None], None] | None = None
 
     DEFAULT_CSS = """
     PolicyContextNoticeDialog {
@@ -188,7 +187,7 @@ class PolicyContextNoticeDialog(ModalScreen[bool]):
                 yield Button("Keep enabled  (Enter)", variant="success", id="btn-keep")
                 yield Button("Disable", variant="default", id="btn-disable")
 
-    def recreate(self) -> "PolicyContextNoticeDialog":
+    def recreate(self) -> PolicyContextNoticeDialog:
         """Fresh copy for re-pushing after the connecting splash is removed."""
         return PolicyContextNoticeDialog()
 
@@ -212,7 +211,7 @@ class StatusBar(Static):
     paused: reactive[bool] = reactive(False)
     meta: reactive[str] = reactive("")  # management-plane metadata summary
 
-    def render(self) -> str:  # type: ignore[override]
+    def render(self) -> str:
         icon = "⏸ PAUSED" if self.paused else "▶ LIVE"
         skipped_part = f"   Skipped: {self.skipped}" if self.skipped else ""
         if self.visible_count >= 0:
@@ -269,7 +268,7 @@ class UpdateDialog(ModalScreen[None]):
 
     repush_callback = None  # pushed without a result callback; kept for the splash re-push protocol
 
-    def recreate(self) -> "UpdateDialog":
+    def recreate(self) -> UpdateDialog:
         """Fresh copy for re-pushing after the connecting splash is removed."""
         return UpdateDialog(self._latest, self._url)
 

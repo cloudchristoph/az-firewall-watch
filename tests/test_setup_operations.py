@@ -3,7 +3,8 @@ from __future__ import annotations
 
 import json
 import subprocess
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 import pytest
 
@@ -27,7 +28,7 @@ class FakeAz:
         self.rules: list[tuple[tuple[str, ...], Any]] = []
         self.calls: list[tuple[str, ...]] = []
 
-    def on(self, *prefix: str, result: Any = "", rc: int = 0) -> "FakeAz":
+    def on(self, *prefix: str, result: Any = "", rc: int = 0) -> FakeAz:
         self.rules.append((prefix, (rc, result)))
         return self
 

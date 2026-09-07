@@ -27,7 +27,7 @@ class FakeSession:
 
 
 class FakeCredential:
-    instances: list["FakeCredential"] = []
+    instances: list[FakeCredential] = []
 
     def __init__(self, **_kw: Any) -> None:
         self.closed = False

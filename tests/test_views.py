@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import time
-from typing import Callable
+from collections.abc import Callable
 
 import pytest
 from textual.widgets import DataTable, Input, Static, TabbedContent, Tree
@@ -12,11 +12,18 @@ import viewer.app as app_module
 from dialogs import StatusBar
 from fw_parser import parse_record
 from viewer.app import FirewallLogApp
-from viewer.azure_resources import FirewallInfo, FirewallPolicyInfo, IpGroupInfo, Rule, RuleCollection, RuleCollectionGroup
+from viewer.azure_resources import (
+    FirewallInfo,
+    FirewallPolicyInfo,
+    IpGroupInfo,
+    Rule,
+    RuleCollection,
+    RuleCollectionGroup,
+)
 from viewer.cache import CachedSnapshot
 from viewer.views import FirewallView, IpGroupsView, PolicyView
-from viewer.views.ip_groups import IpGroupDetailDialog
 from viewer.views.detail_screen import DetailDialog
+from viewer.views.ip_groups import IpGroupDetailDialog
 
 pytestmark = pytest.mark.usefixtures("no_eventhub_env", "no_update_check")
 
@@ -392,8 +399,8 @@ async def test_trace_screen_shows_logged_match_and_closes(structured_record, mgm
         assert "10.3.5.4 → 1.1.1.1:443 TCP" in header and "Allow by rcg-net » rc-web » allow-web" in header
         assert "Enter: expand · Enter on an open rule: show in Policy tab" in header
         # top-level leaves are padded so their text lines up with expandable siblings
-        assert any(l.startswith("  Threat Intelligence") for l in labels)
-        assert any(l.startswith("  DNAT rules") for l in labels)
+        assert any(line.startswith("  Threat Intelligence") for line in labels)
+        assert any(line.startswith("  DNAT rules") for line in labels)
         # path view: the missed collection before the match is one collapsed line with the reason
         deny = next(n for n in _tree_nodes(tree) if n.label.plain.startswith("✗ [50] rc-deny"))
         assert "1 rule · nearest miss: destination" in deny.label.plain
@@ -544,6 +551,7 @@ async def test_enter_opens_entry_and_trace_side_by_side(structured_record, mgmt,
 async def test_long_rule_details_are_shortened_on_collapsed_lines():
     """The collapsed rule line keeps a short reason; the full text lives on the child leaf."""
     from textual.app import App
+
     from viewer.trace import Flow, build_trace
     from viewer.views.trace_screen import TracePanel, _short
 
@@ -571,9 +579,9 @@ async def test_long_rule_details_are_shortened_on_collapsed_lines():
     async with app.run_test(size=(120, 30)) as pilot:
         await pilot.pause()
         labels = _tree_labels(app.query_one("#trace-tree", Tree))
-    rule_line = next(l for l in labels if l.startswith("✗ allow-many"))
+    rule_line = next(line for line in labels if line.startswith("✗ allow-many"))
     assert "…" in rule_line and len(rule_line) < 80, rule_line
-    assert any(l.startswith("✗ port:") and many[-1] in l for l in labels)  # full detail on the leaf
+    assert any(line.startswith("✗ port:") and many[-1] in line for line in labels)  # full detail on the leaf
 
 
 def test_rule_definition_formats_dnat_targets_without_trailing_colon():
@@ -651,6 +659,8 @@ async def test_policy_view_clears_root_data_when_policy_disappears(structured_re
 
 
 async def test_firewall_tab_shows_instance_networking_policy_and_logging(structured_record, mgmt, firewall_id):
+    from textual.containers import Grid
+
     from viewer.azure_resources import DiagnosticSetting, IpConfig
     snap = make_snapshot()
     snap.firewall.sku_name, snap.firewall.zones, snap.firewall.provisioning_state = "AZFW_VNet", ["1", "2", "3"], "Succeeded"
@@ -658,10 +668,14 @@ async def test_firewall_tab_shows_instance_networking_policy_and_logging(structu
     snap.firewall.additional_properties = {"Network.AdditionalLogs.EnableFatFlowLogging": "true"}
     snap.firewall.ip_configs = [
         IpConfig(name="AzureFirewallIpConfiguration0", private_ip="10.2.0.4", public_ip_id="/p0",
-                 public_ip_name="pip-fw-hub-gwc-001", public_ip_address="72.144.131.50", subnet_id="/sn"),
+                 public_ip_name="pip-fw-hub-gwc-001", public_ip_address="72.144.131.50", subnet_id="/vnet/subnets/AzureFirewallSubnet"),
         IpConfig(name="AzureFirewallIpConfiguration1", private_ip="fd10:2:0:1::4", public_ip_id="/p1",
-                 public_ip_name="pip-fw-hub-gwc-ipv6-001", subnet_id="/sn"),
+                 public_ip_name="pip-fw-hub-gwc-ipv6-001", subnet_id="/vnet/subnets/AzureFirewallSubnet"),
     ]
+    snap.firewall.subnet_ids = ["/vnet/subnets/AzureFirewallSubnet", "/vnet/subnets/AzureFirewallManagementSubnet"]
+    snap.firewall.management_ip = IpConfig(name="AzureFirewallMgmtIpConfiguration", public_ip_id="/pm",
+                                           public_ip_name="pip-fw-mgmt", public_ip_address="72.144.91.185",
+                                           subnet_id="/vnet/subnets/AzureFirewallManagementSubnet")
     snap.policy.dns_proxy = True
     snap.policy.idps_mode, snap.policy.idps_override_count = "Alert", 2
     snap.policy.tls_ca_name = "fw-tls-intermediate-ca"
@@ -671,19 +685,32 @@ async def test_firewall_tab_shows_instance_networking_policy_and_logging(structu
     app = FirewallLogApp()
     async with app.run_test(size=(160, 45)) as pilot:
         await pilot.pause()
+        view = app.query_one("#firewall-view", FirewallView)
+        assert not view.query_one("#fw-grid", Grid).display                 # nothing loaded yet
         await _load(app, pilot, firewall_id)
-        text = _text(app.query_one("#firewall-view", FirewallView))
-    assert "Premium · AZFW_VNet" in text and "1, 2, 3" in text and "Succeeded" in text and "project=cclab" in text
-    assert "10.2.0.4  →  pip-fw-hub-gwc-001 (72.144.131.50)" in text
-    assert "fd10:2:0:1::4  →  pip-fw-hub-gwc-ipv6-001" in text          # no address resolved: name only
-    assert "EnableFatFlowLogging=true" in text
-    assert "DNS proxy" in text and "on" in text and "Azure DNS" in text
-    assert "IDPS" in text and "2 signature overrides" in text
-    assert "CA: fw-tls-intermediate-ca" in text
-    assert "Event Hub ehns-fw-gwc/firewall-logs" in text
-    assert "Not to Event Hub" in text and "AZFWFlowTrace" in text and "AZFWNatRule" in text
-    assert "AZFWNetworkRule, AZFWApplicationRule, AZFWDnsQuery" in text
-    assert "/sn" not in text.replace("Subnets", "")                       # ids are shown as names only
+        await pilot.pause()
+        assert view.query_one("#fw-grid", Grid).display
+        title = str(view.query_one("#fw-title", Static).content)
+        assert "fw-hub-gwc" in title and "Premium · AZFW_VNet · germanywestcentral" in title
+        instance = str(view.query_one("#fw-instance", Static).content)
+        assert "1, 2, 3" in instance and "Succeeded" in instance and "project=cclab" in instance
+        assert "EnableFatFlowLogging=true" in instance
+        net = view.query_one("#fw-network", DataTable)
+        rows = [[str(c) for c in net.get_row_at(i)] for i in range(net.row_count)]
+        assert rows[0] == ["IpConfiguration0", "10.2.0.4", "pip-fw-hub-gwc-001\n72.144.131.50"]
+        assert rows[1][1:] == ["fd10:2:0:1::4", "pip-fw-hub-gwc-ipv6-001\naddress not readable"]
+        assert rows[2][0] == "management" and rows[2][2].endswith("72.144.91.185")
+        net_note = str(view.query_one("#fw-network-note", Static).content)
+        assert "10.2.0.0/26" in net_note and "AzureFirewallSubnet, AzureFirewallManagementSubnet" in net_note
+        assert "forced tunneling" in net_note
+        pol = str(view.query_one("#fw-policy", Static).content)
+        assert "fwp-hub-premium-gwc" in pol and "1 rule collection groups" in pol
+        assert "DNS proxy" in pol and "Azure DNS" in pol and "2 signature overrides" in pol and "CA: fw-tls-intermediate-ca" in pol
+        log = view.query_one("#fw-logging", DataTable)
+        lrows = [[str(c) for c in log.get_row_at(i)] for i in range(log.row_count)]
+        assert lrows == [["diag-fw", "Event Hub ehns-fw-gwc/firewall-logs\n3 categories · 3 of 9 viewer"]]
+        note = str(view.query_one("#fw-logging-note", Static).content)
+        assert "Not to Event Hub" in note and "AZFWFlowTrace" in note and "AZFWNatRule" in note
 
 
 async def test_views_render_metadata(structured_record, mgmt, firewall_id):

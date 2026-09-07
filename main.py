@@ -23,7 +23,7 @@ import os
 import sys
 
 from viewer import FirewallLogApp
-from viewer.config import BASE_DIR, policy_context_setting, load_env
+from viewer.config import BASE_DIR, load_env, policy_context_setting
 
 
 def _maybe_run_wizard() -> None:

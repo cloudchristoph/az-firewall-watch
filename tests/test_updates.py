@@ -14,7 +14,6 @@ from dialogs import UpdateDialog
 from viewer.app import FirewallLogApp
 from viewer.updates import _parse_version, check_for_update
 
-
 # ── helpers ──────────────────────────────────────────────────────────────────
 
 class _FakeResponse(io.BytesIO):

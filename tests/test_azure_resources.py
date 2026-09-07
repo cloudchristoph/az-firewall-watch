@@ -9,10 +9,10 @@ from viewer.azure_resources import (
     fetch_all_subnet_cidrs,
     fetch_diagnostic_settings,
     fetch_firewall,
-    fetch_public_ips,
     fetch_ip_group,
     fetch_ip_groups,
     fetch_policy,
+    fetch_public_ips,
     fetch_subnet_cidrs,
     parse_resource_id,
 )

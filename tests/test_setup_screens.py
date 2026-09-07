@@ -6,8 +6,9 @@ import site so the wizard can be driven end-to-end without Azure.
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 import pytest
 from textual.widgets import Button, ContentSwitcher, Input, Label, ListView, RadioSet, Static
@@ -16,12 +17,12 @@ import setup.screens as screens
 from setup.app import WizardApp
 from setup.screens import (
     AuthMethodScreen,
-    PolicyContextScreen,
     ConfirmCreateRuleScreen,
     DeployNewScreen,
     EnterExistingHubScreen,
     PasteConnectionScreen,
     PickExistingScreen,
+    PolicyContextScreen,
     WelcomeScreen,
 )
 from setup.services import get_existing_conn_str, has_entra_config

@@ -7,7 +7,6 @@ from pathlib import Path
 
 from helpers import load_env  # re-exported for main.py
 
-
 # ── base directory (works both from source and as a PyInstaller binary) ───────
 if getattr(sys, "frozen", False):
     # Running as a compiled binary — place .env next to the executable

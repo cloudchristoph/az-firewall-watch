@@ -22,7 +22,7 @@ def _parse_version(v: str) -> tuple:
         return (0,)
 
 
-async def check_for_update(app: "FirewallLogApp", current_version: str) -> None:
+async def check_for_update(app: FirewallLogApp, current_version: str) -> None:
     """Silently fetch the latest GitHub release and show UpdateDialog if newer."""
 
     def _fetch() -> dict:

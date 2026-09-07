@@ -8,14 +8,15 @@ from __future__ import annotations
 import asyncio
 import io
 import json
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 import pytest
 from textual.widgets import Static
 
 import viewer.app as app_module
 import viewer.streaming as streaming
-from dialogs import ConnectingDialog, PolicyContextNoticeDialog, ErrorDialog, StatusBar, UpdateDialog
+from dialogs import ConnectingDialog, ErrorDialog, PolicyContextNoticeDialog, StatusBar, UpdateDialog
 from viewer.app import FirewallLogApp
 
 pytestmark = pytest.mark.usefixtures("no_eventhub_env", "no_update_check", "fast_backoff")
@@ -62,7 +63,7 @@ class FakeClient:
     blocks until cancelled (like the real long-running receiver).
     """
 
-    instances: list["FakeClient"] = []
+    instances: list[FakeClient] = []
     script: list[dict] = []
 
     def __init__(self, **kwargs: Any) -> None:
@@ -74,10 +75,10 @@ class FakeClient:
         self._step = FakeClient.script.pop(0) if FakeClient.script else {}
 
     @classmethod
-    def from_connection_string(cls, conn_str: str, **kwargs: Any) -> "FakeClient":
+    def from_connection_string(cls, conn_str: str, **kwargs: Any) -> FakeClient:
         return cls(conn_str=conn_str, **kwargs)
 
-    async def __aenter__(self) -> "FakeClient":
+    async def __aenter__(self) -> FakeClient:
         self.entered = True
         return self
 
@@ -112,7 +113,7 @@ def fake_client(monkeypatch):
 
 
 class FakeCredential:
-    instances: list["FakeCredential"] = []
+    instances: list[FakeCredential] = []
 
     def __init__(self, **kwargs: Any) -> None:
         self.closed = False

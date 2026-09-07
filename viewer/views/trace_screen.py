@@ -15,10 +15,17 @@ from textual.widgets import Static, Tree
 from textual.widgets.tree import TreeNode
 
 from ..trace import (
-    MATCH, MISS, NA, UNKNOWN,
-    CollectionTrace, PassTrace, RuleTrace, Trace,
-    first_problem, nearest_rules,
+    MATCH,
+    MISS,
+    NA,
+    UNKNOWN,
+    CollectionTrace,
+    PassTrace,
+    RuleTrace,
+    Trace,
+    first_problem,
     nearest_miss,
+    nearest_rules,
 )
 
 _ICON = {MATCH: "[green]✓[/]", MISS: "[red]✗[/]", UNKNOWN: "[yellow]?[/]", NA: "[dim]–[/]"}

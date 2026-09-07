@@ -1,11 +1,11 @@
 """Top-level Textual app for az-firewall-watch."""
 from __future__ import annotations
 
-import ipaddress
-
 import heapq
+import ipaddress
 import re
 import time
+from pathlib import Path
 
 from rich.text import Text
 from textual import on, work
@@ -25,8 +25,6 @@ from textual.widgets import (
     TabPane,
 )
 
-from pathlib import Path
-
 from dialogs import PolicyContextNoticeDialog, StatusBar
 from fw_parser import FirewallDataRow
 from helpers import _category_text, _highlight, _to_local
@@ -36,8 +34,8 @@ from .cache import CachedSnapshot
 from .config import CATEGORY_GROUPS, CATEGORY_OPTIONS, MAX_ROWS, TABLE_TRIM_SLACK, VERSION
 from .enrichment import find_matching_ip_groups, resolve_fw_instance
 from .management import load_management_data
-from .trace import Flow, LoggedMatch, build_trace, find_logged_rule
 from .streaming import run_stream
+from .trace import Flow, LoggedMatch, build_trace, find_logged_rule
 from .updates import check_for_update
 from .views import FirewallView, IpGroupsView, PolicyView
 from .views.detail_screen import DetailDialog
@@ -865,7 +863,7 @@ class FirewallLogApp(App[None]):
         status.meta = "refreshing metadata…"
         self._load_mgmt(self._firewall_id, force=True)
 
-    def get_system_commands(self, screen: Screen):  # type: ignore[override]
+    def get_system_commands(self, screen: Screen):
         for cmd in super().get_system_commands(screen):
             if cmd.title in ("Maximize", "Minimize"):
                 continue

@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from typing import Optional
 
 _counter = 0
 
@@ -82,7 +81,7 @@ class FirewallDataRow:
     nat_dst_port: str = ""
 
 
-def parse_record(record: dict) -> Optional[FirewallDataRow]:
+def parse_record(record: dict) -> FirewallDataRow | None:
     """Parse a single Azure Firewall log record into a FirewallDataRow.
 
     Returns None only if the record dict itself is malformed; skipped records

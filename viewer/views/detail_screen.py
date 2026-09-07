@@ -17,7 +17,6 @@ from helpers import _to_local, _utc_short
 from ..trace import Trace
 from .trace_screen import TracePanel
 
-
 # Values longer than this go on their own line under the label instead of
 # wrapping mid-word at the pane edge (long FQDNs, rule definitions).
 _INLINE_VALUE_MAX = 34
@@ -169,7 +168,7 @@ class DetailDialog(ModalScreen[str | None]):
         yield self._field(_ACTION_LABEL.get(cat, "Action").ljust(13), row.action)
         if cat == "idps" and row.moreinfo:
             # parser joins "SEV:n · id · category · description"
-            for label, value in zip(_IDPS_FIELDS, row.moreinfo.split(" · ")):
+            for label, value in zip(_IDPS_FIELDS, row.moreinfo.split(" · "), strict=False):
                 yield self._field(label.ljust(13), value[4:] if label == "Severity" and value.startswith("SEV:") else value)
 
         if row.fw_policy and not with_trace:

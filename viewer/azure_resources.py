@@ -12,7 +12,6 @@ from dataclasses import dataclass, field
 
 from .arm import ArmClient, ArmError
 
-
 # API versions — pinned for predictable shapes.
 _API_FW = "2024-01-01"          # azureFirewalls, firewallPolicies, ipGroups
 _API_NET = "2024-01-01"         # virtualNetworks / subnets / publicIPAddresses
@@ -116,7 +115,7 @@ class FirewallPolicyInfo:
     child_policy_count: int = 0
     # Inherited (parent) policy, if any. Its groups are always evaluated
     # before this policy's groups, per rule type.
-    parent: "FirewallPolicyInfo | None" = None
+    parent: FirewallPolicyInfo | None = None
 
     def all_groups(self) -> list[tuple[str, RuleCollectionGroup]]:
         """Groups in firewall evaluation order within one rule-type pass:
@@ -481,7 +480,7 @@ async def fetch_ip_groups(arm: ArmClient, ip_group_ids: list[str]) -> dict[str, 
         return_exceptions=True,
     )
     out: dict[str, IpGroupInfo] = {}
-    for gid, r in zip(ip_group_ids, results):
+    for gid, r in zip(ip_group_ids, results, strict=True):
         if isinstance(r, IpGroupInfo):
             out[gid] = r
         # silently skip groups we couldn't read (likely RBAC)

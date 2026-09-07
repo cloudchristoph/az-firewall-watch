@@ -10,16 +10,15 @@ from typing import Any
 
 from .azure_resources import (
     DiagnosticSetting,
-    IpConfig,
     FirewallInfo,
     FirewallPolicyInfo,
+    IpConfig,
     IpGroupInfo,
     Rule,
     RuleCollection,
     RuleCollectionGroup,
 )
 from .config import BASE_DIR
-
 
 # One hour: the evaluation trace explains the *cached* policy, so a long TTL
 # would explain yesterday's rules. Ctrl+R refreshes on demand.

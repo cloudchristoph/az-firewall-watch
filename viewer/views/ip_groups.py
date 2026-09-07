@@ -3,8 +3,8 @@ from __future__ import annotations
 
 from rich.markup import escape
 from textual import events
-from textual.containers import Horizontal
 from textual.app import ComposeResult
+from textual.containers import Horizontal
 from textual.message import Message
 from textual.screen import ModalScreen
 from textual.widgets import Button, DataTable, Static

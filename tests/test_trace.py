@@ -1,13 +1,21 @@
 """Evaluation trace (viewer/trace.py): processing order and per-criterion checks."""
 from __future__ import annotations
 
-import pytest
 from dataclasses import replace
+
+import pytest
 
 from viewer.azure_resources import FirewallPolicyInfo, IpGroupInfo, Rule, RuleCollection, RuleCollectionGroup
 from viewer.trace import (
-    MATCH, MISS, NA, UNKNOWN,
-    Flow, LoggedMatch, build_trace, evaluate_rule, find_logged_rule,
+    MATCH,
+    MISS,
+    NA,
+    UNKNOWN,
+    Flow,
+    LoggedMatch,
+    build_trace,
+    evaluate_rule,
+    find_logged_rule,
 )
 
 G_SPOKES = "/g/spokes"
@@ -324,7 +332,7 @@ def test_ranking_helpers_pick_the_closest_rule_and_its_problem():
     ranked = nearest_rules(t)
     assert len(ranked) <= 3
     assert web in ranked and monitor not in ranked[:1]  # deny-bad (3 matches) and web (3) tie above monitor (2)
-    assert all(rule_score(a) >= rule_score(b) for a, b in zip(ranked, ranked[1:]))
+    assert all(rule_score(a) >= rule_score(b) for a, b in zip(ranked, ranked[1:], strict=False))
     assert first_problem(evaluate_rule(net("all"), TCP443, GROUPS)) is None
 
 

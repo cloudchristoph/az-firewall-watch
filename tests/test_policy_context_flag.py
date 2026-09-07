@@ -69,7 +69,7 @@ def test_set_env_value_replaces_in_place(tmp_path: Path):
     after = env.read_text(encoding="utf-8")
     assert _values(env)["POLICY_CONTEXT"] == "off"
     assert _values(env)["EVENT_HUB_CONNECTION_STRING"] == CONN
-    assert sum(l.startswith("POLICY_CONTEXT=") for l in after.splitlines()) == 1
+    assert sum(line.startswith("POLICY_CONTEXT=") for line in after.splitlines()) == 1
     assert "Do NOT commit" in after and len(after.splitlines()) == len(before.splitlines())
 
 

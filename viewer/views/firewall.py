@@ -93,7 +93,7 @@ class FirewallView(Vertical):
                            ("#panel-policy", "Policy"), ("#panel-logging", "Logging")):
             self.query_one(pid, Vertical).border_title = title
         self.query_one("#fw-network", DataTable).add_columns("Configuration", "Private IP", "Public IP")
-        self.query_one("#fw-logging", DataTable).add_columns("Setting", "Target")
+        self.query_one("#fw-logging", DataTable).add_columns("Diagnostic setting → target")
         self.query_one("#fw-grid", Grid).display = False
 
     def render_data(
@@ -206,7 +206,7 @@ class FirewallView(Vertical):
         tbl.clear()
         note = self.query_one("#fw-logging-note", Static)
         if not diagnostics:
-            tbl.add_row(Text("no diagnostic settings readable", style="dim"), "-")
+            tbl.add_row(Text("no diagnostic settings readable", style="dim"))
             note.update("")
             return
         forwarded: set[str] = set()
@@ -223,9 +223,10 @@ class FirewallView(Vertical):
             else:
                 viewer = sum(1 for c in d.categories if c in VIEWER_CATEGORIES)
                 cats = f"{len(d.categories)} categories" + (f" · {viewer} of {len(VIEWER_CATEGORIES)} viewer" if viewer else "")
-            target = Text(" + ".join(targets) or "no target")
-            target.append("\n" + cats, style="dim")
-            tbl.add_row(Text(d.name, style="dim"), target, height=2)
+            cell = Text(d.name)
+            cell.append("\n  " + (" + ".join(targets) or "no target"))
+            cell.append(" · " + cats, style="dim")
+            tbl.add_row(cell, height=2)
             if d.event_hub:
                 forwarded |= set(VIEWER_CATEGORIES) if d.all_logs else set(d.categories)
         missing = [c for c in VIEWER_CATEGORIES if c not in forwarded]

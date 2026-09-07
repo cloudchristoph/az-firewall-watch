@@ -708,7 +708,7 @@ async def test_firewall_tab_shows_instance_networking_policy_and_logging(structu
         assert "DNS proxy" in pol and "Azure DNS" in pol and "2 signature overrides" in pol and "CA: fw-tls-intermediate-ca" in pol
         log = view.query_one("#fw-logging", DataTable)
         lrows = [[str(c) for c in log.get_row_at(i)] for i in range(log.row_count)]
-        assert lrows == [["diag-fw", "Event Hub ehns-fw-gwc/firewall-logs\n3 categories · 3 of 9 viewer"]]
+        assert lrows == [["diag-fw\n  Event Hub ehns-fw-gwc/firewall-logs · 3 categories · 3 of 9 viewer"]]
         note = str(view.query_one("#fw-logging-note", Static).content)
         assert "Not to Event Hub" in note and "AZFWFlowTrace" in note and "AZFWNatRule" in note
 

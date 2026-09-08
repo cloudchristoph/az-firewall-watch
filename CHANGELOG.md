@@ -8,7 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-Nothing yet.
+### Added
+
+- **IPv6 (dual-stack firewalls).** Azure Firewall can run dual-stack (preview); the viewer now handles IPv6 addresses everywhere they can appear: `NetworkRule`, `DnsQuery`, `FlowTrace` and `FatFlow` rows in both log formats, the Source column and the detail dialog (`[fd10:2:0:2::10]:51000`, so the port is not mistaken for the last address group), the `AzFw.<n>` instance labels, and the evaluation trace, which compares IPv6 flows against IPv6 prefixes in rules and IP groups exactly like IPv4 ones. Application, DNAT, IDPS and Threat Intelligence rules do not support IPv6 in the preview, so those rows stay IPv4.
+- **CIDR in the Source and Dest / FQDN filters.** `10.3.0.0/16` or `fd10:2::/32` keeps only rows whose address lies inside the prefix, for IPv4 and IPv6. A full address matches in any spelling (`fd10::10` finds `fd10:0:0:0:0:0:0:10`); fragments still match as substrings.
+
+### Fixed
+
+- **Legacy log messages with IPv6 endpoints were parsed wrongly.** The legacy parser split `host:port` at the first colon, so `fd10:2:0:2::10:51000` became source `fd10` with port `2`, and the trace then treated the destination as an FQDN and reported a confident wrong verdict. All five split sites (network, DNAT, application, DNS proxy) now split at the last colon and accept the bracketed `[addr]:port` form as well. Which of the two spellings Azure emits is still unverified against a live dual-stack firewall; both are supported.
 
 ## [0.5.0] - 2026-09-07
 

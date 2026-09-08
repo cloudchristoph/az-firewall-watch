@@ -147,6 +147,19 @@ def test_source_text_highlights_search_term():
     assert highlighted, "search term should be highlighted"
 
 
+def test_source_text_brackets_ipv6_addresses():
+    text = FirewallLogApp._source_text("fd00::1", "1234", "")
+    assert text.plain == "[fd00::1]:1234"
+
+
+def test_source_text_does_not_bracket_a_resolved_fw_label():
+    """An 'AzFw.<n>' label from _format_ip never parses as an address, so it must
+    not accidentally get bracketed even though the caller resolved it from an
+    IPv6 subnet."""
+    text = FirewallLogApp._source_text("AzFw.6", "1234", "")
+    assert text.plain == "AzFw.6:1234"
+
+
 def test_info_text_renders_segments_with_separators():
     text = FirewallLogApp._info_text("rcg»rc»rule")
     assert text.plain == "rcg » rc » rule"

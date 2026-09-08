@@ -27,7 +27,7 @@ from textual.widgets import (
 
 from dialogs import PolicyContextNoticeDialog, StatusBar
 from fw_parser import FirewallDataRow
-from helpers import _category_text, _highlight, _to_local
+from helpers import _category_text, _highlight, _is_ipv6, _to_local
 
 from .azure_resources import FirewallInfo, FirewallPolicyInfo, IpGroupInfo
 from .cache import CachedSnapshot
@@ -573,9 +573,17 @@ class FirewallLogApp(App[None]):
 
     @staticmethod
     def _source_text(sourceip: str, srcport: str, term: str) -> Text:
-        """Render 'ip:port' with the port portion dimmed."""
+        """Render 'ip:port' with the port portion dimmed; IPv6 addresses get bracketed.
+
+        ``sourceip`` may already be the ``AzFw.<n>`` label ``_format_ip`` resolved it
+        to — that never parses as an address, so ``_is_ipv6`` only ever fires on a
+        real, unresolved IP. The bracket decision therefore lands on the raw address
+        exactly as if it were checked before ``_format_ip`` ran. ``format_endpoint``
+        is not used here: it would hand back one joined string, and the port needs
+        to stay a separate, dimmed ``Text`` span.
+        """
         t = Text()
-        t.append(sourceip)
+        t.append(f"[{sourceip}]" if _is_ipv6(sourceip) else sourceip)
         t.append(":", style="dim")
         t.append(srcport, style="dim")
         if term:

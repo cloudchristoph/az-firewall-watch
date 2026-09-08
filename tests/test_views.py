@@ -22,7 +22,7 @@ from viewer.azure_resources import (
 )
 from viewer.cache import CachedSnapshot
 from viewer.views import FirewallView, IpGroupsView, PolicyView
-from viewer.views.detail_screen import DetailDialog
+from viewer.views.detail_screen import DetailDialog, _ports_join
 from viewer.views.ip_groups import IpGroupDetailDialog
 
 pytestmark = pytest.mark.usefixtures("no_eventhub_env", "no_update_check")
@@ -604,6 +604,27 @@ def test_flow_from_dnat_row_uses_the_public_destination(structured_record):
     flow = FirewallLogApp._flow_from_row(row)
     assert (flow.dst_ip, flow.dst_port) == ("72.144.131.50", "18080")
     assert flow.src_ip == "95.91.87.6" and flow.category == "NATRule"
+
+
+def test_flow_from_legacy_ipv6_network_rule_keeps_full_address(legacy_record):
+    """Regression: a legacy record with an unbracketed IPv6 destination used to be
+    split at the first colon ('fd00' instead of 'fd00::1'), so ipaddress.ip_address()
+    failed in _flow_from_row and the row ran into the FQDN branch — a confident wrong
+    verdict instead of a correct address match."""
+    row = parse_record(legacy_record(
+        "AzureFirewallNetworkRule", "AzureFirewallNetworkRuleLog",
+        "TCP request from fd00::1:1234 to fd00::2:443. Action: Allow. "
+        "Rule Collection Group: rcg. Rule Collection: rc. Rule: r.",
+    ))
+    flow = FirewallLogApp._flow_from_row(row)
+    assert flow.dst_ip == "fd00::2"
+    assert flow.dst_fqdn == ""
+
+
+def test_ports_join_brackets_ipv6_addresses():
+    assert _ports_join("fd00::1", "443") == "[fd00::1]:443"
+    assert _ports_join("10.1.1.1", "443") == "10.1.1.1:443"
+    assert _ports_join("10.1.1.1", "-") == "10.1.1.1"
 
 
 def test_compute_enrichment_without_metadata(structured_record):

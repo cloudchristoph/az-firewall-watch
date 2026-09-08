@@ -21,7 +21,7 @@ import ipaddress
 from dataclasses import dataclass, field
 
 from .azure_resources import FirewallPolicyInfo, IpGroupInfo, Rule, RuleCollection, RuleCollectionGroup
-from .enrichment import _fqdn_matches, _port_matches
+from .enrichment import _fqdn_matches, _port_matches, find_containing_entry, parse_address_entries
 
 MATCH, MISS, UNKNOWN, NA = "match", "miss", "unknown", "n/a"
 PASS_ORDER = ("dnat", "network", "application")
@@ -147,22 +147,22 @@ def _address_check(ip, addresses: list[str], group_ids: list[str],
     for a in addresses:
         if a.lower() in _WILDCARDS:
             return MATCH, a
-        try:
-            if ip in ipaddress.ip_network(a, strict=False):
-                return MATCH, a
-        except ValueError:
-            unknown.append(a)   # service tag such as AzureMonitor
+    parsed, unreadable = parse_address_entries(addresses)
+    hit = find_containing_entry(ip, parsed)
+    if hit is not None:
+        return MATCH, hit
+    unknown.extend(unreadable)   # service tag such as AzureMonitor
     for gid in group_ids:
         grp = ip_groups.get(gid)
         if grp is None:
             unknown.append(gid.rsplit("/", 1)[-1] + " (not loaded)")
             continue
-        for entry in grp.ip_addresses:
-            try:
-                if ip in ipaddress.ip_network(entry, strict=False):
-                    return MATCH, grp.name
-            except ValueError:
-                continue
+        parsed, unreadable = parse_address_entries(grp.ip_addresses)
+        if find_containing_entry(ip, parsed) is not None:
+            return MATCH, grp.name
+        # Name group and entry: a group we cannot fully read must not look like
+        # a group that simply does not contain the address.
+        unknown.extend(f'{grp.name} entry "{entry}"' for entry in unreadable)
     if unknown:
         return UNKNOWN, "cannot evaluate: " + ", ".join(unknown)
     return MISS, str(ip)
@@ -204,13 +204,14 @@ def _port_check(rule: Rule, flow: Flow) -> Check:
 
 def _destination_check(rule: Rule, flow: Flow, ip_groups: dict[str, IpGroupInfo]) -> Check:
     if rule.kind == "application":
-        fqdn = flow.dst_fqdn or flow.dst_ip
+        # An application rule matches on the Host header (HTTP) or the SNI
+        # (HTTPS); the firewall resolves the name itself and ignores the
+        # packet's destination IP. The logged name is therefore the only thing
+        # we may compare against: falling back to the IP would answer a
+        # different question than the firewall asked.
+        fqdn = flow.dst_fqdn
         if rule.destination_fqdns and fqdn and _fqdn_matches(fqdn, rule.destination_fqdns):
             return Check("destination", MATCH, fqdn)
-        if rule.destination_addresses:
-            result, detail = _address_check(_parse_ip(flow.dst_ip), rule.destination_addresses, [], ip_groups)
-            if result == MATCH:
-                return Check("destination", MATCH, detail)
         unevaluable = []
         if rule.fqdn_tags:
             unevaluable.append("FQDN tags " + ", ".join(rule.fqdn_tags))
@@ -218,11 +219,21 @@ def _destination_check(rule: Rule, flow: Flow, ip_groups: dict[str, IpGroupInfo]
             unevaluable.append("web categories")
         if rule.target_urls:
             unevaluable.append("target URLs")
+        if rule.destination_addresses:
+            # Addresses are a destination type on application rules too, but the
+            # firewall compares them against the address it resolved from the
+            # name, not against the packet's. That resolution is nowhere in the
+            # log, so a name that misses the FQDN list still leaves the question
+            # open: never turn it into a miss.
+            unevaluable.append("addresses " + ", ".join(rule.destination_addresses)
+                               + " (matched against the firewall's own resolution of the name, not the logged IP)")
         if unevaluable:
             return Check("destination", UNKNOWN, "cannot evaluate: " + "; ".join(unevaluable))
+        if not rule.destination_fqdns:
+            return Check("destination", UNKNOWN, "cannot evaluate: the rule names no FQDN target")
         if not fqdn or fqdn == "-":
             return Check("destination", NA, "no FQDN in log")
-        return Check("destination", MISS, f"{fqdn} not in {', '.join(rule.destination_fqdns) or '-'}")
+        return Check("destination", MISS, f"{fqdn} not in {', '.join(rule.destination_fqdns)}")
 
     ip = _parse_ip(flow.dst_ip)
     result, detail = _address_check(ip, rule.destination_addresses, rule.destination_ip_groups, ip_groups)

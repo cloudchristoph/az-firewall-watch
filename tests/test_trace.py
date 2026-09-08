@@ -20,6 +20,13 @@ from viewer.trace import (
 
 G_SPOKES = "/g/spokes"
 GROUPS = {G_SPOKES: IpGroupInfo(id=G_SPOKES, name="ipgroup-all-spokes", location="gwc", ip_addresses=["10.3.0.0/16"])}
+G_DMZ, G_JUNK = "/g/dmz", "/g/junk"
+RANGE_GROUPS = {
+    **GROUPS,
+    G_DMZ: IpGroupInfo(id=G_DMZ, name="ipgroup-dmz", location="gwc",
+                       ip_addresses=["10.2.0.0-10.2.0.31", "fd00::10-fd00::1f"]),
+    G_JUNK: IpGroupInfo(id=G_JUNK, name="ipgroup-junk", location="gwc", ip_addresses=["10.4.0.0-oops"]),
+}
 
 
 def rc(name, priority, action, *rules, rc_type="FirewallPolicyFilterRuleCollection"):
@@ -105,6 +112,46 @@ def test_service_tag_and_unloaded_group_are_unknown():
     assert checks["source"].result == UNKNOWN and "missing (not loaded)" in checks["source"].detail
 
 
+@pytest.mark.parametrize("dst_ip, expected, detail", [
+    ("10.2.0.0", MATCH, "ipgroup-dmz"),      # first address of the range
+    ("10.2.0.31", MATCH, "ipgroup-dmz"),     # last address of the range
+    ("10.2.0.32", MISS, "10.2.0.32"),        # one past the end: a definite miss, not a guess
+    ("fd00::1f", MATCH, "ipgroup-dmz"),
+    ("fd00::20", MISS, "fd00::20"),
+])
+def test_ip_group_range_entries_are_evaluated(dst_ip, expected, detail):
+    """A range entry was dropped silently, so the trace reported a miss on a rule that had matched."""
+    rule = net("r", destination_addresses=[], destination_ip_groups=[G_DMZ])
+    flow = replace(TCP443, dst_ip=dst_ip)
+    c = next(c for c in evaluate_rule(rule, flow, RANGE_GROUPS).checks if c.name == "destination")
+    assert (c.result, c.detail) == (expected, detail)
+
+
+def test_unreadable_ip_group_entry_is_unknown_and_names_group_and_entry():
+    rule = net("r", destination_addresses=[], destination_ip_groups=[G_JUNK])
+    c = next(c for c in evaluate_rule(rule, TCP443, RANGE_GROUPS).checks if c.name == "destination")
+    assert c.result == UNKNOWN
+    assert c.detail == 'cannot evaluate: ipgroup-junk entry "10.4.0.0-oops"'
+
+
+def test_a_matching_group_wins_over_an_unreadable_one():
+    """An entry we cannot read only casts doubt while nothing else answers the question."""
+    rule = net("r", destination_addresses=[], destination_ip_groups=[G_JUNK, G_DMZ])
+    c = next(c for c in evaluate_rule(rule, replace(TCP443, dst_ip="10.2.0.7"), RANGE_GROUPS).checks
+             if c.name == "destination")
+    assert (c.result, c.detail) == (MATCH, "ipgroup-dmz")
+
+
+def test_address_range_in_a_rule_address_list_is_evaluated():
+    rule = net("r", destination_addresses=["10.2.0.0-10.2.0.31"])
+    hit = next(c for c in evaluate_rule(rule, replace(TCP443, dst_ip="10.2.0.7"), GROUPS).checks
+               if c.name == "destination")
+    assert (hit.result, hit.detail) == (MATCH, "10.2.0.0-10.2.0.31")
+    miss = next(c for c in evaluate_rule(rule, replace(TCP443, dst_ip="10.2.0.32"), GROUPS).checks
+                if c.name == "destination")
+    assert miss.result == MISS
+
+
 def test_network_rule_with_fqdn_destination_is_unknown():
     r = evaluate_rule(net("r", destination_addresses=[], destination_fqdns=["time.windows.com"]), TCP443, GROUPS)
     assert next(c for c in r.checks if c.name == "destination").result == UNKNOWN
@@ -152,6 +199,48 @@ def test_application_rule_tags_and_categories_are_unknown():
     r = evaluate_rule(app("r", fqdn_tags=["WindowsUpdate"], web_categories=["Business"]), flow, GROUPS)
     dest = next(c for c in r.checks if c.name == "destination")
     assert dest.result == UNKNOWN and "WindowsUpdate" in dest.detail
+
+
+def test_application_rule_never_matches_on_the_packet_address():
+    """Azure matches an app rule on the Host header or SNI. The packet IP inside
+    destinationAddresses used to turn a name miss into a match by accident."""
+    flow = Flow(category="AppRule", protocol="HTTPS", src_ip="10.3.5.4", dst_ip="51.116.242.155",
+                dst_fqdn="html.duckduckgo.com", dst_port="443")
+    r = evaluate_rule(app("r", destination_fqdns=["*.microsoft.com"],
+                          destination_addresses=["51.116.242.155"]), flow, GROUPS)
+    assert next(c for c in r.checks if c.name == "destination").result != MATCH
+
+
+def test_application_rule_with_addresses_is_unknown_not_a_miss():
+    """The addresses are compared against the firewall's own resolution of the
+    name, which the log does not carry: a name miss cannot rule the rule out."""
+    flow = Flow(category="AppRule", protocol="HTTPS", src_ip="10.3.5.4", dst_ip="51.116.242.155",
+                dst_fqdn="html.duckduckgo.com", dst_port="443")
+    for rule in (app("r", destination_addresses=["51.116.242.155"]),
+                 app("r", destination_fqdns=["*.microsoft.com"], destination_addresses=["51.116.242.155"])):
+        r = evaluate_rule(rule, flow, GROUPS)
+        c = next(c for c in r.checks if c.name == "destination")
+        assert c.result == UNKNOWN and "51.116.242.155" in c.detail and "resolution" in c.detail
+        assert r.verdict == UNKNOWN
+
+
+def test_application_rule_name_miss_without_addresses_is_a_miss():
+    """Without an address list there is nothing left to be uncertain about."""
+    flow = Flow(category="AppRule", protocol="HTTPS", src_ip="10.3.5.4", dst_ip="51.116.242.155",
+                dst_fqdn="html.duckduckgo.com", dst_port="443")
+    r = evaluate_rule(app("r", destination_fqdns=["*.microsoft.com"]), flow, GROUPS)
+    c = next(c for c in r.checks if c.name == "destination")
+    assert (c.result, c.detail) == (MISS, "html.duckduckgo.com not in *.microsoft.com")
+    assert r.verdict == MISS
+
+
+def test_application_rule_without_a_logged_fqdn_is_not_applicable():
+    """An IP is not a name: not even a '*' target may be answered from it."""
+    flow = Flow(category="AppRule", protocol="HTTPS", src_ip="10.3.5.4", dst_ip="51.116.242.155", dst_port="443")
+    r = evaluate_rule(app("r", destination_fqdns=["*"]), flow, GROUPS)
+    c = next(c for c in r.checks if c.name == "destination")
+    assert c.result == NA and c.detail == "no FQDN in log"
+    assert r.verdict == UNKNOWN
 
 
 def test_missing_flow_values_are_not_applicable_and_never_a_match():

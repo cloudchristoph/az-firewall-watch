@@ -6,7 +6,16 @@ import time
 
 import pytest
 
-from helpers import _category_text, _highlight, _parse_eventhub_endpoint, _to_local, _utc_short, load_env
+from helpers import (
+    _category_text,
+    _highlight,
+    _parse_eventhub_endpoint,
+    _to_local,
+    _utc_short,
+    format_endpoint,
+    load_env,
+    split_endpoint,
+)
 
 
 @pytest.fixture
@@ -128,3 +137,68 @@ def test_load_env_reads_utf8_and_falls_back_to_latin1(tmp_path, monkeypatch):
     assert os.environ["AZFW_TEST_VALUE"] == "eins"
     load_env(env, override=True)
     assert os.environ["AZFW_TEST_VALUE"] == "zwei"
+
+
+@pytest.mark.parametrize(
+    "text, expected",
+    [
+        ("10.1.1.1:1234", ("10.1.1.1", "1234")),
+        ("10.1.1.1", ("10.1.1.1", "-")),
+        ("fd00::1", ("fd00::1", "-")),                     # bare IPv6, no port
+        ("[fd00::1]:1234", ("fd00::1", "1234")),            # bracketed IPv6 + port
+        ("example.com:443", ("example.com", "443")),
+        ("example.com", ("example.com", "-")),
+        ("-", ("-", "-")),
+        ("", ("", "-")),
+        # A trailing colon must report the "-" placeholder, not an empty string:
+        # callers test for "-" and would otherwise see a second spelling of "no port".
+        ("10.1.1.1:", ("10.1.1.1", "-")),
+        ("example.com:", ("example.com", "-")),
+        ("fd00::", ("fd00::", "-")),
+    ],
+)
+def test_split_endpoint(text, expected):
+    assert split_endpoint(text) == expected
+
+
+@pytest.mark.parametrize("text", ["10.1.1.1:", "example.com:", "fd00::", "10.1.1.1", ""])
+def test_split_endpoint_never_reports_an_empty_port(text):
+    """Whatever comes in, "no port" has exactly one spelling on the way out."""
+    assert split_endpoint(text)[1] != ""
+
+
+def test_split_endpoint_unbracketed_ipv6_with_port_is_the_ambiguous_case():
+    """'fd00::1:1234' is, on its own, already a complete IPv6 address (1234 is a
+    valid hex group) — the chosen heuristic still splits off the trailing ':1234'
+    as a port because the part before it also parses as a valid IPv6 address, and
+    every endpoint the legacy log format writes carries a port.
+    """
+    assert split_endpoint("fd00::1:1234") == ("fd00::1", "1234")
+
+
+def test_format_endpoint_brackets_ipv6_only():
+    assert format_endpoint("fd00::1", "1234") == "[fd00::1]:1234"
+    assert format_endpoint("10.1.1.1", "1234") == "10.1.1.1:1234"
+    assert format_endpoint("example.com", "443") == "example.com:443"
+
+
+@pytest.mark.parametrize("port", ["-", ""])
+def test_format_endpoint_without_port_returns_bare_address(port):
+    assert format_endpoint("fd00::1", port) == "fd00::1"
+    assert format_endpoint("10.1.1.1", port) == "10.1.1.1"
+
+
+@pytest.mark.parametrize(
+    "text, expected_out",
+    [
+        ("10.1.1.1:1234", "10.1.1.1:1234"),
+        ("example.com:443", "example.com:443"),
+        # round-trips to the bracketed form, not the original text: format_endpoint
+        # always brackets IPv6, since real records may or may not do so themselves.
+        ("fd00::1:1234", "[fd00::1]:1234"),
+        ("[fd00::1]:1234", "[fd00::1]:1234"),
+    ],
+)
+def test_split_then_format_endpoint(text, expected_out):
+    address, port = split_endpoint(text)
+    assert format_endpoint(address, port) == expected_out

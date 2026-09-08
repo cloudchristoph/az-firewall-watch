@@ -96,6 +96,11 @@ nor rejects them:
 - FQDNs in network rules, FQDN tags and web categories
 - target URLs
 - IP groups your identity is not allowed to read
+- an address entry the viewer cannot read, in a rule's address list or in an IP
+  group. The entry is named, so a typo is visible instead of silently dropped
+- destination addresses on an **application** rule: Azure matches those against
+  the address the firewall resolved from the `Host` header or the SNI, and that
+  resolution is nowhere in the log
 
 ### Navigating it
 

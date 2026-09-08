@@ -13,7 +13,10 @@ from dataclasses import dataclass, field
 from .arm import ArmClient, ArmError
 
 # API versions — pinned for predictable shapes.
-_API_FW = "2024-01-01"          # azureFirewalls, firewallPolicies, ipGroups
+# 2024-03-01 is the first version that returns autoscaleConfiguration on the
+# firewall; an older one silently drops it and a prescaled firewall would read
+# as "service default". Policies and IP groups are unchanged between the two.
+_API_FW = "2024-03-01"          # azureFirewalls, firewallPolicies, ipGroups
 _API_NET = "2024-01-01"         # virtualNetworks / subnets / publicIPAddresses / natGateways
 _API_DIAG = "2021-05-01-preview"  # Microsoft.Insights/diagnosticSettings
 _API_MAINT = "2023-04-01"       # Microsoft.Maintenance configurationAssignments / maintenanceConfigurations

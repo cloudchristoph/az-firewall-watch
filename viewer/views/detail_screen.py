@@ -12,7 +12,7 @@ from textual.screen import ModalScreen
 from textual.widgets import Button, Static
 
 from fw_parser import FirewallDataRow, tcp_direction
-from helpers import _to_local, _utc_short
+from helpers import _to_local, _utc_short, format_endpoint
 
 from ..trace import Trace
 from .trace_screen import TracePanel
@@ -33,7 +33,8 @@ _IDPS_FIELDS = ("Severity", "Signature", "Class", "Description")  # "Class": the
 
 
 def _ports_join(address: str, port: str) -> str:
-    return address if not port or port == "-" else f"{address}:{port}"
+    """Bracketed IPv6, bare IPv4/FQDN — see ``helpers.format_endpoint``."""
+    return format_endpoint(address, port)
 
 
 def _ports(src: str, dst: str) -> str:

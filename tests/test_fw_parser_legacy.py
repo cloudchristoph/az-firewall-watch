@@ -67,6 +67,17 @@ def test_legacy_application_rule_extracts_url(legacy_record):
     assert row.moreinfo == "example.com/path"
 
 
+def test_legacy_network_rule_ipv6_addresses_are_not_truncated(legacy_record):
+    """Regression: a naive split(':') on 'fd00::1:1234' used to cut it to 'fd00'."""
+    row = parse_record(legacy_record(
+        "AzureFirewallNetworkRule", "AzureFirewallNetworkRuleLog",
+        "TCP request from fd00::1:1234 to fd00::2:443. Action: Allow. "
+        "Rule Collection Group: rcg-x. Rule Collection: rc-y. Rule: r-z.",
+    ))
+    assert (row.sourceip, row.srcport) == ("fd00::1", "1234")
+    assert (row.targetip, row.targetport) == ("fd00::2", "443")
+
+
 def test_legacy_nat_rule(legacy_record):
     row = parse_record(legacy_record(
         "AzureFirewallNatRule", "AzureFirewallNatRuleLog",
@@ -76,6 +87,15 @@ def test_legacy_nat_rule(legacy_record):
     assert row.action == "DNAT"
     assert (row.sourceip, row.srcport) == ("1.2.3.4", "1234")
     assert (row.targetip, row.targetport) == ("10.1.1.1", "3389")
+
+
+def test_legacy_nat_rule_ipv6_addresses_are_not_truncated(legacy_record):
+    row = parse_record(legacy_record(
+        "AzureFirewallNatRule", "AzureFirewallNatRuleLog",
+        "TCP request from fd00::1:1234 to fd00::2:3389 was DNAT'ed to fd00::3:3389",
+    ))
+    assert (row.sourceip, row.srcport) == ("fd00::1", "1234")
+    assert (row.targetip, row.targetport) == ("fd00::3", "3389")
 
 
 def test_legacy_dns_proxy_is_normalised_to_dnsquery(legacy_record):
@@ -100,6 +120,15 @@ def test_legacy_dns_proxy_nxdomain(legacy_record):
     ))
     assert row.protocol == "AAAA"
     assert row.action == "NXDOMAIN"
+
+
+def test_legacy_dns_proxy_ipv6_source_is_not_truncated(legacy_record):
+    row = parse_record(legacy_record(
+        "AzureFirewallDnsProxy", "AzureFirewallDnsProxyLog",
+        "DNS Request: fd00::1:5350 - 10407 A IN ifconfig.me. udp 40 false 1232 "
+        "NOERROR qr,aa,rd,ra 56 0.000324423s",
+    ))
+    assert (row.sourceip, row.srcport) == ("fd00::1", "5350")
 
 
 def test_legacy_dns_proxy_short_message_does_not_crash(legacy_record):

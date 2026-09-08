@@ -24,6 +24,76 @@ def _parse_networks(cidrs: Iterable[str]) -> tuple[ipaddress.IPv4Network | ipadd
     return _parsed_networks(tuple(cidrs))
 
 
+_Address = ipaddress.IPv4Address | ipaddress.IPv6Address
+AddressRange = tuple[_Address, _Address]
+ParsedEntry = tuple[str, AddressRange]
+
+
+def _parse_address_entry(entry: str) -> AddressRange | None:
+    """One address entry as an inclusive range, or ``None`` if it is not one.
+
+    Azure accepts three notations wherever addresses are listed (IP groups,
+    rule address lists): a single address ``10.0.0.0``, a CIDR block
+    ``10.1.0.0/32`` and a range ``10.2.0.0-10.2.0.31``. Everything else is a
+    service tag or a typo, and the caller has to say so instead of dropping it.
+
+    Ranges keep their endpoints: expanding a large one into networks would cost
+    a lot for a question that is a comparison.
+    """
+    text = entry.strip()
+    if not text:
+        return None
+    start_text, sep, end_text = text.partition("-")
+    if sep:
+        try:
+            start = ipaddress.ip_address(start_text.strip())
+            end = ipaddress.ip_address(end_text.strip())
+        except ValueError:
+            return None
+        # A reversed or mixed-family range describes no addresses at all, so it
+        # is unreadable rather than empty: never let it answer a match question.
+        if start.version != end.version or int(start) > int(end):
+            return None
+        return start, end
+    try:
+        net = ipaddress.ip_network(text, strict=False)
+    except ValueError:
+        return None
+    return net.network_address, net.broadcast_address
+
+
+@lru_cache(maxsize=64)
+def _parsed_address_entries(entries: tuple[str, ...]) -> tuple[tuple[ParsedEntry, ...], tuple[str, ...]]:
+    """Parse once per distinct entry list: the trace runs per rule and row."""
+    parsed: list[ParsedEntry] = []
+    unreadable: list[str] = []
+    for entry in entries:
+        rng = _parse_address_entry(entry)
+        if rng is None:
+            unreadable.append(entry)
+        else:
+            parsed.append((entry, rng))
+    return tuple(parsed), tuple(unreadable)
+
+
+def parse_address_entries(entries: Iterable[str]) -> tuple[tuple[ParsedEntry, ...], tuple[str, ...]]:
+    """Split address entries into readable ``(entry, range)`` pairs and the rest.
+
+    The second tuple is the point of this function: an entry nobody can
+    interpret is not the same as an entry that does not contain the address.
+    """
+    return _parsed_address_entries(tuple(entries))
+
+
+def find_containing_entry(addr: _Address, parsed: Iterable[ParsedEntry]) -> str | None:
+    """The first entry whose range contains ``addr``, or ``None``."""
+    for entry, (start, end) in parsed:
+        # Endpoints of the other family would raise on comparison.
+        if start.version == addr.version and int(start) <= int(addr) <= int(end):
+            return entry
+    return None
+
+
 def resolve_fw_instance(ip: str, subnet_cidrs: Iterable[str]) -> str | None:
     """Return ``"AzFw.<lastOctet>"`` if ``ip`` lies inside any firewall subnet.
 
@@ -48,7 +118,12 @@ def resolve_fw_instance(ip: str, subnet_cidrs: Iterable[str]) -> str | None:
 
 
 def find_matching_ip_groups(ip: str, ip_groups: dict[str, IpGroupInfo]) -> list[str]:
-    """Return names of IP groups whose ``ip_addresses`` contain ``ip``."""
+    """Return names of IP groups whose ``ip_addresses`` contain ``ip``.
+
+    Entries this cannot read are left out silently: the caller shows a bare list
+    of group names and has nowhere to put a doubt. Callers that do have that
+    vocabulary use :func:`parse_address_entries` and report them (see the trace).
+    """
     if not ip or ip == "-":
         return []
     try:
@@ -57,14 +132,9 @@ def find_matching_ip_groups(ip: str, ip_groups: dict[str, IpGroupInfo]) -> list[
         return []
     matches: list[str] = []
     for grp in ip_groups.values():
-        for entry in grp.ip_addresses:
-            try:
-                net = ipaddress.ip_network(entry, strict=False)
-            except ValueError:
-                continue
-            if addr in net:
-                matches.append(grp.name)
-                break
+        parsed, _unreadable = parse_address_entries(grp.ip_addresses)
+        if find_containing_entry(addr, parsed) is not None:
+            matches.append(grp.name)
     return matches
 
 

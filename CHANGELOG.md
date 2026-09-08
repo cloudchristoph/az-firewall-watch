@@ -10,6 +10,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Nothing yet.
 
+## [0.5.1] - 2026-09-08
+
+0.5.0 gave the viewer an opinion: it reads the policy and marks every criterion of every rule on the flow's path as a match, a miss, or not decidable from here. An opinion is only worth having if it is right, and one of its founding principles is that what cannot be evaluated locally is marked `?` and never `✓`.
+
+This release takes back four judgements that broke that promise. Each of them produced a confident ✓ or ✗ where the honest answer was a match the viewer had thrown away, or a question it could not answer. None of them looked like an error on screen, which is what made them worth a release of their own.
+
+### Fixed
+
+- **Address ranges in IP groups were skipped silently.** Azure accepts three notations wherever addresses are listed: a single address `10.0.0.0`, a CIDR block `10.1.0.0/32` and a range `10.2.0.0-10.2.0.31`. The viewer parsed the first two and dropped the third without a word, so a flow whose address the group covered *as a range* was reported as `✗ destination` on the very rule that had matched it. Ranges are evaluated now, endpoints included, in IP groups and in a rule's own address lists, for IPv4 and IPv6 alike.
+- **An address entry the viewer cannot read is a `?`, not a miss.** The same silent `continue` also swallowed typos. An unreadable entry now names itself and its group in the trace (`cannot evaluate: ipgroup-dmz entry "10.4.0.0-oops"`) instead of quietly shrinking the group; a reversed or mixed-family range counts as unreadable rather than as an empty set, so it can never answer a match question. An entry that does answer the question still wins over one that does not.
+- **The legacy log parser cut IPv6 addresses in half.** Azure's `properties.msg` format writes endpoints as plain `host:port`, and the parser split them at the *first* colon, which turns `fd00::1:1234` into `fd00`. A `split_endpoint` / `format_endpoint` pair in `helpers.py` replaces the five split sites (network rule source and destination, NAT rule source and translated address, DNS proxy client) and handles both the bracketed and the unbracketed form, since it is not known whether Azure ever brackets an IPv6 host there itself. Addresses render as `[fd00::1]:1234` in the table and the row detail dialog; IPv4 and FQDNs are untouched.
+- **A truncated IPv6 destination was evaluated as an FQDN.** The consequence of the split above: `fd00` does not parse as an address, so the row ran against the rule's `targetFqdns` instead of its address ranges and came back with a verdict that was confident and wrong. With the address intact the destination is evaluated as an address again.
+- **Application rules no longer match on the packet's destination IP.** Azure matches an application rule on the `Host` header (HTTP) or the SNI (HTTPS) and *ignores the packet's destination IP* in favour of the address it resolved from the name itself. The trace nevertheless compared the logged IP against the rule's `destinationAddresses`, which could only ever be right by accident. That comparison is gone. Because addresses remain a valid destination type on an application rule, a rule that lists them is now `?` with the reason, rather than a miss: the firewall's own resolution is nowhere in the log, so neither a match nor a miss can be claimed.
+
+### Known limitations
+
+- **IPv6 is parsed, not yet supported end to end.** Endpoints survive the legacy parser and render correctly, but the filter bar still compares substrings and knows nothing about CIDR or address normalisation. This release fixes a wrong verdict; dual-stack as a feature is tracked separately.
+- **A port that disagrees with the `Host` header is not modelled.** Azure drops such traffic without attributing it to any rule. The trace has no place for a rejection without a rule, so such a row still ends in the default deny like any other unmatched flow.
+
 ## [0.5.0] - 2026-09-07
 
 Until now the viewer showed what the firewall logged and nothing else. A row said *Allow by rcg-net » rc-web » allow-web* and left the rest to you: which other rules the packet passed on the way, why the deny above did not fire, what that IP group actually contains, whether the firewall would have allowed the flow at all if the logged rule were not there.

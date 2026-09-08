@@ -56,7 +56,7 @@ Since 0.5.0 the row dialog is `viewer/views/detail_screen.py` (`dialogs.py` stil
 
 ### 4. `AzFw.<n>` labels — already done
 
-`viewer/enrichment.py:resolve_fw_instance` parses the address, distinguishes v4/v6 and uses the last 16 bits as hex for IPv6, with a comment explaining why the label is derived from the parsed value. Nothing to do here beyond one test with an IPv6 firewall subnet CIDR, which should already exist in `tests/test_enrichment_match.py` (check).
+`viewer/enrichment.py:resolve_fw_instance` parses the address, distinguishes v4/v6 and uses the last 16 bits as hex for IPv6, with a comment explaining why the label is derived from the parsed value. Nothing to do here beyond one test with an IPv6 firewall subnet CIDR, which already exists in `tests/test_enrichment_match.py` (`test_resolve_fw_instance_ipv6_uses_last_hextet`).
 
 ### 5. Evaluation trace — structurally v6-capable, zero IPv6 tests
 

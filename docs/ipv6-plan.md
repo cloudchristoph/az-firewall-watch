@@ -1,6 +1,6 @@
 # IPv6 (dual-stack firewall) support — plan
 
-Status: planning, revised 2026-09-08 against 0.5.0 (`5dde806`) · Branch: `feat/ipv6` (this document lives on the planning branch until the feature branch is cut)
+Status: steps 1–7 implemented on `feat/ipv6` (2026-09-08), step 8 (lab verification) open · Base: 0.5.0 (`5dde806`)
 
 Azure Firewall can now run in dual-stack mode (IPv4 + IPv6), currently in preview:
 <https://learn.microsoft.com/en-us/azure/firewall/deploy-dual-stack-firewall>
@@ -111,7 +111,7 @@ Ordered so each step is independently mergeable and testable without lab access,
 7. **Docs + changelog.**
 8. **Lab verification** — run against `fw-hub-gwc` once it is dual-stack: confirm legacy format, confirm which categories actually emit IPv6, capture the raw records into `tests/` fixtures, and fix whatever step 3 guessed wrong.
 
-Steps 1–7 can start now; step 8 waits for the lab. CI now also runs `ruff` and `mypy`, so the helpers need type hints from the start.
+Steps 1–7 are done on `feat/ipv6`: the helpers live in `ip_utils.py` (`split_endpoint`, `format_endpoint`, `address_matches`, `parse_address`, `parse_network`), the legacy parser, the table, the detail dialog, the filters and the trace all go through them, and `tests/test_ip_utils.py` plus IPv6 cases in the parser, filter, dialog, view and trace suites cover both candidate legacy spellings. Step 8 waits for the lab records; whichever spelling turns out wrong is a one-line change in `split_endpoint` and its tests.
 
 ## Lab prerequisites (CC-AzureLab)
 

@@ -17,16 +17,22 @@ resource ID from the first log record it receives and fetches from there.
 ### Three extra tabs
 
 - **Firewall**: four blocks about the instance itself.
-  - *Instance*: SKU tier and name, zones, provisioning state, resource group,
-    subscription, location, tags.
+  - *Instance*: SKU tier and name, zones, provisioning state, how the firewall
+    scales (service default, prescaled range, or fixed capacity with autoscaling
+    off), the customer-controlled maintenance window if one is assigned, resource
+    group, subscription, location, tags.
   - *Networking*: a table with one row per IP configuration, each with its
     private IP and the name and address of its public IP, plus the management IP
     when the firewall uses forced tunnelling. Underneath: subnets, their CIDRs,
-    and whether forced tunnelling is on.
+    whether forced tunnelling is on, and whether a NAT gateway sits on the
+    firewall subnet. With a gateway, outbound traffic leaves with the gateway's
+    public IPs while DNAT and management traffic stay on the firewall's own, and
+    the line says so.
   - *Policy*: the attached policy with its number of rule collection groups
     including inherited ones, base policy, Threat Intelligence mode and allowlist,
     DNS proxy and its servers, IDPS mode with bypass and override counts, TLS
-    inspection with the CA name, SNAT ranges, explicit proxy, child policies.
+    inspection with the CA name, SNAT ranges with the auto-learn state and its
+    Route Server, explicit proxy with its ports and PAC file, child policies.
   - *Logging*: a table of the firewall's diagnostic settings, each with its
     target (Event Hub, Log Analytics, Storage) and how many categories it
     forwards, including how many of those the viewer understands. Below it, a
@@ -35,7 +41,10 @@ resource ID from the first log record it receives and fetches from there.
     a missing category before you start looking for a bug.
 - **Policy**: a tree of rule collection groups → rule collections → rules, ordered
   by priority, with a detail pane showing sources, destinations, ports, protocols,
-  and IP groups resolved to their actual addresses.
+  IP groups resolved to their actual addresses and, on application rules, TLS
+  inspection and the HTTP headers the rule inserts. Header names are always shown;
+  the values can carry tokens or tenant ids, so they stay hidden until you press
+  `v`, and a refresh hides them again.
 - **IP Groups**: every IP group the policy references, how many rules use it, and
   for the selected group the rules that reference it. `Enter` on a rule jumps to it
   in the Policy tab.
@@ -101,6 +110,10 @@ nor rejects them:
 - destination addresses on an **application** rule: Azure matches those against
   the address the firewall resolved from the `Host` header or the SNI, and that
   resolution is nowhere in the log
+- the port of a request that came in through the **explicit proxy**: the log
+  marks such rows (`IsExplicitProxyRequest`), but whether it records the proxy
+  port or the real destination port is not verified, so the port criterion stays
+  open rather than risk a confident wrong miss
 
 ### Navigating it
 
@@ -134,11 +147,16 @@ Your identity needs **Reader** on the firewall, its policy, the IP groups it
 references, and the firewall's subnets and public IPs. See
 [required Azure permissions](configuration.md#required-azure-permissions).
 
-Two of the reads are optional and fail quietly, because they only add detail to
-the Firewall tab: one `GET` per public IP for its address, and one on the
-firewall's `Microsoft.Insights/diagnosticSettings`. Without the first you still
-get the public IP's name, without the second the Logging block says *no
-diagnostic settings readable*.
+Four of the reads are optional and fail quietly, because they only add detail to
+the Firewall tab: one `GET` per public IP for its address, one on the firewall's
+`Microsoft.Insights/diagnosticSettings`, one on a NAT gateway attached to the
+firewall subnet, and one per maintenance configuration assigned to the firewall.
+Without the first you still get the public IP's name, without the second the
+Logging block says *no diagnostic settings readable*, and the other two say the
+gateway or the window is *not readable* instead of pretending there is none.
+If the `Microsoft.Maintenance` provider is not registered in the subscription
+there is simply no assignment to read, and the tab says *no customer-controlled
+window*.
 
 Without ARM access at all nothing breaks: the status bar says *metadata
 unavailable (no ARM access)*, the extra tabs stay empty and the viewer behaves

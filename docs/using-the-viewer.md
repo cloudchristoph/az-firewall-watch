@@ -127,3 +127,4 @@ authentication errors stop immediately with a hint rather than retrying.
 | `Tab`        | Move between filter inputs                                                                 |
 | `c`          | Clear all rows from the table                                                              |
 | `Ctrl` + `r` | Re-fetch firewall / policy / IP-group metadata, bypassing the cache                        |
+| `v`          | In the Policy tab: show or hide the values of the HTTP headers an application rule inserts |

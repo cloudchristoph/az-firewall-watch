@@ -2,12 +2,22 @@
 from __future__ import annotations
 
 from rich.markup import escape
+from textual import events
 from textual.app import ComposeResult
+from textual.binding import Binding
 from textual.containers import Horizontal
 from textual.widgets import Static, Tree
 from textual.widgets.tree import TreeNode
 
 from ..azure_resources import FirewallPolicyInfo, IpGroupInfo, Rule, RuleCollection
+
+# Header values may carry auth tokens or tenant ids; hidden by default and
+# never rendered as anything but a fixed number of bullets.
+_HIDDEN_HEADER_VALUE = "•" * 6
+# Visual width of the "[dim]<label>[/]" column before a value starts (see the
+# existing rule-detail lines: "Source groups" (13) + 2 spaces, "Protocols" (9)
+# + 6 spaces, etc. all land on column 15).
+_VALUE_COLUMN = 15
 
 
 def _rule_category(rule: Rule, collection: RuleCollection) -> str:
@@ -21,6 +31,10 @@ def _rule_category(rule: Rule, collection: RuleCollection) -> str:
 
 class PolicyView(Static):
     """Tree view of Policy -> RCG -> RC -> Rule hierarchy."""
+
+    BINDINGS = [
+        Binding("v", "toggle_header_values", "Show/hide header values", show=False),
+    ]
 
     DEFAULT_CSS = """
     PolicyView {
@@ -47,6 +61,9 @@ class PolicyView(Static):
     def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
         self._rule_ref_to_node: dict[str, TreeNode] = {}
+        self._policy_sku_tier: str = ""
+        self._reveal_header_values: bool = False
+        self._last_payload: dict | None = None
 
     def compose(self) -> ComposeResult:
         with Horizontal():
@@ -61,13 +78,19 @@ class PolicyView(Static):
         tree = self.query_one("#policy-tree", Tree)
         details = self.query_one("#policy-details", Static)
         self._rule_ref_to_node.clear()
+        # A refresh must not keep previously revealed header values on screen.
+        self._reveal_header_values = False
+        self._last_payload = None
         if policy is None:
+            self._policy_sku_tier = ""
             tree.root.set_label("Policy data unavailable")
             tree.root.remove_children()
             tree.root.data = None  # no stale policy details on the root node
             tree.root.expand()
             details.update("Policy data unavailable")
             return
+
+        self._policy_sku_tier = policy.sku_tier
 
         tree.root.set_label(escape(
             f"{policy.name}  (SKU: {policy.sku_tier or '-'}, ThreatIntel: {policy.threat_intel_mode or '-'})"
@@ -115,6 +138,7 @@ class PolicyView(Static):
     def on_tree_node_selected(self, event: Tree.NodeSelected) -> None:
         payload = event.node.data
         details = self.query_one("#policy-details", Static)
+        self._last_payload = payload if isinstance(payload, dict) else None
         if not isinstance(payload, dict):
             details.update("No details available")
             return
@@ -143,6 +167,37 @@ class PolicyView(Static):
                 details.update("No details available")
                 return
             details.update(self._rule_summary(g, rc, r, ip_groups))
+
+    def on_key(self, event: events.Key) -> None:
+        # The Tree child holds focus and has no binding for "v", so the key
+        # event bubbles here; handle it directly rather than relying on the
+        # app-level BINDINGS chain to be reached (belt and braces — see the
+        # BINDINGS entry above, which documents the same action).
+        if event.key == "v":
+            event.stop()
+            self.action_toggle_header_values()
+
+    def action_toggle_header_values(self) -> None:
+        self._reveal_header_values = not self._reveal_header_values
+        self._rerender_selected_rule()
+
+    def _rerender_selected_rule(self) -> None:
+        """Re-render the details pane for the currently selected rule, if any.
+
+        If the last selected node was not a rule, toggling still flips the
+        reveal flag (it applies the next time a rule is selected) but there
+        is nothing to redraw right now.
+        """
+        payload = self._last_payload
+        if not isinstance(payload, dict) or payload.get("kind") != "rule":
+            return
+        r = payload.get("rule")
+        g = payload.get("rcg")
+        rc = payload.get("rc")
+        if r is None or g is None or rc is None:
+            return
+        details = self.query_one("#policy-details", Static)
+        details.update(self._rule_summary(g, rc, r, self._current_ip_groups()))
 
     def focus_rule(self, rule_ref: str) -> bool:
         """Focus a rule node by its stable ref ``policy|rcg|rc|rule`` (see ``_rule_ref``)."""
@@ -231,7 +286,7 @@ class PolicyView(Static):
         def j(values: list[str]) -> str:
             return escape(", ".join(values)) if values else "-"
 
-        return "\n".join([
+        lines = [
             f"[b]Rule: {escape(rule.name)}[/b]",
             "",
             f"[dim]RCG[/]            {escape(rcg.name) if rcg else '-'}",
@@ -246,7 +301,50 @@ class PolicyView(Static):
             "",
             f"[dim]Source groups[/]  {src_groups}",
             f"[dim]Target groups[/]  {dst_groups}",
-        ])
+        ]
+
+        if rc is not None and _rule_category(rule, rc) == "apprule":
+            lines.extend(self._app_rule_extra_lines(rule))
+
+        return "\n".join(lines)
+
+    def _app_rule_extra_lines(self, rule: Rule) -> list[str]:
+        """TLS inspection and HTTP header insertion, application rules only."""
+        lines: list[str] = [""]
+        if rule.terminate_tls:
+            lines.append("[dim]TLS inspection[/] on")
+        if rule.http_headers:
+            lines.extend(self._http_header_lines(rule))
+        if len(lines) == 1:
+            # nothing was appended after the blank separator — drop it too
+            lines.pop()
+        return lines
+
+    def _http_header_lines(self, rule: Rule) -> list[str]:
+        count = len(rule.http_headers)
+        if self._reveal_header_values:
+            status = "[dim]values shown, press v to hide[/]"
+        else:
+            status = "[dim]press v to show values[/]"
+        lines = [f"[dim]HTTP headers[/]   {count} inserted   {status}"]
+        pad = " " * _VALUE_COLUMN
+        for h in rule.http_headers:
+            value = escape(h.value) if self._reveal_header_values else _HIDDEN_HEADER_VALUE
+            lines.append(f"{pad}{escape(h.name)}: {value}")
+        lines.append(self._header_insertion_scope_line(rule))
+        return lines
+
+    def _header_insertion_scope_line(self, rule: Rule) -> str:
+        """Which traffic actually gets the headers, given the policy SKU and
+        whether this rule terminates TLS (Premium-only TLS inspection)."""
+        has_https = any(p.lower() == "https" for p in rule.protocols)
+        if not has_https:
+            return "[dim]inserted into HTTP[/]"
+        if self._policy_sku_tier != "Premium":
+            return "[yellow]HTTPS on Standard/Basic: headers are inserted into HTTP only[/]"
+        if not rule.terminate_tls:
+            return "[yellow]HTTPS without TLS inspection on this rule: headers are inserted into HTTP only[/]"
+        return "[dim]inserted into HTTP and TLS-inspected HTTPS[/]"
 
     @staticmethod
     def _render_group_values(group_ids: list[str], ip_groups: dict[str, IpGroupInfo]) -> str:

@@ -818,6 +818,11 @@ class FirewallLogApp(App[None]):
             "from " + (", ".join(src) or "any"),
             "to " + dst_txt,
         ]
+        if rule.http_headers:
+            count = len(rule.http_headers)
+            noun = "HTTP header" if count == 1 else "HTTP headers"
+            header_names = ", ".join(h.name for h in rule.http_headers)
+            parts.append(f"inserts {count} {noun} ({header_names})")
         return "  ".join(parts)
 
     # ── actions (key bindings) ─────────────────────────────────────────────────

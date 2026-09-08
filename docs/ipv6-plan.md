@@ -69,7 +69,10 @@ Why this ranks above rendering: a wrong assumption here does not crash, it shows
 - IP group containing IPv6 prefixes (the service does not support them yet, but the code path must not blow up);
 - `*` wildcard with an IPv6 flow;
 - an IPv6 flow against the lab-shaped policy fixture (`LAB`) to confirm the *nearest miss* logic reports the address, not the port;
-- a garbled legacy address (`fd00`) to document today's failure mode, turned into the fixed behaviour once 1 lands.
+- a garbled legacy address (`fd00`), one case per direction, because source and destination fail differently:
+  - **destination** — `_flow_from_row` (`app.py:731`) decides `is_fqdn` by `ipaddress.ip_address(target)`; on `fd00` the parse fails, the flow enters the trace with `dst_fqdn="fd00"` and empty `dst_ip`, and the destination check runs against `targetFqdns` instead of address ranges. That is a confident wrong verdict, not a `?`. The test must assert that the destination check does *not* take the FQDN branch, otherwise this regression stays invisible.
+  - **source** — `src_ip` is passed through unchanged, `trace.py:_parse_ip` returns `None` on `ValueError`, and `_address_check` answers `NA, "no address in log"`. Wrong, but honest: no match and no miss is claimed.
+  Both cases document today's failure mode and turn into the fixed behaviour once step 1 lands.
 
 ### 6. Column width
 
@@ -83,6 +86,8 @@ IPv6 addresses are up to 39 characters, plus brackets and port up to 47. Check D
 - Prefix filtering: accept a CIDR (`fd00:c1d0::/32`, also `10.0.0.0/8`) in the Source and Dest filters and match with `ip_network(..., strict=False)`. This is the one genuinely new feature in the branch and is useful for IPv4 too.
 
 Filter placeholder texts stay as they are.
+
+The trace is where the CIDR filter and the compressed/expanded normalisation meet again: `_address_check` already does `ip in ip_network(...)`. One shared helper (`normalise_address` / `address_in_prefix` in `helpers.py`) serves both the filter and the trace rather than two implementations.
 
 ### 8. Firewall tab and setup wizard
 

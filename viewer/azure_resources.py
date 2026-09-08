@@ -464,10 +464,11 @@ async def fetch_nat_gateway(arm: ArmClient, gateway_id: str, subnet_name: str = 
             readable=False,
         )
     props = raw.get("properties") or {}
-    pip_ids = [ref["id"] for ref in (props.get("publicIPAddresses") or [])
-               if isinstance(ref, dict) and ref.get("id")]
-    prefix_ids = [ref["id"] for ref in (props.get("publicIPPrefixes") or [])
-                  if isinstance(ref, dict) and ref.get("id")]
+    # The documented keys are publicIpAddresses / publicIpPrefixes (lower-case
+    # "Ip", unlike the publicIPAddresses resource type); the other spelling is
+    # accepted as well so a casing quirk never hides the gateway's addresses.
+    pip_ids = [ref["id"] for ref in _sub_resources(props, "publicIpAddresses", "publicIPAddresses")]
+    prefix_ids = [ref["id"] for ref in _sub_resources(props, "publicIpPrefixes", "publicIPPrefixes")]
     return NatGatewayInfo(
         id=raw.get("id") or gateway_id,
         name=raw.get("name") or gateway_id.rsplit("/", 1)[-1],
@@ -477,6 +478,15 @@ async def fetch_nat_gateway(arm: ArmClient, gateway_id: str, subnet_name: str = 
         public_ip_names=[pid.rsplit("/", 1)[-1] for pid in pip_ids],
         public_ip_prefix_names=[pid.rsplit("/", 1)[-1] for pid in prefix_ids],
     )
+
+
+def _sub_resources(props: dict, *keys: str) -> list[dict]:
+    """The ``{"id": ...}`` entries under the first of *keys* that is present."""
+    for key in keys:
+        items = props.get(key)
+        if items:
+            return [ref for ref in items if isinstance(ref, dict) and ref.get("id")]
+    return []
 
 
 async def fetch_nat_gateways(arm: ArmClient, subnets: list[SubnetInfo]) -> list[NatGatewayInfo]:

@@ -51,12 +51,16 @@ async def test_fetch_subnet_nat_gateway_null():
 
 # ── fetch_nat_gateway ────────────────────────────────────────────────────────
 
-async def test_fetch_nat_gateway_readable():
+@pytest.mark.parametrize("ip_key,prefix_key", [
+    ("publicIpAddresses", "publicIpPrefixes"),   # the documented NatGatewayPropertiesFormat keys
+    ("publicIPAddresses", "publicIPPrefixes"),   # the resource-type spelling, tolerated
+])
+async def test_fetch_nat_gateway_readable(ip_key, prefix_key):
     arm = FakeArm({NATGW: {
         "id": NATGW, "name": "natgw-hub",
         "properties": {
-            "publicIPAddresses": [{"id": PIP1}, {"id": PIP2}],
-            "publicIPPrefixes": [{"id": PREFIX}],
+            ip_key: [{"id": PIP1}, {"id": PIP2}],
+            prefix_key: [{"id": PREFIX}],
         },
     }})
     gw = await fetch_nat_gateway(arm, NATGW, subnet_name="AzureFirewallSubnet")

@@ -341,3 +341,94 @@ def test_collection_kind_detection():
     assert rc("a", 1, "Allow", app("x")).kind == "application"
     assert rc("d", 1, "Dnat", nat("x"), rc_type="FirewallPolicyNatRuleCollection").kind == "dnat"
     assert rc("empty", 1, "Allow").kind == "network"
+
+
+# ── IPv6 (dual-stack firewall) ───────────────────────────────────────────────
+# Network rules are the only IPv6-capable rule kind in the preview. The trace
+# compares parsed addresses, so a wrong assumption here does not crash — it shows
+# a confident ✓ or ✗ on a rule that does not apply. Hence explicit coverage.
+
+V6_SRC = "fd10:2:0:2::10"
+V6_DST = "2606:4700::6810:84e5"
+V6_SPOKES = "fd10:2::/32"
+G_SPOKES6 = "/g/spokes6"
+GROUPS6 = {**GROUPS, G_SPOKES6: IpGroupInfo(id=G_SPOKES6, name="ipgroup-spokes-v6", location="gwc",
+                                            ip_addresses=["10.3.0.0/16", V6_SPOKES])}
+TCP443_V6 = Flow(category="NetworkRule", protocol="TCP", src_ip=V6_SRC, dst_ip=V6_DST, dst_port="443")
+
+
+def _check(rule_trace, name):
+    return next(c for c in rule_trace.checks if c.name == name)
+
+
+def test_ipv6_flow_matches_ipv6_prefixes():
+    r = evaluate_rule(net("r", source_addresses=[V6_SPOKES], destination_addresses=["2606:4700::/32"],
+                          destination_ports=["443"], protocols=["TCP"]), TCP443_V6, GROUPS)
+    assert r.verdict == MATCH
+    assert _check(r, "source").detail == V6_SPOKES
+    assert _check(r, "destination").detail == "2606:4700::/32"
+
+
+def test_ipv6_flow_misses_ipv4_prefixes_and_vice_versa():
+    r = evaluate_rule(net("r", source_addresses=["10.3.0.0/16"], destination_addresses=["*"]), TCP443_V6, GROUPS)
+    src = _check(r, "source")
+    assert src.result == MISS and src.detail == V6_SRC          # a clean miss, not an error or unknown
+    r4 = evaluate_rule(net("r", source_addresses=[V6_SPOKES], destination_addresses=["*"]), TCP443, GROUPS)
+    assert _check(r4, "source").result == MISS
+
+
+def test_ipv6_flow_against_mixed_prefix_list_matches_the_v6_entry():
+    r = evaluate_rule(net("r", source_addresses=["10.3.0.0/16", V6_SPOKES], destination_addresses=["*"]), TCP443_V6, GROUPS)
+    assert _check(r, "source").result == MATCH and _check(r, "source").detail == V6_SPOKES
+
+
+def test_ipv6_flow_matches_an_ip_group_holding_v6_prefixes():
+    """IP groups cannot hold IPv6 yet in the preview; the code path must still be right when they can."""
+    r = evaluate_rule(net("r", source_ip_groups=[G_SPOKES6], source_addresses=[], destination_addresses=["*"]), TCP443_V6, GROUPS6)
+    assert _check(r, "source").result == MATCH and _check(r, "source").detail == "ipgroup-spokes-v6"
+    r_v4_only = evaluate_rule(net("r", source_ip_groups=[G_SPOKES], source_addresses=[], destination_addresses=["*"]), TCP443_V6, GROUPS6)
+    assert _check(r_v4_only, "source").result == MISS
+
+
+def test_ipv6_flow_matches_wildcards():
+    r = evaluate_rule(net("r", source_addresses=["*"], destination_addresses=["any"], destination_ports=["*"], protocols=["Any"]), TCP443_V6, GROUPS)
+    assert r.verdict == MATCH
+
+
+def test_ipv6_flow_expanded_spelling_is_the_same_address():
+    flow = replace(TCP443_V6, src_ip="fd10:2:0:2:0:0:0:10")
+    r = evaluate_rule(net("r", source_addresses=[V6_SRC], destination_addresses=["*"]), flow, GROUPS)
+    assert _check(r, "source").result == MATCH
+
+
+def test_ipv6_flow_through_lab_policy_reports_the_address_as_the_near_miss():
+    """An IPv6 packet against the v4-only lab policy: every rule misses on the address, the
+    trace ends at the default deny and the failing criterion is the source, not the port."""
+    from viewer.trace import first_problem
+
+    flow = replace(TCP443_V6, dst_port="443")
+    t = build_trace(flow, LAB, GROUPS, None)
+    allow = collections(t, "network")[1]
+    assert allow.verdict == MISS
+    for r in allow.rules:
+        problem = first_problem(r)
+        assert problem is not None and problem.name == "source" and problem.result == MISS, r.rule.name
+    assert t.outcome.startswith("default action: Deny")
+
+
+def test_ipv6_destination_is_checked_as_an_address_not_as_an_fqdn():
+    """Regression guard for the old first-colon split: a destination that reaches the trace as
+    ``dst_ip`` must go through the address check. A network rule with only FQDN targets then
+    answers *unknown* (cannot know what the FQDN resolved to), never a confident miss."""
+    rule = net("r", destination_addresses=[], destination_fqdns=["ifconfig.me"])
+    c = _check(evaluate_rule(rule, TCP443_V6, GROUPS), "destination")
+    assert c.result == UNKNOWN and "ifconfig.me" in c.detail
+    assert "not in" not in c.detail  # the FQDN branch would have said "<name> not in ifconfig.me"
+
+
+def test_garbled_ipv6_source_is_not_applicable_rather_than_a_verdict():
+    """What the old parser produced ('fd10' from 'fd10:2:0:2::10:51000'): not an address, so the
+    source check must say n/a instead of match or miss."""
+    flow = replace(TCP443_V6, src_ip="fd10")
+    c = _check(evaluate_rule(net("r", source_addresses=[V6_SPOKES], destination_addresses=["*"]), flow, GROUPS), "source")
+    assert c.result == NA and c.detail == "no address in log"

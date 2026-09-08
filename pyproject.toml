@@ -19,6 +19,6 @@ ignore = ["E501", "E701"]
 
 [tool.mypy]
 python_version = "3.10"
-files = ["main.py", "fw_parser.py", "helpers.py", "dialogs.py", "viewer", "setup"]
+files = ["main.py", "fw_parser.py", "helpers.py", "ip_utils.py", "dialogs.py", "viewer", "setup"]
 ignore_missing_imports = true
 warn_unused_ignores = true

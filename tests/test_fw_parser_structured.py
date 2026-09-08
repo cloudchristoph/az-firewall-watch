@@ -296,3 +296,70 @@ def test_rowids_are_unique_and_increasing(structured_record):
 def test_every_structured_category_maps_to_display_name(structured_record, category, expected):
     row = parse_record(structured_record(category))
     assert row.category == expected
+
+
+# ── IPv6 (dual-stack firewall) ───────────────────────────────────────────────
+# Structured records carry addresses as plain strings, so IPv6 passes through
+# unchanged; these pin that down for every category the preview can emit.
+
+V6_SRC = "fd10:2:0:2::10"
+V6_DST = "2606:4700::6810:84e5"
+
+
+def test_network_rule_ipv6(structured_record):
+    row = parse_record(structured_record(
+        "AZFWNetworkRule",
+        Protocol="TCP", SourceIp=V6_SRC, SourcePort=51000,
+        DestinationIp=V6_DST, DestinationPort=443, Action="Allow",
+        **RULE_PROPS,
+    ))
+    assert (row.sourceip, row.srcport) == (V6_SRC, "51000")
+    assert (row.targetip, row.targetport) == (V6_DST, "443")
+
+
+def test_network_rule_ipv6_default_deny(structured_record):
+    row = parse_record(structured_record(
+        "AZFWNetworkRule",
+        Protocol="TCP", SourceIp=V6_SRC, SourcePort=1, DestinationIp=V6_DST, DestinationPort=22,
+        Action="Deny", ActionReason="No rule matched. Proceeding with default action.",
+    ))
+    assert row.action == "Deny"
+    assert row.sourceip == V6_SRC and row.rule_collection_group == ""
+
+
+def test_dns_query_ipv6_client_aaaa(structured_record):
+    row = parse_record(structured_record(
+        "AZFWDnsQuery", QueryType="AAAA", SourceIp=V6_SRC, SourcePort=5350,
+        QueryName="ifconfig.me.", ResponseCode="NOERROR",
+    ))
+    assert row.category == "DnsQuery"
+    assert (row.sourceip, row.srcport) == (V6_SRC, "5350")
+    assert row.protocol == "AAAA"
+    assert row.targetip == "ifconfig.me"
+
+
+def test_flow_trace_ipv6(structured_record):
+    row = parse_record(structured_record(
+        "AZFWFlowTrace", Protocol="TCP", SourceIp=V6_DST, SourcePort=443,
+        DestinationIp=V6_SRC, DestinationPort=51000, Flag="SYN-ACK", Action="Log", ActionReason="Additional TCP Log",
+    ))
+    assert (row.sourceip, row.srcport, row.targetip, row.targetport) == (V6_DST, "443", V6_SRC, "51000")
+    assert row.action == "SYN-ACK"
+    assert row.moreinfo == "server → client"
+
+
+def test_fat_flow_ipv6(structured_record):
+    row = parse_record(structured_record(
+        "AZFWFatFlow", Protocol="TCP", SourceIp=V6_SRC, SourcePort=51000,
+        DestinationIp=V6_DST, DestinationPort=443, FlowRate="12.5",
+    ))
+    assert (row.sourceip, row.targetip) == (V6_SRC, V6_DST)
+    assert row.action == "12.5 Mbps"
+
+
+def test_icmpv6_without_ports_renders_dashes(structured_record):
+    row = parse_record(structured_record(
+        "AZFWNetworkRule", Protocol="ICMP", SourceIp=V6_SRC, DestinationIp="fd10:2:0:1::4", Action="Allow",
+    ))
+    assert (row.srcport, row.targetport) == ("-", "-")
+    assert row.targetip == "fd10:2:0:1::4"

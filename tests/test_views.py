@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import time
 from collections.abc import Callable
+from dataclasses import replace
 
 import pytest
 from textual.widgets import DataTable, Input, Static, TabbedContent, Tree
@@ -846,3 +847,41 @@ async def test_policy_details_escape_markup(structured_record, mgmt, firewall_id
         await wait_until(pilot, lambda: "Rule: allow-web" in str(app.query_one("#policy-details", Static).content))
         details = str(app.query_one("#policy-details", Static).content)
         assert "ipgroup-all-spokes: (10.3.0.0/16)" in details   # parentheses, no bracket markup
+
+
+# ── IPv6 (dual-stack firewall) ───────────────────────────────────────────────
+
+V6_SRC = "fd10:2:0:2::10"
+
+
+def test_flow_from_legacy_ipv6_row_is_an_address_flow(legacy_record):
+    """Regression: the old first-colon split handed 'fd10' to the trace, which then treated it
+    as an FQDN and checked application-style targets instead of address ranges."""
+    row = parse_record(legacy_record(
+        "AzureFirewallNetworkRule", "AzureFirewallNetworkRuleLog",
+        f"TCP request from {V6_SRC}:51000 to 2606:4700::6810:84e5:443. Action: Deny.",
+    ))
+    flow = FirewallLogApp._flow_from_row(row)
+    assert flow.src_ip == V6_SRC
+    assert flow.dst_ip == "2606:4700::6810:84e5" and flow.dst_fqdn == ""
+    assert flow.dst_port == "443"
+
+
+async def test_ipv6_source_cell_brackets_the_address_and_the_instance_label(structured_record, mgmt, firewall_id):
+    """The bracket decision follows the row's address, so the AzFw label ends up inside them too."""
+    mgmt["snapshot"] = replace(make_snapshot(), subnet_cidrs=["10.2.0.0/26", "fd10:2:0:1::/64"])
+    app = FirewallLogApp()
+    async with app.run_test(size=(160, 45)) as pilot:
+        await pilot.pause()
+        spoke = _net(structured_record, V6_SRC, "2606:4700::6810:84e5")
+        fw = _net(structured_record, "fd10:2:0:1::6", "2606:4700::6810:84e5", port=53)
+        app._pending.extend([spoke, fw])
+        await app._flush_rows()
+        await pilot.pause()
+        tbl = app.query_one("#log-table", DataTable)
+        src_col = tbl.ordered_columns[3].key
+        assert tbl.get_cell(spoke.rowid, src_col).plain == f"[{V6_SRC}]:1"
+        await _load(app, pilot, firewall_id)
+        assert tbl.get_cell(spoke.rowid, src_col).plain == f"[{V6_SRC}]:1"
+        assert tbl.get_cell(fw.rowid, src_col).plain == "[AzFw.6]:1"
+        assert app._format_ip(V6_SRC) == V6_SRC

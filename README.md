@@ -17,7 +17,10 @@ Built by [CloudChristoph](https://github.com/cloudchristoph).
 - **Live log stream** from an Event Hub: structured and legacy log formats, every
   category from `NetworkRule` to `FatFlow`, with automatic reconnect.
 - **Instant filters** on source, destination, action, category, protocol and port,
-  plus one-click presets that separate decisions from observations and DNS noise.
+  CIDR prefixes included, plus one-click presets that separate decisions from
+  observations and DNS noise.
+- **Dual-stack firewalls**: IPv6 addresses in every log category the preview
+  emits them for, in the table, the detail dialog and the evaluation trace.
 - **Policy context**: Firewall, Policy and IP Groups tabs built from Azure
   Resource Manager, with log rows enriched by what the policy says.
 - **Evaluation trace**: press `Enter` on a row to see the path that flow took

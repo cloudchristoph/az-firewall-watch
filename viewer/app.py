@@ -28,6 +28,7 @@ from textual.widgets import (
 from dialogs import PolicyContextNoticeDialog, StatusBar
 from fw_parser import FirewallDataRow
 from helpers import _category_text, _highlight, _to_local
+from ip_utils import address_matches, is_ipv6
 
 from .azure_resources import FirewallInfo, FirewallPolicyInfo, IpGroupInfo
 from .cache import CachedSnapshot
@@ -460,7 +461,7 @@ class FirewallLogApp(App[None]):
             TimeCell(row.time),
             _category_text(row.category),
             _highlight(row.protocol, f["proto"]),
-            self._source_text(self._format_ip(row.sourceip), row.srcport, f["src"]),
+            self._source_text(self._format_ip(row.sourceip), row.srcport, f["src"], ipv6=is_ipv6(row.sourceip)),
             _highlight(self._format_ip(row.targetip), f["dst"]),
             row.targetport,
             action_text,
@@ -572,10 +573,19 @@ class FirewallLogApp(App[None]):
         return Text(action)
 
     @staticmethod
-    def _source_text(sourceip: str, srcport: str, term: str) -> Text:
-        """Render 'ip:port' with the port portion dimmed."""
+    def _source_text(sourceip: str, srcport: str, term: str, ipv6: bool = False) -> Text:
+        """Render 'ip:port' with the port portion dimmed; IPv6 sources as '[ip]:port'.
+
+        ``sourceip`` may already be the ``AzFw.<n>`` label, so the caller decides
+        ``ipv6`` from the address in the row, not from what is rendered here.
+        """
         t = Text()
-        t.append(sourceip)
+        if ipv6:
+            t.append("[", style="dim")
+            t.append(sourceip)
+            t.append("]", style="dim")
+        else:
+            t.append(sourceip)
         t.append(":", style="dim")
         t.append(srcport, style="dim")
         if term:
@@ -636,8 +646,8 @@ class FirewallLogApp(App[None]):
     @staticmethod
     def _matches(row: FirewallDataRow, f: dict) -> bool:
         if f["hide_dns"] and row.category.lower() == "dnsquery":               return False
-        if f["src"]    and f["src"]    not in row.sourceip.lower():             return False
-        if f["dst"]    and f["dst"]    not in (row.targetip or "").lower():     return False
+        if f["src"]    and not address_matches(f["src"], row.sourceip):        return False
+        if f["dst"]    and not address_matches(f["dst"], row.targetip):        return False
         if f["action"] and f["action"] not in row.action.lower():               return False
         if f["cat"] and not FirewallLogApp._category_matches(f["cat"], row.category):    return False
         if f["proto"]  and f["proto"]  not in row.protocol.lower():             return False

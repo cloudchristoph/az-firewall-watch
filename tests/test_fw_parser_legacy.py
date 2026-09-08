@@ -1,6 +1,8 @@
 """Legacy (properties.msg) log format parsing."""
 from __future__ import annotations
 
+import pytest
+
 from fw_parser import parse_record
 
 
@@ -173,3 +175,80 @@ def test_legacy_unknown_operation_is_skipped(legacy_record):
         "AzureFirewallNetworkRule", "SomethingElse", "TCP request from a:1 to b:2. Action: Allow.",
     ))
     assert row.category.startswith("SKIP:ParseErr:")
+
+
+# ── IPv6 (dual-stack firewall) ───────────────────────────────────────────────
+# The exact spelling Azure uses for IPv6 endpoints in legacy messages is not
+# documented; both the bracketed ``[addr]:port`` and the bare ``addr:port`` form
+# are covered until lab records settle it (see docs/ipv6-plan.md).
+
+V6_SRC = "fd10:2:0:2::10"
+V6_DST = "2606:4700::6810:84e5"
+
+
+@pytest.mark.parametrize("src, dst", [
+    (f"[{V6_SRC}]:51000", f"[{V6_DST}]:443"),   # bracketed
+    (f"{V6_SRC}:51000", f"{V6_DST}:443"),       # bare
+])
+def test_legacy_network_rule_ipv6(legacy_record, src, dst):
+    row = parse_record(legacy_record(
+        "AzureFirewallNetworkRule", "AzureFirewallNetworkRuleLog",
+        f"TCP request from {src} to {dst}. Action: Allow. "
+        "Rule Collection Group: rcg-x. Rule Collection: rc-y. Rule: r-z.",
+    ))
+    assert row.category == "NetworkRule"
+    assert (row.sourceip, row.srcport) == (V6_SRC, "51000")
+    assert (row.targetip, row.targetport) == (V6_DST, "443")
+    assert row.action == "Allow"
+    assert row.rule_name == "r-z"
+
+
+def test_legacy_network_rule_ipv6_mixed_with_ipv4_stays_intact(legacy_record):
+    """Regression: the old first-colon split turned fd10:2:0:2::10 into source 'fd10', port '2'."""
+    row = parse_record(legacy_record(
+        "AzureFirewallNetworkRule", "AzureFirewallNetworkRuleLog",
+        f"UDP request from {V6_SRC}:5350 to 10.2.0.4:53. Action: Deny.",
+    ))
+    assert (row.sourceip, row.srcport) == (V6_SRC, "5350")
+    assert (row.targetip, row.targetport) == ("10.2.0.4", "53")
+
+
+def test_legacy_network_rule_icmpv6_without_ports(legacy_record):
+    """ICMP messages carry no ports; an address ending in a decimal group must not lose it."""
+    row = parse_record(legacy_record(
+        "AzureFirewallNetworkRule", "AzureFirewallNetworkRuleLog",
+        "ICMP request from fd10:2:0:2::10 to fd10:2:0:1::4. Action: Allow.",
+    ))
+    assert row.protocol == "ICMP"
+    assert (row.sourceip, row.srcport) == ("fd10:2:0:2::10", "-")
+    assert (row.targetip, row.targetport) == ("fd10:2:0:1::4", "-")
+
+
+def test_legacy_nat_rule_ipv6(legacy_record):
+    row = parse_record(legacy_record(
+        "AzureFirewallNatRule", "AzureFirewallNatRuleLog",
+        "TCP request from [2001:db8::5]:1234 to [2603:1020:c01:16::275]:3389 was DNAT'ed to [fd10:2:0:2::10]:3389",
+    ))
+    assert (row.sourceip, row.srcport) == ("2001:db8::5", "1234")
+    assert (row.targetip, row.targetport) == ("fd10:2:0:2::10", "3389")
+
+
+def test_legacy_application_rule_ipv6_source(legacy_record):
+    row = parse_record(legacy_record(
+        "AzureFirewallApplicationRule", "AzureFirewallApplicationRuleLog",
+        f"HTTPS request from {V6_SRC}:55583 to www.example.com:443. Action: Allow. "
+        "Policy: pol-hub. Rule Collection Group: rcg. Rule Collection: rc. Rule: r.",
+    ))
+    assert (row.sourceip, row.srcport) == (V6_SRC, "55583")
+    assert (row.targetip, row.targetport) == ("www.example.com", "443")
+
+
+def test_legacy_dns_proxy_ipv6_client(legacy_record):
+    row = parse_record(legacy_record(
+        "AzureFirewallDnsProxy", "AzureFirewallDnsProxyLog",
+        f"DNS Request: {V6_SRC}:5350 - 10407 AAAA IN ifconfig.me. udp 40 false 1232 "
+        "NOERROR qr,aa,rd,ra 56 0.000324423s",
+    ))
+    assert (row.sourceip, row.srcport) == (V6_SRC, "5350")
+    assert row.protocol == "AAAA"
+    assert row.targetip == "ifconfig.me"

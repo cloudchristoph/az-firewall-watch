@@ -17,8 +17,9 @@ unreadable IP groups cannot be evaluated here).
 """
 from __future__ import annotations
 
-import ipaddress
 from dataclasses import dataclass, field
+
+from ip_utils import parse_address, parse_network
 
 from .azure_resources import FirewallPolicyInfo, IpGroupInfo, Rule, RuleCollection, RuleCollectionGroup
 from .enrichment import _fqdn_matches, _port_matches
@@ -130,12 +131,7 @@ class Trace:
 # ── criteria ─────────────────────────────────────────────────────────────────
 
 def _parse_ip(value: str):
-    if not value or value == "-":
-        return None
-    try:
-        return ipaddress.ip_address(value)
-    except ValueError:
-        return None
+    return parse_address(value)
 
 
 def _address_check(ip, addresses: list[str], group_ids: list[str],
@@ -147,22 +143,20 @@ def _address_check(ip, addresses: list[str], group_ids: list[str],
     for a in addresses:
         if a.lower() in _WILDCARDS:
             return MATCH, a
-        try:
-            if ip in ipaddress.ip_network(a, strict=False):
-                return MATCH, a
-        except ValueError:
+        net = parse_network(a)
+        if net is None:
             unknown.append(a)   # service tag such as AzureMonitor
+        elif ip.version == net.version and ip in net:
+            return MATCH, a
     for gid in group_ids:
         grp = ip_groups.get(gid)
         if grp is None:
             unknown.append(gid.rsplit("/", 1)[-1] + " (not loaded)")
             continue
         for entry in grp.ip_addresses:
-            try:
-                if ip in ipaddress.ip_network(entry, strict=False):
-                    return MATCH, grp.name
-            except ValueError:
-                continue
+            net = parse_network(entry)
+            if net is not None and ip.version == net.version and ip in net:
+                return MATCH, grp.name
     if unknown:
         return UNKNOWN, "cannot evaluate: " + ", ".join(unknown)
     return MISS, str(ip)

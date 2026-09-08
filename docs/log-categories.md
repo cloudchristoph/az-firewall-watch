@@ -36,6 +36,12 @@ category this viewer understands that nothing forwards.
 > `Enter`: the dialog reads the direction and shows the connection as
 > `client → server` regardless of which way the logged packet went.
 
+> [!NOTE]
+> **IPv6.** On a dual-stack firewall (preview) IPv6 addresses appear in
+> `NetworkRule`, `DnsQuery`, `FlowTrace` and `FatFlow` rows, in both log formats.
+> Application, DNAT, IDPS and Threat Intelligence rules do not support IPv6 yet,
+> so those categories stay IPv4. Sources render as `[address]:port`.
+
 ## Enabling flow trace and fat flow
 
 `FlowTrace` and `FatFlow` need the corresponding logging switched on at the

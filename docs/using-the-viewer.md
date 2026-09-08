@@ -17,7 +17,7 @@ Columns:
 | `Time (Local)` | Event timestamp converted to your local time zone                              |
 | `Category`     | Display category, see [Log categories](log-categories.md)                      |
 | `Proto`        | Protocol, or the DNS query type for `DnsQuery` rows                             |
-| `Source`       | Source address                                                                  |
+| `Source`       | Source address and port; IPv6 as `[fd10:2:0:2::10]:51000`                       |
 | `Dest / FQDN`  | Destination address or the requested FQDN                                       |
 | `Port`         | Destination port (`-` when the record has none, e.g. ICMP)                       |
 | `Action`       | `Allow`, `Deny`, `DNAT`, DNS response codes, TCP flow flags, fat-flow rates      |
@@ -32,11 +32,17 @@ All filters are **case-insensitive substring matches**, applied instantly as you
 type. Press `f` to jump into the filter bar, `Tab` to move between inputs, and
 `Escape` to clear everything at once.
 
+The two address filters understand addresses as well: a **CIDR prefix**
+(`10.3.0.0/16`, `fd10:2::/32`) keeps only rows whose address lies inside it, and
+a full IPv6 address matches in any spelling, compressed or expanded. Anything
+that is not a prefix or an address is a plain substring, so `10.3.` or `::10`
+work the way you would expect.
+
 <!-- markdownlint-disable MD060 -->
 | Filter      | Matches against                                                                        |
 | ----------- | -------------------------------------------------------------------------------------- |
-| Source IP   | `sourceip` field                                                                       |
-| Dest / FQDN | `targetip` / FQDN field                                                                |
+| Source IP   | `sourceip` field — substring, full address or CIDR                                     |
+| Dest / FQDN | `targetip` / FQDN field — substring, full address or CIDR                              |
 | Action      | `allow`, `deny`, `dnat`, `alert`, `resolvefail`, DNS RCODEs (`noerror`, `nxdomain`, …), flow flags (`rst`, `invalid`, …), `mbps` |
 | Category    | A preset or a single category, see below                                              |
 | Protocol    | `TCP`, `UDP`, `HTTPS`, `HTTP`, DNS query types (`A`, `AAAA`, `MX`, …)                  |

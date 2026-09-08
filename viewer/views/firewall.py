@@ -1,6 +1,8 @@
 """Firewall tab: four panels — Instance, Networking, Policy, Logging — in a 2×2 grid."""
 from __future__ import annotations
 
+from datetime import date
+
 from rich.markup import escape
 from rich.text import Text
 from textual.app import ComposeResult
@@ -74,6 +76,66 @@ def _scaling_rows(fw: FirewallInfo) -> list[str]:
     return [_row("Scaling", f"autoscaling up to {hi} capacity units")]
 
 
+def _split_start(value: str) -> tuple[date | None, str]:
+    """Split an Azure ``"YYYY-MM-DD hh:mm"`` timestamp into its date and the
+    remainder. Returns ``(None, value)`` when it does not parse — the raw
+    string is then shown as-is rather than guessed at."""
+    if not value:
+        return None, ""
+    head, _, rest = value.partition(" ")
+    try:
+        d = date.fromisoformat(head)
+    except ValueError:
+        return None, value
+    return d, rest or value
+
+
+def _duration_human(duration: str) -> str:
+    """``"05:00"`` → ``"5 h"``, ``"05:30"`` → ``"5 h 30 min"``; unparseable
+    values (or a bare "hh") are shown verbatim rather than guessed at."""
+    parts = duration.split(":")
+    if len(parts) != 2:
+        return duration
+    try:
+        hours, minutes = int(parts[0]), int(parts[1])
+    except ValueError:
+        return duration
+    out = f"{hours} h"
+    if minutes:
+        out += f" {minutes} min"
+    return out
+
+
+_MAINTENANCE_SENTINEL_YEAR = 9999  # expirationDateTime "9999-12-31 23:59" means "no expiration"
+
+
+def _maintenance_window_rows(w: MaintenanceWindow) -> list[str]:
+    """The row (and, for a readable window, its note) for one assignment."""
+    name = escape(w.configuration_name or w.assignment_name)
+    if not w.readable:
+        return [_row("Maintenance",
+                     f"assigned: {name}   [dim]window not readable (no Reader on the maintenance configuration)[/]")]
+
+    exp_date, _ = _split_start(w.expiration)
+    exp_open = exp_date is not None and exp_date.year != _MAINTENANCE_SENTINEL_YEAR
+    if exp_open and exp_date is not None and exp_date < date.today():
+        return [_row("Maintenance", f"[yellow]expired {exp_date.isoformat()}[/]   [dim]{name}[/]")]
+
+    start_date, start_time = _split_start(w.start)
+    prefix = f"from {start_date.isoformat()}, " if start_date is not None and start_date > date.today() else ""
+    recur = "daily" if w.recur_every == "Day" else (f"every {escape(w.recur_every)}" if w.recur_every else "")
+    body = " ".join(filter(None, [recur, escape(start_time)]))
+    value = f"{prefix}{body} for {_duration_human(w.duration)}, {escape(w.time_zone)}"
+    if exp_open and exp_date is not None:
+        value += f" until {exp_date.isoformat()}"
+    if w.sub_scope and w.sub_scope != "NetworkSecurity":
+        value += f"   [yellow]subscope {escape(w.sub_scope)}: not a firewall maintenance window[/]"
+    return [
+        _row("Maintenance", f"{value}   [dim]{name}[/]"),
+        _note("covers guest OS and service updates; host updates and urgent security fixes can fall outside the window"),
+    ]
+
+
 def _maintenance_rows(fw: FirewallInfo, maintenance: list[MaintenanceWindow]) -> list[str]:
     """Instance panel: the customer-controlled maintenance window, if any.
 
@@ -81,7 +143,12 @@ def _maintenance_rows(fw: FirewallInfo, maintenance: list[MaintenanceWindow]) ->
     does not (host updates, urgent security fixes), so a RST burst outside
     the window is not read as proof of an incident.
     """
-    return []  # TODO(0.6.0 point 5): implement
+    if not maintenance:
+        return [_row("Maintenance", "no customer-controlled window   [dim]Azure picks the time for updates[/]")]
+    out: list[str] = []
+    for w in maintenance:
+        out.extend(_maintenance_window_rows(w))
+    return out
 
 
 def _nat_gateway_rows(fw: FirewallInfo, subnets: list[SubnetInfo], nat_gateways: list[NatGatewayInfo]) -> list[str]:

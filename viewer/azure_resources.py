@@ -471,7 +471,54 @@ async def fetch_maintenance(arm: ArmClient, firewall_id: str) -> list[Maintenanc
     nothing to read, and a configuration that cannot be read is returned with
     ``readable=False`` so the tab can still name it.
     """
-    return []  # TODO(0.6.0 point 5): implement
+    try:
+        items = await arm.get_all(
+            f"{firewall_id}/providers/Microsoft.Maintenance/configurationAssignments", _API_MAINT)
+    except ArmError:
+        return []
+    windows: list[MaintenanceWindow] = []
+    for item in items:
+        props = item.get("properties") or {}
+        if not isinstance(props, dict):
+            props = {}
+        windows.append(MaintenanceWindow(
+            assignment_name=item.get("name") or "",
+            configuration_id=props.get("maintenanceConfigurationId") or "",
+        ))
+    await asyncio.gather(*(_fill_maintenance_configuration(arm, w) for w in windows))
+    return windows
+
+
+async def _fill_maintenance_configuration(arm: ArmClient, window: MaintenanceWindow) -> None:
+    """Fill *window* with its configuration's fields, in place. Never raises:
+    a configuration that cannot be read leaves ``readable=False`` and only a
+    best-effort name (the id's last path segment)."""
+    if not window.configuration_id:
+        return
+    try:
+        raw = await arm.get(window.configuration_id, _API_MAINT)
+    except ArmError:
+        window.configuration_name = window.configuration_id.rsplit("/", 1)[-1]
+        window.readable = False
+        return
+    props = raw.get("properties") or {}
+    if not isinstance(props, dict):
+        props = {}
+    ext = props.get("extensionProperties") or {}
+    if not isinstance(ext, dict):
+        ext = {}
+    win = props.get("maintenanceWindow") or {}
+    if not isinstance(win, dict):
+        win = {}
+    window.configuration_name = raw.get("name") or window.configuration_id.rsplit("/", 1)[-1]
+    window.readable = True
+    window.scope = props.get("maintenanceScope") or ""
+    window.sub_scope = ext.get("maintenanceSubScope") or ""
+    window.start = win.get("startDateTime") or ""
+    window.duration = win.get("duration") or ""
+    window.time_zone = win.get("timeZone") or ""
+    window.recur_every = win.get("recurEvery") or ""
+    window.expiration = win.get("expirationDateTime") or ""
 
 
 def _parse_rule(raw: dict) -> Rule:

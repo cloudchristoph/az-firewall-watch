@@ -142,6 +142,14 @@ def _json_default(obj: Any) -> Any:
 
 
 def _serialize(snap: CachedSnapshot) -> dict[str, Any]:
+    # Two kinds of sensitive text reach this file, and they are treated
+    # differently on purpose. The policy's PAC file link arrives already
+    # stripped of its query string (azure_resources._strip_query): a SAS URL is
+    # a bearer credential, and in a file it grants whoever finds it access they
+    # would not otherwise have. The inserted HTTP header values are stored in
+    # full: the identity that wrote this cache can read them from ARM at any
+    # time, so the file adds no access, and it is 0600 in a 0700 directory.
+    # The views are where the values stay hidden until asked for.
     return {
         "firewall": asdict(snap.firewall),
         "policy": asdict(snap.policy) if snap.policy else None,

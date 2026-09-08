@@ -242,6 +242,15 @@ def test_apprule_no_rule_matched_uses_action_reason(structured_record):
     assert row.rule_collection_group == ""
 
 
+def test_apprule_without_rule_and_without_reason_keeps_the_policy_name(structured_record):
+    """Before 0.6.0 the cell showed the policy name in this case; the reason must not cost it."""
+    row = parse_record(structured_record(
+        "AZFWApplicationRule", Protocol="HTTPS", SourceIp="10.0.1.4", DestinationPort=443,
+        Fqdn="example.com", Action="Deny", Policy="pol-hub",
+    ))
+    assert row.policy == "pol-hub"
+
+
 def test_apprule_with_rule_still_builds_the_usual_policy_path(structured_record):
     row = parse_record(structured_record(
         "AZFWApplicationRule", Protocol="HTTPS", SourceIp="10.0.1.4", DestinationPort=443,

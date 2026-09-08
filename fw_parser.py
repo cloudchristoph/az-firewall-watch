@@ -192,7 +192,9 @@ def _parse_structured(record: dict, category: str, time: str, resource_id: str =
         if rcg:
             full_policy = "»".join(filter(None, [fw_policy, rcg, rc, rule]))
         else:
-            full_policy = _s(props, "ActionReason")
+            # No rule: the firewall's own reason, like NetworkRule rows; and when
+            # even that is missing, at least the policy name rather than nothing.
+            full_policy = _s(props, "ActionReason") or fw_policy
         return FirewallDataRow(
             rowid=_next_id(),
             time=time,

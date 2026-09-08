@@ -734,6 +734,46 @@ async def test_firewall_tab_shows_instance_networking_policy_and_logging(structu
         assert "Not to Event Hub" in note and "AZFWFlowTrace" in note and "AZFWNatRule" in note
 
 
+async def test_firewall_tab_shows_the_0_6_0_facts_from_the_snapshot(structured_record, mgmt, firewall_id):
+    """Everything 0.6.0 reads must survive the app's plumbing from snapshot to tab:
+    subnets, NAT gateway, maintenance, autoscale, auto-learn SNAT, explicit proxy."""
+    from viewer.azure_resources import MaintenanceWindow, NatGatewayInfo, SubnetInfo
+    snap = make_snapshot()
+    snap.firewall.sku_name = "AZFW_VNet"
+    snap.firewall.autoscale_min, snap.firewall.autoscale_max = 4, 4
+    snap.firewall.route_server_id = "/subscriptions/s/resourceGroups/rg/providers/Microsoft.Network/virtualHubs/rs-hub"
+    snap.firewall.additional_properties = {"Network.RouteServerInfo.RouteServerID": snap.firewall.route_server_id}
+    snap.subnets = [SubnetInfo(id="/sn", name="AzureFirewallSubnet", cidrs=["10.2.0.0/26"], nat_gateway_id="/ng")]
+    snap.nat_gateways = [NatGatewayInfo(id="/ng", name="natgw-hub", subnet_name="AzureFirewallSubnet", readable=True,
+                                        public_ip_ids=["/p"], public_ip_names=["pip-natgw"], public_ip_addresses=["20.1.2.3"])]
+    snap.maintenance = [MaintenanceWindow(assignment_name="a", configuration_id="/mc", configuration_name="mc-fw-nightly",
+                                          readable=True, start="2026-01-01 22:00", duration="05:00",
+                                          time_zone="W. Europe Standard Time", recur_every="Day",
+                                          expiration="9999-12-31 23:59", scope="Resource", sub_scope="NetworkSecurity")]
+    snap.policy.snat_auto_learn = "Enabled"
+    snap.policy.explicit_proxy = True
+    snap.policy.explicit_proxy_http_port = 8080
+    snap.policy.explicit_proxy_pac = True
+    snap.policy.explicit_proxy_pac_port = 8090
+    snap.policy.explicit_proxy_pac_file = "https://acct.blob.core.windows.net/c/proxy.pac"
+    mgmt["snapshot"] = snap
+    app = FirewallLogApp()
+    async with app.run_test(size=(160, 45)) as pilot:
+        await pilot.pause()
+        await _load(app, pilot, firewall_id)
+        await pilot.pause()
+        view = app.query_one("#firewall-view", FirewallView)
+        instance = str(view.query_one("#fw-instance", Static).content)
+        assert "fixed at 4 capacity units, autoscaling off" in instance
+        assert "daily 22:00 for 5 h, W. Europe Standard Time" in instance and "mc-fw-nightly" in instance
+        assert "RouteServerID" not in instance   # has its own row in the Policy block
+        net_note = str(view.query_one("#fw-network-note", Static).content)
+        assert "natgw-hub on AzureFirewallSubnet" in net_note and "leaves with 20.1.2.3" in net_note
+        pol = str(view.query_one("#fw-policy", Static).content)
+        assert "via Route Server rs-hub" in pol and "not readable from here" in pol
+        assert "port 8080 for HTTP and HTTPS" in pol and "served on port 8090" in pol and "proxy.pac" in pol
+
+
 async def test_views_render_metadata(structured_record, mgmt, firewall_id):
     app = FirewallLogApp()
     async with app.run_test(size=(160, 45)) as pilot:

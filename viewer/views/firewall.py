@@ -197,8 +197,41 @@ def _nat_gateway_rows(fw: FirewallInfo, subnets: list[SubnetInfo], nat_gateways:
 
 
 def _explicit_proxy_rows(policy: FirewallPolicyInfo) -> list[str]:
-    """Policy panel: explicit proxy with its ports and the PAC file."""
-    return [_row("Explicit proxy", "on" if policy.explicit_proxy else "off")]  # TODO(0.6.0 point 1): implement
+    """Policy panel: explicit proxy with its ports and the PAC file.
+
+    Azure allows a single port to serve both HTTP and HTTPS proxy traffic
+    (only the HTTP port set); the four port combinations below are the ones
+    the portal actually lets you reach.
+    """
+    if not policy.explicit_proxy:
+        return [_row("Explicit proxy", "off")]
+
+    http_port = policy.explicit_proxy_http_port
+    https_port = policy.explicit_proxy_https_port
+    if http_port and https_port:
+        ports = f"HTTP port {http_port} · HTTPS port {https_port}"
+    elif http_port:
+        ports = f"port {http_port} for HTTP and HTTPS"
+    elif https_port:
+        ports = f"HTTPS port {https_port}, no HTTP port"
+    else:
+        ports = "no port set"
+    rows = [_row("Explicit proxy", f"on   [dim]{ports}[/]")]
+
+    if policy.explicit_proxy_pac:
+        pac_port = policy.explicit_proxy_pac_port
+        pac_file = policy.explicit_proxy_pac_file
+        if pac_port and pac_file:
+            rows.append(_row("PAC file", f"served on port {pac_port}   [dim]{escape(pac_file)}[/]"))
+        elif pac_port:
+            rows.append(_row("PAC file", f"served on port {pac_port}   [dim]no file URL set[/]"))
+        else:
+            rows.append(_row("PAC file", "on   [dim]port not set[/]"))
+    else:
+        rows.append(_row("PAC file", "off"))
+
+    rows.append(_note("proxy requests still need an application rule; the log marks them as IsExplicitProxyRequest"))
+    return rows
 
 
 _LEARNED_NOTE = "learned ranges are not readable from here: listing them is a POST action, and this tool only reads"

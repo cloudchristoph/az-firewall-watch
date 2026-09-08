@@ -167,6 +167,11 @@ class DetailDialog(ModalScreen[str | None]):
             if ports:
                 yield self._field("Ports        ", ports)
         yield self._field(_ACTION_LABEL.get(cat, "Action").ljust(13), row.action)
+        if cat == "apprule":
+            if row.explicit_proxy:
+                yield self._field("Expl. proxy  ", row.explicit_proxy)
+            if row.tls_inspected:
+                yield self._field("TLS inspected", row.tls_inspected)
         if cat == "idps" and row.moreinfo:
             # parser joins "SEV:n · id · category · description"
             for label, value in zip(_IDPS_FIELDS, row.moreinfo.split(" · "), strict=False):

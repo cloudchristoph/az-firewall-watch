@@ -758,6 +758,7 @@ class FirewallLogApp(App[None]):
             dst_fqdn=target if is_fqdn else "",
             dst_port="" if port == "-" else port,
             action=row.action if row.action != "-" else "",
+            explicit_proxy=row.explicit_proxy == "yes",
         )
 
     @staticmethod

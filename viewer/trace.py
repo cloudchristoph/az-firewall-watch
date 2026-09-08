@@ -38,6 +38,7 @@ class Flow:
     dst_fqdn: str = ""
     dst_port: str = ""
     action: str = ""        # the action the firewall logged (used for rows decided outside the rules)
+    explicit_proxy: bool = False   # AZFWApplicationRule.IsExplicitProxyRequest == "yes"
 
     @property
     def threat_intel(self) -> bool:
@@ -193,6 +194,13 @@ def _protocol_check(rule: Rule, flow: Flow) -> Check:
 
 
 def _port_check(rule: Rule, flow: Flow) -> Check:
+    if flow.explicit_proxy:
+        # The client addressed the firewall's own proxy port; whether the log's
+        # DestinationPort is that proxy port or the real destination (80/443)
+        # is not documented, so a comparison against the rule's port could
+        # produce a confident wrong miss. Stay unknown rather than guess.
+        return Check("port", UNKNOWN, "cannot evaluate: explicit proxy request; whether the log carries "
+                     "the proxy port or the destination port is not verified")
     if not flow.dst_port or flow.dst_port == "-":
         return Check("port", NA, "no port in log")
     if not rule.destination_ports:

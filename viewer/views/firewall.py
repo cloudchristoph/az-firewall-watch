@@ -7,7 +7,16 @@ from textual.app import ComposeResult
 from textual.containers import Grid, Vertical
 from textual.widgets import DataTable, Static
 
-from ..azure_resources import DiagnosticSetting, FirewallInfo, FirewallPolicyInfo, IpConfig
+from ..azure_resources import (
+    ROUTE_SERVER_KEY,
+    DiagnosticSetting,
+    FirewallInfo,
+    FirewallPolicyInfo,
+    IpConfig,
+    MaintenanceWindow,
+    NatGatewayInfo,
+    SubnetInfo,
+)
 
 # What this viewer can render; anything of these not forwarded to an Event Hub
 # is worth a line, because it explains a category that never shows up.
@@ -27,8 +36,65 @@ def _row(label: str, value: str) -> str:
     return f"[dim]{label.ljust(_LABEL_WIDTH)}[/]  {value}"
 
 
+def _note(text: str) -> str:
+    """A continuation line under a row: indented to the value column, dimmed."""
+    return f"{' ' * (_LABEL_WIDTH + 2)}[dim]{text}[/]"
+
+
 def _short(resource_id: str) -> str:
     return resource_id.rsplit("/", 1)[-1] if resource_id else ""
+
+
+# ── 0.6.0 rows: one function per fact the tab used to be silent about ─────────
+# Each returns ready Rich-markup lines (via _row / _note). Everything dynamic
+# must go through escape(); every uncertain statement stays a statement about
+# what is *not* known, never a guess.
+
+def _scaling_rows(fw: FirewallInfo) -> list[str]:
+    """Instance panel: how the firewall scales (``autoscaleConfiguration``).
+
+    Three states: no configuration (service default, autoscaling up to 20
+    capacity units), min != max (prescaled, autoscaling within the range),
+    min == max (fixed capacity, autoscaling off — the state one overlooks in
+    the portal). Basic does not scale at all.
+    """
+    return []  # TODO(0.6.0 point 4): implement
+
+
+def _maintenance_rows(fw: FirewallInfo, maintenance: list[MaintenanceWindow]) -> list[str]:
+    """Instance panel: the customer-controlled maintenance window, if any.
+
+    Says what the window covers (guest OS and service updates) and what it
+    does not (host updates, urgent security fixes), so a RST burst outside
+    the window is not read as proof of an incident.
+    """
+    return []  # TODO(0.6.0 point 5): implement
+
+
+def _nat_gateway_rows(fw: FirewallInfo, subnets: list[SubnetInfo], nat_gateways: list[NatGatewayInfo]) -> list[str]:
+    """Networking panel: which public address outbound traffic really leaves with.
+
+    With a NAT gateway on the firewall subnet, outbound SNAT uses the
+    gateway's public IPs while DNAT and management traffic stay on the
+    firewall's own. A Virtual WAN hub firewall (``AZFW_Hub``) cannot have one.
+    """
+    return []  # TODO(0.6.0 point 3): implement
+
+
+def _explicit_proxy_rows(policy: FirewallPolicyInfo) -> list[str]:
+    """Policy panel: explicit proxy with its ports and the PAC file."""
+    return [_row("Explicit proxy", "on" if policy.explicit_proxy else "off")]  # TODO(0.6.0 point 1): implement
+
+
+def _snat_rows(policy: FirewallPolicyInfo, fw: FirewallInfo) -> list[str]:
+    """Policy panel: SNAT private ranges plus auto-learn and its Route Server.
+
+    Auto-learn on without a Route Server on the firewall means nothing is ever
+    learned; auto-learn on with one means the effective list is learned by
+    BGP every 30 minutes and is not readable from here (a POST action).
+    """
+    return [_row("SNAT ranges", _v(", ".join(policy.snat_private_ranges)) if policy.snat_private_ranges
+                 else "default (RFC 1918)")]  # TODO(0.6.0 point 2): implement
 
 
 def _config_label(name: str) -> str:
@@ -102,6 +168,10 @@ class FirewallView(Vertical):
         policy: FirewallPolicyInfo | None,
         subnet_cidrs: list[str],
         diagnostics: list[DiagnosticSetting] | None = None,
+        *,
+        subnets: list[SubnetInfo] | None = None,
+        nat_gateways: list[NatGatewayInfo] | None = None,
+        maintenance: list[MaintenanceWindow] | None = None,
     ) -> None:
         title = self.query_one("#fw-title", Static)
         grid = self.query_one("#fw-grid", Grid)
@@ -112,24 +182,27 @@ class FirewallView(Vertical):
         tier = policy.sku_tier if policy and policy.sku_tier else firewall.sku_tier
         title.update(f"{escape(firewall.name)}   [dim]{escape(' · '.join(filter(None, [tier, firewall.sku_name, firewall.location])))}[/]")
         grid.display = True
-        self.query_one("#fw-instance", Static).update("\n".join(self._instance(firewall)))
-        self._fill_network(firewall, subnet_cidrs)
+        self.query_one("#fw-instance", Static).update("\n".join(self._instance(firewall, maintenance or [])))
+        self._fill_network(firewall, subnet_cidrs, subnets or [], nat_gateways or [])
         self.query_one("#fw-policy", Static).update("\n".join(self._policy(policy, firewall)))
         self._fill_logging(diagnostics or [])
 
     # ── Instance ────────────────────────────────────────────────────────────
     @staticmethod
-    def _instance(fw: FirewallInfo) -> list[str]:
+    def _instance(fw: FirewallInfo, maintenance: list[MaintenanceWindow]) -> list[str]:
         state = fw.provisioning_state or "-"
         if state not in ("Succeeded", "-"):
             state = f"[red]{escape(state)}[/]"
         tags = ", ".join(f"{escape(k)}={escape(v)}" for k, v in sorted(fw.tags.items()))
+        # The Route Server association has its own row (see _snat_rows).
         extras = {k[len(_ADDITIONAL_PREFIX):] if k.startswith(_ADDITIONAL_PREFIX) else k: v
-                  for k, v in fw.additional_properties.items()}
+                  for k, v in fw.additional_properties.items() if k != ROUTE_SERVER_KEY}
         return [
             _row("SKU", _v(" · ".join(filter(None, [fw.sku_tier, fw.sku_name])))),
             _row("Zones", _v(", ".join(fw.zones)) if fw.zones else "none (regional)"),
             _row("Provisioning", state),
+            *_scaling_rows(fw),
+            *_maintenance_rows(fw, maintenance),
             _row("Resource group", _v(fw.resource_group)),
             _row("Subscription", _v(fw.subscription_id)),
             _row("Location", _v(fw.location)),
@@ -138,7 +211,8 @@ class FirewallView(Vertical):
         ]
 
     # ── Networking ──────────────────────────────────────────────────────────
-    def _fill_network(self, fw: FirewallInfo, subnet_cidrs: list[str]) -> None:
+    def _fill_network(self, fw: FirewallInfo, subnet_cidrs: list[str],
+                      subnets: list[SubnetInfo], nat_gateways: list[NatGatewayInfo]) -> None:
         tbl = self.query_one("#fw-network", DataTable)
         tbl.clear()
         rows: list[tuple[str, IpConfig]] = [(_config_label(c.name), c) for c in fw.ip_configs]
@@ -153,12 +227,13 @@ class FirewallView(Vertical):
             tbl.add_row(Text(label, style="dim"), cfg.private_ip or "-", public, height=2 if cfg.public_ip_name else 1)
         if not rows:
             tbl.add_row(Text("no IP configurations", style="dim"), ", ".join(fw.private_ips) or "-", "-")
-        subnets = ", ".join(f"{_short(s)}" for s in fw.subnet_ids) or "-"
+        subnet_names = ", ".join(f"{_short(s)}" for s in fw.subnet_ids) or "-"
         note = self.query_one("#fw-network-note", Static)
         note.update("\n".join([
-            _row("Subnets", escape(subnets)),
+            _row("Subnets", escape(subnet_names)),
             _row("CIDRs", _v(", ".join(subnet_cidrs))),
             _row("Management", "forced tunneling (own subnet and public IP)" if fw.management_ip else "none"),
+            *_nat_gateway_rows(fw, subnets, nat_gateways),
         ]))
 
     # ── Policy ──────────────────────────────────────────────────────────────
@@ -195,8 +270,8 @@ class FirewallView(Vertical):
             _row("IDPS", (f"{escape(policy.idps_mode)}   [dim]{policy.idps_bypass_count} bypass rules · "
                           f"{policy.idps_override_count} signature overrides[/]" if policy.idps_mode else "off")),
             _row("TLS inspection", f"on   [dim]CA: {escape(policy.tls_ca_name)}[/]" if policy.tls_ca_name else "off"),
-            _row("SNAT ranges", _v(", ".join(policy.snat_private_ranges)) if policy.snat_private_ranges else "default (RFC 1918)"),
-            _row("Explicit proxy", "on" if policy.explicit_proxy else "off"),
+            *_snat_rows(policy, fw),
+            *_explicit_proxy_rows(policy),
         ]
         return out
 

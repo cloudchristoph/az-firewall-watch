@@ -372,9 +372,13 @@ class FirewallLogApp(App[None]):
         """Refresh Firewall / Policy / IP Groups tabs from current state."""
         if not self._policy_context:
             return
+        snap = self._snapshot
         self.query_one("#firewall-view", FirewallView).render_data(
             self._fw_info, self._policy_info, self._subnet_cidrs,
-            self._snapshot.diagnostics if self._snapshot else [],
+            snap.diagnostics if snap else [],
+            subnets=snap.subnets if snap else [],
+            nat_gateways=snap.nat_gateways if snap else [],
+            maintenance=snap.maintenance if snap else [],
         )
         self.query_one("#policy-view", PolicyView).render_data(self._policy_info, self._ip_groups)
         self.query_one("#ipgroups-view", IpGroupsView).render_data(

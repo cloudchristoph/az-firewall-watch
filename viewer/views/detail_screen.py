@@ -13,6 +13,7 @@ from textual.widgets import Button, Static
 
 from fw_parser import FirewallDataRow, tcp_direction
 from helpers import _to_local, _utc_short
+from ip_utils import format_endpoint
 
 from ..trace import Trace
 from .trace_screen import TracePanel
@@ -33,7 +34,8 @@ _IDPS_FIELDS = ("Severity", "Signature", "Class", "Description")  # "Class": the
 
 
 def _ports_join(address: str, port: str) -> str:
-    return address if not port or port == "-" else f"{address}:{port}"
+    """``10.3.5.4:443``, ``[fd00::10]:443``, or the bare address without a port."""
+    return format_endpoint(address, port)
 
 
 def _ports(src: str, dst: str) -> str:

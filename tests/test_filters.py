@@ -160,3 +160,41 @@ def test_info_text_truncates_long_segments():
 
 def test_info_text_empty():
     assert FirewallLogApp._info_text("").plain == ""
+
+
+# ── IPv6 and CIDR (dual-stack firewall) ──────────────────────────────────────
+
+V6 = "fd10:2:0:2::10"
+V6_EXPANDED = "fd10:2:0:2:0:0:0:10"
+
+
+@pytest.mark.parametrize("key, row_field, value, needle, expected", [
+    ("src", "sourceip", V6, "fd10:2:0:2", True),               # fragment
+    ("src", "sourceip", V6_EXPANDED, V6, True),                # other spelling of the same address
+    ("src", "sourceip", V6, V6_EXPANDED, True),
+    ("src", "sourceip", V6, "fd10:2::/32", True),              # IPv6 CIDR
+    ("src", "sourceip", V6, "fd10:3::/32", False),
+    ("src", "sourceip", "10.3.5.4", "10.3.0.0/16", True),      # IPv4 CIDR, new for v4 too
+    ("src", "sourceip", "10.3.5.4", "10.4.0.0/16", False),
+    ("src", "sourceip", "10.3.5.4", "fd10::/16", False),       # version mismatch is a plain miss
+    ("dst", "targetip", V6, "fd10::/16", True),
+    ("dst", "targetip", "www.example.com", "10.0.0.0/8", False),  # a CIDR never matches an FQDN
+    ("dst", "targetip", "www.example.com", "example", True),
+    ("dst", "targetip", "", "fd10::/16", False),
+])
+def test_address_filters_accept_cidr_and_any_ipv6_spelling(key, row_field, value, needle, expected):
+    row = make_row(**{row_field: value})
+    assert matches(row, make_filters(**{key: needle})) is expected
+
+
+def test_source_text_brackets_ipv6_when_told_so():
+    text = FirewallLogApp._source_text(V6, "51000", "", ipv6=True)
+    assert text.plain == f"[{V6}]:51000"
+    # the AzFw label replaces the address, but the brackets follow the row's address, not the label
+    assert FirewallLogApp._source_text("AzFw.10", "53", "", ipv6=True).plain == "[AzFw.10]:53"
+    assert FirewallLogApp._source_text("10.0.1.4", "51000", "").plain == "10.0.1.4:51000"
+
+
+def test_source_text_highlights_inside_brackets():
+    text = FirewallLogApp._source_text(V6, "51000", "0:2::10", ipv6=True)
+    assert [s for s in text.spans if "reverse" in str(s.style)]

@@ -280,3 +280,17 @@ def test_status_bar_render_variants():
 
     bar.paused = True
     assert "⏸ PAUSED" in bar.render()
+
+
+async def test_flowtrace_dialog_brackets_ipv6_endpoints(structured_record):
+    """``[addr]:port`` for IPv6, so the port is not mistaken for the last address group."""
+    row = parse_record(structured_record(
+        "AZFWFlowTrace", Protocol="TCP", SourceIp="2606:4700::6810:84e5", SourcePort=443,
+        DestinationIp="fd10:2:0:2::10", DestinationPort=50674, Flag="SYN-ACK", Action="Log",
+    ))
+    app = FirewallLogApp()
+    async with app.run_test(size=(140, 40)) as pilot:
+        await pilot.pause()
+        text = _dialog_text(await _open_detail(app, pilot, row)).replace("\\[", "[")  # markup-escaped brackets
+    assert "[fd10:2:0:2::10]:50674 → [2606:4700::6810:84e5]:443" in text
+    assert "2606:4700::6810:84e5 → fd10:2:0:2::10  (server → client)" in text  # Packet line stays bare

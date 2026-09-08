@@ -150,10 +150,21 @@ def test_load_env_reads_utf8_and_falls_back_to_latin1(tmp_path, monkeypatch):
         ("example.com", ("example.com", "-")),
         ("-", ("-", "-")),
         ("", ("", "-")),
+        # A trailing colon must report the "-" placeholder, not an empty string:
+        # callers test for "-" and would otherwise see a second spelling of "no port".
+        ("10.1.1.1:", ("10.1.1.1", "-")),
+        ("example.com:", ("example.com", "-")),
+        ("fd00::", ("fd00::", "-")),
     ],
 )
 def test_split_endpoint(text, expected):
     assert split_endpoint(text) == expected
+
+
+@pytest.mark.parametrize("text", ["10.1.1.1:", "example.com:", "fd00::", "10.1.1.1", ""])
+def test_split_endpoint_never_reports_an_empty_port(text):
+    """Whatever comes in, "no port" has exactly one spelling on the way out."""
+    assert split_endpoint(text)[1] != ""
 
 
 def test_split_endpoint_unbracketed_ipv6_with_port_is_the_ambiguous_case():

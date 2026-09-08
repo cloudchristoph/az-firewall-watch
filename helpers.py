@@ -123,6 +123,9 @@ def split_endpoint(text: str) -> tuple[str, str]:
     if ":" not in text:
         return text, "-"
     address, _, port = text.rpartition(":")
+    # A trailing colon leaves an empty port. Report it as the "-" placeholder the
+    # rest of the codebase tests for, so no caller has to know both spellings.
+    port = port or "-"
     try:
         ipaddress.ip_address(address)
         return address, port

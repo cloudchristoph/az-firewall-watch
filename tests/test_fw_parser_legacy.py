@@ -78,6 +78,17 @@ def test_legacy_network_rule_ipv6_addresses_are_not_truncated(legacy_record):
     assert (row.targetip, row.targetport) == ("fd00::2", "443")
 
 
+def test_legacy_application_rule_ipv6_client_is_not_truncated(legacy_record):
+    """The destination already used rsplit; the client right above it did not."""
+    row = parse_record(legacy_record(
+        "AzureFirewallApplicationRule", "AzureFirewallApplicationRuleLog",
+        "HTTPS request from fd00::1:55583 to example.com:443. Action: Allow. "
+        "Rule Collection Group: rcg-x. Rule Collection: rc-y. Rule: r-z.",
+    ))
+    assert (row.sourceip, row.srcport) == ("fd00::1", "55583")
+    assert (row.targetip, row.targetport) == ("example.com", "443")
+
+
 def test_legacy_nat_rule(legacy_record):
     row = parse_record(legacy_record(
         "AzureFirewallNatRule", "AzureFirewallNatRuleLog",

@@ -429,7 +429,7 @@ def _parse_legacy(record: dict, op_name: str, time: str) -> FirewallDataRow:
             _, rest = msg.split(" request from ", 1)
             first_sentence = rest.split(". ")[0]  # "src to fqdn:port"
             src_str, dst_str = first_sentence.split(" to ", 1)
-            src = src_str.split(":")
+            src_ip, src_port = split_endpoint(src_str)
             dst = dst_str.rsplit(":", 1)  # rsplit so FQDNs with dots are preserved
 
             action = policy_name = rcg = rc = rule_name = moreinfo = ""
@@ -459,8 +459,8 @@ def _parse_legacy(record: dict, op_name: str, time: str) -> FirewallDataRow:
                 time=time,
                 category="AppRule",
                 protocol=proto,
-                sourceip=src[0],
-                srcport=src[1] if len(src) > 1 else "-",
+                sourceip=src_ip,
+                srcport=src_port,
                 targetip=dst[0] if dst else "-",
                 targetport=dst[1] if len(dst) > 1 else "-",
                 action=action or "-",

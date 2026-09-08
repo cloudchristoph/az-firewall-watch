@@ -86,6 +86,9 @@ def _explicit_proxy_rows(policy: FirewallPolicyInfo) -> list[str]:
     return [_row("Explicit proxy", "on" if policy.explicit_proxy else "off")]  # TODO(0.6.0 point 1): implement
 
 
+_LEARNED_NOTE = "learned ranges are not readable from here: listing them is a POST action, and this tool only reads"
+
+
 def _snat_rows(policy: FirewallPolicyInfo, fw: FirewallInfo) -> list[str]:
     """Policy panel: SNAT private ranges plus auto-learn and its Route Server.
 
@@ -93,8 +96,27 @@ def _snat_rows(policy: FirewallPolicyInfo, fw: FirewallInfo) -> list[str]:
     learned; auto-learn on with one means the effective list is learned by
     BGP every 30 minutes and is not readable from here (a POST action).
     """
-    return [_row("SNAT ranges", _v(", ".join(policy.snat_private_ranges)) if policy.snat_private_ranges
-                 else "default (RFC 1918)")]  # TODO(0.6.0 point 2): implement
+    ranges = (escape(", ".join(policy.snat_private_ranges)) if policy.snat_private_ranges
+              else "default (RFC 1918 and RFC 6598)")
+    rows = [
+        _row("SNAT ranges", ranges),
+        _note("applies to network rules only; application rules are always SNATed"),
+    ]
+    if policy.snat_auto_learn != "Enabled":
+        rows.append(_row("Auto-learn SNAT", "off"))
+        return rows
+    if fw.sku_name == "AZFW_Hub":
+        rows.append(_row("Auto-learn SNAT", "on   [dim]via the hub's built-in Route Server[/]"))
+        rows.append(_note(_LEARNED_NOTE))
+    elif fw.route_server_id:
+        rs_name = escape(_short(fw.route_server_id))
+        rows.append(_row("Auto-learn SNAT", f"on   [dim]via Route Server {rs_name}[/]"))
+        rows.append(_note(_LEARNED_NOTE))
+    else:
+        rows.append(_row("Auto-learn SNAT",
+                          "[yellow]on, but no Route Server is associated with the firewall: "
+                          "nothing is ever learned[/]"))
+    return rows
 
 
 def _config_label(name: str) -> str:

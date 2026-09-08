@@ -58,7 +58,20 @@ def _scaling_rows(fw: FirewallInfo) -> list[str]:
     min == max (fixed capacity, autoscaling off — the state one overlooks in
     the portal). Basic does not scale at all.
     """
-    return []  # TODO(0.6.0 point 4): implement
+    if fw.sku_tier == "Basic":
+        return [_row("Scaling", "none   [dim]the Basic SKU does not scale[/]")]
+    lo, hi = fw.autoscale_min, fw.autoscale_max
+    if lo == 0 and hi == 0:
+        return [_row("Scaling", "autoscaling, service default   [dim]up to 20 capacity units[/]")]
+    if lo > 0 and hi > 0 and lo > hi:
+        return [_row("Scaling", f"[yellow]min {lo} above max {hi}: configuration not understood[/]")]
+    if lo > 0 and hi > 0 and lo == hi:
+        return [_row("Scaling", f"[yellow]fixed at {lo} capacity units, autoscaling off[/]")]
+    if lo > 0 and hi > 0 and lo < hi:
+        return [_row("Scaling", f"autoscaling between {lo} and {hi} capacity units   [dim]prescaled[/]")]
+    if lo > 0 and hi == 0:
+        return [_row("Scaling", f"autoscaling from {lo} capacity units   [dim]no upper bound set[/]")]
+    return [_row("Scaling", f"autoscaling up to {hi} capacity units")]
 
 
 def _maintenance_rows(fw: FirewallInfo, maintenance: list[MaintenanceWindow]) -> list[str]:

@@ -119,11 +119,12 @@ def test_scaling_min_above_max_is_flagged_not_trusted():
 # ── through FirewallView._instance: the row sits between Provisioning and
 #    Resource group ─────────────────────────────────────────────────────────
 
-def test_scaling_row_sits_between_provisioning_and_resource_group():
+def test_scaling_row_sits_between_provisioning_and_maintenance():
     fw = _fw(autoscale_min=5, autoscale_max=10)
     fw.provisioning_state = "Succeeded"
     rows = FirewallView._instance(fw, [])
     labels = [r.split("[/]", 1)[0].replace("[dim]", "").strip() for r in rows]
     assert labels.index("Scaling") == labels.index("Provisioning") + 1
-    assert labels.index("Scaling") == labels.index("Resource group") - 1
+    assert labels.index("Scaling") == labels.index("Maintenance") - 1
+    assert labels.index("Maintenance") < labels.index("Resource group")
     assert any("autoscaling between 5 and 10 capacity units" in r for r in rows)

@@ -81,6 +81,10 @@ class FirewallDataRow:
     # DNAT rule matches on it); targetip/targetport carry the translated target.
     nat_dst_ip: str = ""
     nat_dst_port: str = ""
+    # AZFWApplicationRule only: tri-state "yes" / "no" / "" (the legacy
+    # properties.msg format never carries these columns).
+    explicit_proxy: str = ""
+    tls_inspected: str = ""
 
 
 def parse_record(record: dict) -> FirewallDataRow | None:
@@ -143,6 +147,25 @@ def _port(props: dict, key: str) -> str:
     return _s(props, key) or "-"
 
 
+def _flag(props: dict, key: str) -> str:
+    """A tri-state boolean column: 'yes' / 'no' / '' when absent or unreadable.
+
+    Accepts a JSON boolean or the strings 'true'/'false' (case-insensitive);
+    anything else — missing key, null, other text — stays "" (unknown), never
+    guessed as either state.
+    """
+    v = props.get(key)
+    if isinstance(v, bool):
+        return "yes" if v else "no"
+    if isinstance(v, str):
+        low = v.strip().lower()
+        if low == "true":
+            return "yes"
+        if low == "false":
+            return "no"
+    return ""
+
+
 def _parse_structured(record: dict, category: str, time: str, resource_id: str = "") -> FirewallDataRow:
     props: dict = record.get("properties", {})
 
@@ -166,8 +189,10 @@ def _parse_structured(record: dict, category: str, time: str, resource_id: str =
         rcg = _s(props, "RuleCollectionGroup")
         rc = _s(props, "RuleCollection")
         rule = _s(props, "Rule")
-        rule_path = "»".join(filter(None, [rcg, rc, rule]))
-        full_policy = "»".join(filter(None, [fw_policy, rule_path]))
+        if rcg:
+            full_policy = "»".join(filter(None, [fw_policy, rcg, rc, rule]))
+        else:
+            full_policy = _s(props, "ActionReason")
         return FirewallDataRow(
             rowid=_next_id(),
             time=time,
@@ -185,6 +210,8 @@ def _parse_structured(record: dict, category: str, time: str, resource_id: str =
             rule_collection_group=rcg,
             rule_collection=rc,
             rule_name=rule,
+            explicit_proxy=_flag(props, "IsExplicitProxyRequest"),
+            tls_inspected=_flag(props, "IsTlsInspected"),
         )
 
     if category == "AZFWNetworkRule":

@@ -13,6 +13,8 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
+from ip_utils import split_endpoint
+
 _counter = 0
 
 # Legacy "AzureFirewallDNSResolutionFailureLog" message head (before " Rule Collection: ").
@@ -366,8 +368,9 @@ def _parse_legacy(record: dict, op_name: str, time: str) -> FirewallDataRow:
             proto, rest = msg.split(" request from ", 1)
             first_sentence = rest.split(". ")[0]  # "src to dst:port"
             src_str, dst_str = first_sentence.split(" to ", 1)
-            src = src_str.split(":")
-            dst = dst_str.split(":")
+            has_ports = not proto.upper().startswith("ICMP")
+            src_ip, src_port = split_endpoint(src_str, expect_port=has_ports)
+            dst_ip, dst_port = split_endpoint(dst_str, expect_port=has_ports)
 
             action = rcg = rc = rule_name = ""
             for sentence in msg.split(". "):
@@ -390,10 +393,10 @@ def _parse_legacy(record: dict, op_name: str, time: str) -> FirewallDataRow:
                 time=time,
                 category="NetworkRule",
                 protocol=proto,
-                sourceip=src[0],
-                srcport=src[1] if len(src) > 1 else "-",
-                targetip=dst[0],
-                targetport=dst[1].rstrip(".") if len(dst) > 1 else "-",
+                sourceip=src_ip,
+                srcport=src_port,
+                targetip=dst_ip,
+                targetport=dst_port,
                 action=action or "-",
                 policy=policy,
                 rule_collection_group=rcg,
@@ -405,17 +408,17 @@ def _parse_legacy(record: dict, op_name: str, time: str) -> FirewallDataRow:
             # "TCP request from 1.2.3.4:1234 to 5.6.7.8:3389 was DNAT'ed to 10.1.1.1:3389"
             # [0]=TCP [1]=request [2]=from [3]=src:port [4]=to [5]=fw:port [6]=was [7]=DNAT'ed [8]=to [9]=translated:port
             words = msg.split(" ")
-            src = words[3].split(":")
-            translated = words[9].split(":")
+            src_ip, src_port = split_endpoint(words[3])
+            translated_ip, translated_port = split_endpoint(words[9])
             return FirewallDataRow(
                 rowid=_next_id(),
                 time=time,
                 category="NATRule",
                 protocol=words[0],
-                sourceip=src[0],
-                srcport=src[1] if len(src) > 1 else "-",
-                targetip=translated[0],
-                targetport=translated[1] if len(translated) > 1 else "-",
+                sourceip=src_ip,
+                srcport=src_port,
+                targetip=translated_ip,
+                targetport=translated_port,
                 action="DNAT",
             )
 
@@ -425,8 +428,8 @@ def _parse_legacy(record: dict, op_name: str, time: str) -> FirewallDataRow:
             _, rest = msg.split(" request from ", 1)
             first_sentence = rest.split(". ")[0]  # "src to fqdn:port"
             src_str, dst_str = first_sentence.split(" to ", 1)
-            src = src_str.split(":")
-            dst = dst_str.rsplit(":", 1)  # rsplit so FQDNs with dots are preserved
+            src_ip, src_port = split_endpoint(src_str)
+            dst_fqdn, dst_port = split_endpoint(dst_str)  # splits at the last colon, so FQDNs with dots are preserved
 
             action = policy_name = rcg = rc = rule_name = moreinfo = ""
             for sentence in msg.split(". "):
@@ -455,10 +458,10 @@ def _parse_legacy(record: dict, op_name: str, time: str) -> FirewallDataRow:
                 time=time,
                 category="AppRule",
                 protocol=proto,
-                sourceip=src[0],
-                srcport=src[1] if len(src) > 1 else "-",
-                targetip=dst[0] if dst else "-",
-                targetport=dst[1] if len(dst) > 1 else "-",
+                sourceip=src_ip,
+                srcport=src_port,
+                targetip=dst_fqdn,
+                targetport=dst_port,
                 action=action or "-",
                 policy=policy,
                 moreinfo=moreinfo,
@@ -499,13 +502,13 @@ def _parse_legacy(record: dict, op_name: str, time: str) -> FirewallDataRow:
             # pos: 0    1        2              3 4     5 6  7            8   9  10    11   12      13            14 15
             # words[12] is always the RCODE (NOERROR / NXDOMAIN / …)
             words = msg.split(" ")
-            src_parts = words[2].split(":") if len(words) > 2 else ["-", "-"]
+            src_ip, src_port = split_endpoint(words[2]) if len(words) > 2 else ("-", "-")
             return FirewallDataRow(
                 rowid=_next_id(),
                 time=time,
                 category="DnsQuery",
-                sourceip=src_parts[0],
-                srcport=src_parts[1] if len(src_parts) > 1 else "-",
+                sourceip=src_ip,
+                srcport=src_port,
                 protocol=words[5] if len(words) > 5 else "-",          # QueryType: A/AAAA/…
                 targetip=words[7].rstrip(".") if len(words) > 7 else "-",  # QueryName
                 targetport="53",

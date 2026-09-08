@@ -115,8 +115,8 @@ Steps 1–7 can start now; step 8 waits for the lab. CI now also runs `ruff` and
 
 ## Lab prerequisites (CC-AzureLab)
 
-- **Feature registration first:** `Microsoft.Network/AFWEnableIPv6` on subscription `cclab-connectivity` is `NotRegistered` (checked 2026-09-08). Without it the ip-config with an IPv6 public IP is rejected.
-- Hub VNet + `AzureFirewallSubnet` get an IPv6 prefix, firewall gets an IPv6 public IP as second ip-config.
+- **Done (2026-09-07 21:12 UTC):** hub VNet `vnet-hub-gwc` has `fd10:2::/48`, `AzureFirewallSubnet` has `fd10:2:0:1::/64`, and `fw-hub-gwc` carries a second ip-config with the public IPv6 `pip-fw-hub-gwc-ipv6-001` (`2603:1020:c01:16::275`). Verified with `az network firewall show` on 2026-09-08.
+- **No feature registration needed.** `Microsoft.Network/AFWEnableIPv6` is `NotRegistered` on `cclab-connectivity` and the dual-stack update succeeded anyway; the Learn article lists no registration step either. An earlier revision of this plan claimed the opposite.
 - Dual-stack spokes with a `::/0` UDR to the firewall's private IPv6 address.
 - IPv6 network rules (allow + targeted deny) and DNS proxy over IPv6. The lab session reports five IPv6 rules live in the policy; whether `firewall-policy-management/local.ipv6.tf` tracks them is unresolved and blocks other applies there until a `terraform plan` settles it.
 - Diagnostic settings unchanged; both Event Hubs (`firewall-logs`, `firewall-logs-legacy`) receive the records.

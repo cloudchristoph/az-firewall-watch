@@ -71,6 +71,32 @@ def _maintenance_rows(fw: FirewallInfo, maintenance: list[MaintenanceWindow]) ->
     return []  # TODO(0.6.0 point 5): implement
 
 
+def _nat_gateway_address_text(gw: NatGatewayInfo) -> str:
+    """The addresses a note names for one readable, attached gateway."""
+    if gw.public_ip_addresses:
+        addresses = [escape(a) for a in gw.public_ip_addresses]
+    else:
+        addresses = [f"{escape(n)} (address not readable)" for n in gw.public_ip_names]
+    addresses += [f"prefix {escape(n)}" for n in gw.public_ip_prefix_names]
+    if not addresses:
+        return "an unknown address (the gateway lists no public IP)"
+    return ", ".join(addresses)
+
+
+def _one_nat_gateway_rows(gw: NatGatewayInfo) -> list[str]:
+    location = f"{escape(gw.name)} on {escape(gw.subnet_name)}"
+    if not gw.readable:
+        return [
+            _row("NAT gateway", f"{location}   [dim]gateway not readable: its public IPs are unknown[/]"),
+            _note("DNAT and management traffic stay on the firewall's public IPs"),
+        ]
+    return [
+        _row("NAT gateway", location),
+        _note(f"outbound traffic leaves with {_nat_gateway_address_text(gw)}; "
+              "DNAT and management traffic stay on the firewall's public IPs"),
+    ]
+
+
 def _nat_gateway_rows(fw: FirewallInfo, subnets: list[SubnetInfo], nat_gateways: list[NatGatewayInfo]) -> list[str]:
     """Networking panel: which public address outbound traffic really leaves with.
 
@@ -78,7 +104,16 @@ def _nat_gateway_rows(fw: FirewallInfo, subnets: list[SubnetInfo], nat_gateways:
     gateway's public IPs while DNAT and management traffic stay on the
     firewall's own. A Virtual WAN hub firewall (``AZFW_Hub``) cannot have one.
     """
-    return []  # TODO(0.6.0 point 3): implement
+    if fw.sku_name == "AZFW_Hub":
+        return [_row("NAT gateway", "not supported on a Virtual WAN hub firewall")]
+    if not subnets and fw.subnet_ids:
+        return [_row("NAT gateway", "unknown   [dim]firewall subnet not readable[/]")]
+    if not nat_gateways:
+        return [_row("NAT gateway", "none   [dim]outbound traffic leaves with the firewall's public IPs[/]")]
+    rows: list[str] = []
+    for gw in nat_gateways:
+        rows.extend(_one_nat_gateway_rows(gw))
+    return rows
 
 
 def _explicit_proxy_rows(policy: FirewallPolicyInfo) -> list[str]:

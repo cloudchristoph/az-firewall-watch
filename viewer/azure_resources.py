@@ -451,12 +451,40 @@ async def fetch_nat_gateway(arm: ArmClient, gateway_id: str, subnet_name: str = 
     (``readable=False``), which is still worth a line on the Firewall tab.
     Public IP addresses are resolved separately with :func:`fetch_public_ips`.
     """
-    return NatGatewayInfo(id=gateway_id, subnet_name=subnet_name)  # TODO(0.6.0 point 3): implement
+    try:
+        raw = await arm.get(gateway_id, _API_NET)
+    except ArmError:
+        return NatGatewayInfo(
+            id=gateway_id,
+            name=gateway_id.rsplit("/", 1)[-1] if gateway_id else "",
+            subnet_name=subnet_name,
+            readable=False,
+        )
+    props = raw.get("properties") or {}
+    pip_ids = [ref["id"] for ref in (props.get("publicIPAddresses") or [])
+               if isinstance(ref, dict) and ref.get("id")]
+    prefix_ids = [ref["id"] for ref in (props.get("publicIPPrefixes") or [])
+                  if isinstance(ref, dict) and ref.get("id")]
+    return NatGatewayInfo(
+        id=raw.get("id") or gateway_id,
+        name=raw.get("name") or gateway_id.rsplit("/", 1)[-1],
+        subnet_name=subnet_name,
+        readable=True,
+        public_ip_ids=pip_ids,
+        public_ip_names=[pid.rsplit("/", 1)[-1] for pid in pip_ids],
+        public_ip_prefix_names=[pid.rsplit("/", 1)[-1] for pid in prefix_ids],
+    )
 
 
 async def fetch_nat_gateways(arm: ArmClient, subnets: list[SubnetInfo]) -> list[NatGatewayInfo]:
     """One :class:`NatGatewayInfo` per subnet that has a gateway attached."""
-    return []  # TODO(0.6.0 point 3): implement
+    targets = [s for s in subnets if s.nat_gateway_id]
+    if not targets:
+        return []
+    results = await asyncio.gather(
+        *(fetch_nat_gateway(arm, s.nat_gateway_id, s.name) for s in targets)
+    )
+    return list(results)
 
 
 async def fetch_maintenance(arm: ArmClient, firewall_id: str) -> list[MaintenanceWindow]:

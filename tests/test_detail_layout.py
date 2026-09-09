@@ -258,19 +258,62 @@ async def test_footer_tab_hint_only_in_tabbed_mode(structured_record, mgmt, fire
         assert ("Tab fields/trace" in footer) is expect_hint
 
 
-async def test_compact_header_line2_holds_only_the_rule_name(structured_record, mgmt, firewall_id):  # noqa: F811
+_LONG_GROUP = "cclab-network-rule-collection-group-germanywestcentral"
+_LONG_COLLECTION = "outbound-access-demo-network-rules"
+
+
+def _long_names_snapshot():
+    """``make_snapshot()`` with the logged rule's group and collection renamed
+    to something a real policy would carry, long enough that the outcome line
+    cannot fit a narrow dialog in full."""
+    snap = make_snapshot()
+    group = snap.policy.rule_collection_groups[0]
+    group.name = _LONG_GROUP
+    group.rule_collections[1].name = _LONG_COLLECTION     # rc-web, the one allow-web sits in
+    return snap
+
+
+def _net_in_long_names(structured_record):
+    return parse_record(structured_record(
+        "AZFWNetworkRule", Protocol="TCP", SourceIp="10.3.5.4", SourcePort=1, DestinationIp="1.1.1.1",
+        DestinationPort=443, Action="Allow", Policy="fwp-hub-premium-gwc",
+        RuleCollectionGroup=_LONG_GROUP, RuleCollection=_LONG_COLLECTION, Rule="allow-web",
+    ))
+
+
+def test_header_line2_shortens_until_it_fits(structured_record):
+    """Full outcome first; then the group and collection go; then the cache
+    age. Never the rule name, never the icon."""
+    from viewer.trace import build_trace
+    from viewer.views.detail_screen import _header_line2
+
+    snap = _long_names_snapshot()
+    row = _net_in_long_names(structured_record)
+    trace = build_trace(FirewallLogApp._flow_from_row(row), snap.policy, snap.ip_groups,
+                        FirewallLogApp._logged_from_row(row))
+    full = _header_line2(trace, "fresh")
+    assert _LONG_GROUP in full and "cached policy · fresh" in full
+    assert _header_line2(trace, "fresh", width=200) == full
+    medium = _header_line2(trace, "fresh", width=60)
+    assert "»" not in medium and "Allow · allow-web" in medium and "cached policy · fresh" in medium
+    tight = _header_line2(trace, "fresh", width=30)
+    assert tight == "[green]✓[/] Allow · allow-web"
+    assert _header_line2(trace, "fresh", width=5) == tight   # never shorter than that
+
+
+async def test_header_stays_two_lines_on_a_narrow_terminal(structured_record, mgmt, firewall_id):  # noqa: F811
+    """80x24 with long policy names: the outcome line is shortened rather
+    than wrapped, so the header costs the tree no third row."""
+    mgmt["snapshot"] = _long_names_snapshot()
     app = FirewallLogApp()
     async with app.run_test(size=(80, 24)) as pilot:
         await pilot.pause()
         await _load(app, pilot, firewall_id)
-        screen = await _open_matched_trace(app, pilot, structured_record)
-        header = str(screen.query_one("#dialog-header", Static).content)
-        lines = header.split("\n")
-        assert len(lines) == 2
-        line2 = lines[1]
-        assert "allow-web" in line2
-        assert "rcg-net" not in line2 and "rc-web" not in line2   # group/collection dropped
-        assert "»" not in line2
+        screen = await _open_trace(app, pilot, _net_in_long_names(structured_record))
+        header = screen.query_one("#dialog-header", Static)
+        lines = str(header.content).split("\n")
+        assert len(lines) == 2 and header.region.height == 2
+        assert "allow-web" in lines[1] and "»" not in lines[1]
 
 
 async def test_header_line2_stays_full_at_160x45(structured_record, mgmt, firewall_id):  # noqa: F811
@@ -306,3 +349,101 @@ async def test_screenshot_renders_without_trace(structured_record, size, tmp_pat
         await _open_detail(app, pilot, _no_trace_row(structured_record))
         path = app.save_screenshot(filename=f"fields-{size[0]}x{size[1]}.svg", path=str(tmp_path))
         assert Path(path).exists()
+
+
+# ── what the screenshots showed and the fixtures above did not ─────────────────
+
+def _wide_policy_snapshot():
+    """``make_snapshot()`` plus an application group with eight collections,
+    the logged rule in the last: more tree lines than a 120x30 or 80x24 tree
+    has rows, so the logged rule is only reachable by scrolling."""
+    from viewer.azure_resources import Rule, RuleCollection, RuleCollectionGroup
+
+    snap = make_snapshot()
+    apps = [RuleCollection(name=f"demo-{i}", priority=100 + i * 10, action="Allow", rule_collection_type="Filter",
+                           rules=[Rule(name=f"allow-{i}", rule_type="ApplicationRule", source_addresses=["*"],
+                                       destination_fqdns=[f"*.site{i}.example"], protocols=["Https"],
+                                       destination_ports=["443"])])
+            for i in range(6)]
+    apps.append(RuleCollection(name="tags", priority=195, action="Allow", rule_collection_type="Filter", rules=[
+        Rule(name="allow-wu", rule_type="ApplicationRule", source_addresses=["*"], fqdn_tags=["WindowsUpdate"],
+             protocols=["Https"], destination_ports=["443"])]))
+    apps.append(RuleCollection(name="outbound-access-demo-app-rules", priority=200, action="Allow",
+                               rule_collection_type="Filter", rules=[
+        Rule(name="allow-outbound-web-traffic", rule_type="ApplicationRule", source_addresses=["*"],
+             destination_fqdns=["*"], protocols=["Http", "Https"], destination_ports=["80", "443"])]))
+    snap.policy.rule_collection_groups.append(RuleCollectionGroup(
+        id="/p/app", name="cclab-application-rule-collection-group", priority=100, rule_collections=apps))
+    return snap
+
+
+def _app_row(structured_record):
+    return parse_record(structured_record(
+        "AZFWApplicationRule", Protocol="HTTPS", SourceIp="10.3.11.4", SourcePort=41644, DestinationPort=443,
+        Fqdn="www.petmd.com", Action="Allow", Policy="fwp-hub-premium-gwc",
+        RuleCollectionGroup="cclab-application-rule-collection-group",
+        RuleCollection="outbound-access-demo-app-rules", Rule="allow-outbound-web-traffic",
+    ))
+
+
+@pytest.mark.parametrize("size", [(120, 30), (80, 24)])
+async def test_logged_rule_beyond_the_first_screen_is_scrolled_into_view(structured_record, mgmt, firewall_id, size):  # noqa: F811
+    """The tree's one scroll after building runs against a height that is
+    still settling; the tree re-scrolls on its own resizes, so the last
+    layout pass is the one that counts."""
+    mgmt["snapshot"] = _wide_policy_snapshot()
+    app = FirewallLogApp()
+    async with app.run_test(size=size) as pilot:
+        await pilot.pause()
+        await _load(app, pilot, firewall_id)
+        screen = await _open_trace(app, pilot, _app_row(structured_record))
+        tree = screen.query_one("#trace-tree", Tree)
+        assert tree.cursor_node is not None and "LOGGED" in tree.cursor_node.label.plain
+        assert tree.cursor_node.line >= tree.scrollable_content_region.height   # not on the first screen
+        await wait_until(pilot, lambda: _logged_node_visible(tree))
+        assert not tree.show_horizontal_scrollbar                              # no row lost to a bar
+
+
+async def test_footer_fits_one_row_at_80_columns(structured_record, mgmt, firewall_id):  # noqa: F811
+    app = FirewallLogApp()
+    async with app.run_test(size=(80, 24)) as pilot:
+        await pilot.pause()
+        await _load(app, pilot, firewall_id)
+        screen = await _open_matched_trace(app, pilot, structured_record)
+        footer = screen.query_one("#dialog-footer", Static)
+        assert footer.region.height == 1
+        assert "Tab fields/trace" in str(footer.content) and "Esc close" in str(footer.content)
+
+
+async def test_resize_switches_between_columns_and_tabs(structured_record, mgmt, firewall_id):  # noqa: F811
+    """Shrinking a wide terminal below 120 columns rebuilds the dialog with
+    tabs, growing it back returns the columns; the logged rule is selected
+    and visible after each."""
+    app = FirewallLogApp()
+    async with app.run_test(size=(160, 45)) as pilot:
+        await pilot.pause()
+        await _load(app, pilot, firewall_id)
+        screen = await _open_matched_trace(app, pilot, structured_record)
+        assert not screen.query(TabbedContent) and "Tab fields/trace" not in str(screen.query_one("#dialog-footer", Static).content)
+
+        await pilot.resize_terminal(80, 24)
+        await wait_until(pilot, lambda: bool(screen.query(TabbedContent)))
+        await pilot.pause(0.3)
+        assert screen.has_class("-tabbed") and screen.has_class("-tiny")
+        assert screen.query_one(TabbedContent).active == "tab-trace"
+        assert "Tab fields/trace" in str(screen.query_one("#dialog-footer", Static).content)
+        tree = screen.query_one("#trace-tree", Tree)
+        assert tree.cursor_node is not None and "LOGGED" in tree.cursor_node.label.plain
+        await wait_until(pilot, lambda: _logged_node_visible(screen.query_one("#trace-tree", Tree)))
+
+        await pilot.resize_terminal(160, 45)
+        await wait_until(pilot, lambda: not screen.query(TabbedContent))
+        await pilot.pause(0.3)
+        assert not screen.has_class("-tabbed") and not screen.has_class("-tiny")
+        assert screen.query_one("#detail-pane").region.width > 0 and screen.query_one(TracePanel).region.width > 0
+        tree = screen.query_one("#trace-tree", Tree)
+        assert tree.cursor_node is not None and "LOGGED" in tree.cursor_node.label.plain
+        await wait_until(pilot, lambda: _logged_node_visible(tree))
+        await pilot.press("escape")
+        await pilot.pause(0.2)
+        assert not isinstance(app.screen, DetailDialog)

@@ -15,6 +15,7 @@ from __future__ import annotations
 
 from rich.markup import escape
 from rich.text import Text
+from textual import events
 from textual.app import ComposeResult
 from textual.containers import Vertical
 from textual.message import Message
@@ -133,6 +134,22 @@ def _render_rule_detail(r: RuleTrace, c: CollectionTrace) -> str:
     return "\n".join(lines)
 
 
+class _TraceTree(Tree):
+    """A Tree that keeps its cursor line in view through layout changes.
+
+    The dialog around it settles over several refreshes after mount (a
+    TabbedContent, a short terminal shrinking the selection detail), and the
+    one scroll TracePanel does after building the tree is measured against a
+    height that is still changing. Every size change reaches the tree as its
+    own Resize event, so the last of them is the one that counts.
+    """
+
+    def on_resize(self, event: events.Resize) -> None:
+        node = self.cursor_node
+        if node is not None:
+            self.scroll_to_node(node, animate=False)
+
+
 class TracePanel(Vertical):
     """Tree, selection detail and legend for one :class:`Trace`.
 
@@ -149,6 +166,10 @@ class TracePanel(Vertical):
     }
     TracePanel > Tree {
         height: 1fr;
+        /* A label wider than the pane is cut, not scrolled: a horizontal
+           scrollbar would cost a row the tree cannot spare on a short
+           terminal, and the selection detail below carries every name whole. */
+        overflow-x: hidden;
     }
     TracePanel > #trace-detail {
         height: auto;
@@ -212,7 +233,7 @@ class TracePanel(Vertical):
         t = self._trace
         if t.warnings:
             yield Static("\n".join(f"⚠ {escape(w)}" for w in t.warnings), id="trace-warnings", markup=True)
-        yield Tree("Policy evaluation", id="trace-tree")
+        yield _TraceTree("Policy evaluation", id="trace-tree")
         yield Static(id="trace-detail")
         yield Static(Text.from_markup(LEGEND), id="trace-legend")
 

@@ -14,7 +14,7 @@ from textual.app import ComposeResult
 from textual.containers import Horizontal, Vertical
 from textual.css.query import NoMatches
 from textual.screen import ModalScreen
-from textual.widgets import Static, TabbedContent, TabPane, Tree
+from textual.widgets import Static, TabbedContent, TabPane
 
 from fw_parser import FirewallDataRow, tcp_direction
 from helpers import _to_local, _utc_short, format_endpoint
@@ -44,7 +44,9 @@ _IDPS_FIELDS = ("Severity", "Signature", "Class", "Description")  # "Class": the
 _DUP_HEADER_ENDPOINTS = {"apprule", "networkrule", "natrule", "threatintel", "idps"}
 _FOOTER_WITH_TRACE = "Enter expand/collapse · p open in Policy tab · a all / focused · Esc close"
 _FOOTER_ALONE = "Esc close"
-_FOOTER_TAB_HINT = "Tab fields/trace"
+# The tabbed layout sits on a terminal under 120 columns, where the full
+# footer would wrap and cost the tree a row; same keys, fewer words.
+_FOOTER_TABBED = "Enter fold · p Policy tab · a all · Tab fields/trace · Esc close"
 
 # Below this many columns there is no room for the fields pane and the trace
 # side by side; they become two tabs instead (see DetailDialog._classify).
@@ -53,8 +55,11 @@ _TABBED_BELOW_COLS = 120
 # (DetailDialog.-short, see the CSS below).
 _SHORT_BELOW_ROWS = 40
 # Below this many rows the dialog stops reserving a margin (height: 100%)
-# and the header's outcome line is shortened to fit on one line.
+# and the selection detail under the tree shrinks to its name lines.
 _TINY_BELOW_ROWS = 30
+# The dialog's border and padding (see DEFAULT_CSS), taken off the terminal
+# width to know how much of a header line fits.
+_DIALOG_FRAME_COLS = 6
 
 
 def _ports_join(address: str, port: str) -> str:
@@ -139,9 +144,8 @@ def _header_line1(row: FirewallDataRow) -> str:
 def _compact_outcome(outcome: str) -> str:
     """The rule name alone, dropping the group and collection that ``outcome``
     otherwise spells out (``"Allow by rcg-net » rc-web » allow-web"`` becomes
-    ``"Allow · allow-web"``) — enough to keep the header to one line on a
-    narrow, short terminal. Outcomes with nothing to shorten (default deny,
-    threat intel, a stale cache) come back unchanged."""
+    ``"Allow · allow-web"``). Outcomes with nothing to shorten (default deny,
+    threat intel) come back unchanged."""
     action, sep, rest = outcome.partition(" by ")
     if not sep or "»" not in rest:
         return outcome
@@ -149,7 +153,10 @@ def _compact_outcome(outcome: str) -> str:
     return f"{action} · {rule_name}"
 
 
-def _header_line2(trace: Trace, cache_age: str, *, compact: bool = False) -> str:
+def _header_line2(trace: Trace, cache_age: str, width: int | None = None) -> str:
+    """The outcome line. With ``width`` the line is shortened until it fits
+    on one row: first the group and collection go (the selection detail
+    under the tree still names them), then the cache age."""
     if trace.matched_rule is not None:
         icon = "[green]✓[/]"
     elif trace.flow.threat_intel:
@@ -158,11 +165,18 @@ def _header_line2(trace: Trace, cache_age: str, *, compact: bool = False) -> str
         icon = "[yellow]?[/]"  # the firewall matched a rule we could not locate (stale cache)
     else:
         icon = "[red]✗[/]"
-    outcome = _compact_outcome(trace.outcome) if compact else trace.outcome
-    line = f"{icon} {escape(outcome)}"
-    if cache_age and not compact:
-        line += f"   [dim]cached policy · {escape(cache_age)}[/]"
-    return line
+    age = f"   [dim]cached policy · {escape(cache_age)}[/]" if cache_age else ""
+    candidates = [
+        f"{icon} {escape(trace.outcome)}{age}",
+        f"{icon} {escape(_compact_outcome(trace.outcome))}{age}",
+        f"{icon} {escape(_compact_outcome(trace.outcome))}",
+    ]
+    if width is None:
+        return candidates[0]
+    for line in candidates:
+        if Text.from_markup(line).cell_len <= width:
+            return line
+    return candidates[-1]
 
 
 class DetailDialog(ModalScreen[str | None]):
@@ -257,6 +271,11 @@ class DetailDialog(ModalScreen[str | None]):
     DetailDialog.-short TracePanel > #trace-detail {
         max-height: 5;
     }
+    /* Fewer than _TINY_BELOW_ROWS rows: the detail keeps its name lines and
+       the first check; the rest is one scroll away, the tree gets the rows. */
+    DetailDialog.-tiny TracePanel > #trace-detail {
+        max-height: 3;
+    }
     DetailDialog #trace-note {
         margin-top: 1;
     }
@@ -281,10 +300,9 @@ class DetailDialog(ModalScreen[str | None]):
         self._inline_max = _INLINE_VALUE_MAX_WITH_TRACE if trace is not None else _INLINE_VALUE_MAX_ALONE
         if trace is not None:
             self.add_class("-with-trace")
-        # Both set for real by _classify(), called from compose() once the
-        # terminal size is known; the defaults here only matter before that.
+        # Set for real by _classify(), called from compose() once the
+        # terminal size is known; the default here only matters before that.
         self._tabbed_mode = False
-        self._compact_header = False
 
     @property
     def has_trace(self) -> bool:
@@ -315,7 +333,10 @@ class DetailDialog(ModalScreen[str | None]):
     def _header_text(self) -> Text:
         lines = [_header_line1(self._row)]
         if self._trace is not None:
-            lines.append(_header_line2(self._trace, self._cache_age, compact=self._compact_header))
+            width = self.app.size.width
+            if self.has_class("-with-trace"):
+                width = int(width * 0.96)
+            lines.append(_header_line2(self._trace, self._cache_age, width - _DIALOG_FRAME_COLS))
         # Rich Text, not Textual markup — see TracePanel's tree labels: a Static
         # with markup=True takes colour names literally instead of the theme's.
         return Text.from_markup("\n".join(lines))
@@ -323,29 +344,24 @@ class DetailDialog(ModalScreen[str | None]):
     def _footer_text(self) -> str:
         if self._trace is None:
             return _FOOTER_ALONE
-        if self._tabbed_mode:
-            return f"{_FOOTER_WITH_TRACE} · {_FOOTER_TAB_HINT}"
-        return _FOOTER_WITH_TRACE
+        return _FOOTER_TABBED if self._tabbed_mode else _FOOTER_WITH_TRACE
 
-    def _classify(self) -> tuple[bool, bool]:
-        """What the terminal's size says about the layout: ``(tabbed, compact
-        header)``. Also sets the size-dependent CSS classes (``-tabbed``,
-        ``-short``, ``-tiny``) — ``-with-trace`` is set once in ``__init__``
-        since it never depends on size.
+    def _classify(self) -> bool:
+        """Whether the terminal is too narrow for two columns. Also sets the
+        size-dependent CSS classes (``-tabbed``, ``-short``, ``-tiny``);
+        ``-with-trace`` is set once in ``__init__`` since it never depends
+        on size.
         """
         size = self.app.size
         cols, rows = size.width, size.height
         tabbed = self._trace is not None and cols < _TABBED_BELOW_COLS
-        short = rows < _SHORT_BELOW_ROWS
-        tiny = rows < _TINY_BELOW_ROWS
-        compact = tiny and cols < _TABBED_BELOW_COLS
         self.set_class(tabbed, "-tabbed")
-        self.set_class(short, "-short")
-        self.set_class(tiny, "-tiny")
-        return tabbed, compact
+        self.set_class(rows < _SHORT_BELOW_ROWS, "-short")
+        self.set_class(rows < _TINY_BELOW_ROWS, "-tiny")
+        return tabbed
 
     def compose(self) -> ComposeResult:
-        self._tabbed_mode, self._compact_header = self._classify()
+        self._tabbed_mode = self._classify()
         with Vertical(id="dialog"):
             yield Static(self._header_text(), id="dialog-header")
             with Horizontal(id="dialog-body"):
@@ -475,52 +491,24 @@ class DetailDialog(ModalScreen[str | None]):
             # logged rule is the first thing seen — but Tab needs somewhere
             # to land the focus once the reader switches to Fields.
             self.query_one("#detail-pane").can_focus = True
-        if self._trace is not None:
-            # TracePanel scrolls to the logged rule as soon as it mounts, but
-            # a TabbedContent (or -short shrinking the selection detail) takes
-            # a few more refreshes to settle into its final, small size on a
-            # tight terminal — at the first refresh the tree's own height is
-            # still a transitional (too generous) value, so both TracePanel's
-            # scroll and a one-shot correction right after it land against
-            # numbers that keep shrinking underneath them, and a check against
-            # that same transitional height wrongly says "already visible".
-            # So: don't trust one check, keep re-scrolling straight to the
-            # node's own line (not Tree's own centring math, which is what
-            # under-shot in the first place) every refresh for a few rounds —
-            # the last of those lands once the surrounding layout is final.
-            self.call_after_refresh(self._reveal_logged_rule)
-
-    def _reveal_logged_rule(self, rounds_left: int = 10) -> None:
-        try:
-            tree = self.query_one("#trace-tree", Tree)
-        except NoMatches:
-            return
-        node = tree.cursor_node
-        if node is None:
-            return
-        tree.scroll_to(y=float(node.line), animate=False, force=True)
-        if rounds_left > 0:
-            self.call_after_refresh(self._reveal_logged_rule, rounds_left - 1)
 
     def on_resize(self, event: events.Resize) -> None:
         """Re-decide the layout as the terminal is resized.
 
         Toggling side-by-side vs. tabbed changes the DOM (a TabbedContent
         appears or disappears), so that case rebuilds the dialog; recompose()
-        re-runs on_mount for the fresh TracePanel, which re-selects the
-        logged rule — a reasonable outcome for a resize. The size-only cases
-        (-short, -tiny, a compact header) are plain CSS/text updates and
-        need no rebuild.
+        mounts a fresh TracePanel, which selects the logged rule again. The
+        size-only cases (-short, -tiny, the header's length) are CSS and
+        text updates and need no rebuild.
         """
         was_tabbed = self._tabbed_mode
-        tabbed, compact = self._classify()
-        self._tabbed_mode = tabbed
-        self._compact_header = compact
-        if tabbed != was_tabbed:
+        self._tabbed_mode = self._classify()
+        if self._tabbed_mode != was_tabbed:
             self.call_after_refresh(self.recompose)
         elif self.is_mounted:
             try:
                 self.query_one("#dialog-header", Static).update(self._header_text())
+                self.query_one("#dialog-footer", Static).update(f"[dim]{self._footer_text()}[/]")
             except NoMatches:
                 pass
 

@@ -375,4 +375,4 @@ class DetailDialog(ModalScreen[str | None]):
             event.stop()
             # open_selected_rule lands with the trace-screen focused-tree work
             # (same contract as toggle_expand_all above); not yet on this branch.
-            self.query_one(TracePanel).open_selected_rule()  # type: ignore[attr-defined]
+            self.query_one(TracePanel).open_selected_rule()

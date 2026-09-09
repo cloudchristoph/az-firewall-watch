@@ -18,7 +18,7 @@ from viewer.azure_resources import (
     fetch_subnet,
 )
 from viewer.cache import CachedSnapshot
-from viewer.views.firewall import _nat_gateway_rows
+from viewer.views.firewall import _nat_gateway_rows, _note, _row
 
 from .test_azure_resources import SUB, VNET, FakeArm
 
@@ -329,6 +329,27 @@ def test_nat_gateway_rows_subnets_readable_no_gateway():
     assert len(rows) == 1
     assert "none" in rows[0]
     assert "outbound traffic leaves with the firewall's public IPs" in rows[0]
+
+
+TWO_SUBNET_FW = FirewallInfo(id="/fw", name="fw", subscription_id="s", resource_group="rg", location="gwc",
+                             sku_name="AZFW_VNet", subnet_ids=["/sn1", "/sn2"])
+
+
+def test_nat_gateway_rows_partial_subnet_read_never_claims_none():
+    """A gateway could sit on the subnet that was not readable."""
+    readable = [SubnetInfo(id="/sn1", name="AzureFirewallSubnet")]
+    rows = _nat_gateway_rows(TWO_SUBNET_FW, readable, [])
+    assert rows == [_row("NAT gateway", "none on the readable subnets   [dim]1 of 2 firewall subnets not readable, "
+                         "so a gateway there would not show[/]")]
+
+
+def test_nat_gateway_rows_partial_subnet_read_marks_the_list_as_possibly_incomplete():
+    readable = [SubnetInfo(id="/sn1", name="AzureFirewallSubnet", nat_gateway_id=NATGW)]
+    gw = NatGatewayInfo(id=NATGW, name="natgw-hub", subnet_name="AzureFirewallSubnet", readable=True,
+                        public_ip_addresses=["20.1.2.3"])
+    rows = _nat_gateway_rows(TWO_SUBNET_FW, readable, [gw])
+    assert rows[0] == _note("1 of 2 firewall subnets not readable; the list below may be incomplete")
+    assert rows[1] == _row("NAT gateway", "natgw-hub on AzureFirewallSubnet")
 
 
 def test_nat_gateway_rows_readable_with_resolved_addresses():

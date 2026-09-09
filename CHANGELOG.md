@@ -21,7 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **The firewall's own reason on rule-less application-rule rows.** An application-rule row that no rule matched carried an empty Rule Info column, while the same case on a network rule showed the log's `ActionReason` (usually `Default Action`). Both show it now.
 - The metadata cache moves to version 5 and is fetched once more on first start; the required roles are unchanged (Reader, plus Reader on the NAT gateway and the maintenance configuration for their two optional lines).
 - The firewall, policy and IP-group reads use ARM API version `2024-03-01` instead of `2024-01-01`. That is the first version that returns `autoscaleConfiguration`; with the old pin a prescaled firewall would have read as *service default*, which is a wrong statement of exactly the kind this release is meant to end. Policies and IP groups are unchanged between the two versions.
-- 719 tests (583 in 0.5.1); every new fact has tests for the field being present, absent and unreadable, and the explicit-proxy and TLS-inspection cases are modelled on the lab's real records.
+- 723 tests (583 in 0.5.1); every new fact has tests for the field being present, absent and unreadable, and the explicit-proxy and TLS-inspection cases are modelled on the lab's real records.
 
 ### Fixed
 

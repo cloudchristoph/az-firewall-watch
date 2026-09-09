@@ -113,6 +113,11 @@ def _maintenance_window_rows(w: MaintenanceWindow) -> list[str]:
     """The row (and, for a readable window, its note) for one assignment."""
     name = escape(w.configuration_name or w.assignment_name)
     if not w.readable:
+        if not w.configuration_id:
+            # An assignment that points at no configuration: nothing to read,
+            # and no rights question either.
+            return [_row("Maintenance",
+                         f"assigned: {name}   [dim]the assignment names no maintenance configuration[/]")]
         return [_row("Maintenance",
                      f"assigned: {name}   [dim]window not readable (no Reader on the maintenance configuration)[/]")]
 
@@ -203,11 +208,19 @@ def _nat_gateway_rows(fw: FirewallInfo, subnets: list[SubnetInfo], nat_gateways:
     """
     if fw.sku_name == "AZFW_Hub":
         return [_row("NAT gateway", "not supported on a Virtual WAN hub firewall")]
+    unread = len(fw.subnet_ids) - len(subnets)
     if not subnets and fw.subnet_ids:
         return [_row("NAT gateway", "unknown   [dim]firewall subnet not readable[/]")]
     if not nat_gateways:
+        if unread > 0:
+            # A gateway could sit on the subnet that could not be read: "none"
+            # is only a statement about the readable ones.
+            return [_row("NAT gateway", f"none on the readable subnets   [dim]{unread} of {len(fw.subnet_ids)} "
+                         "firewall subnets not readable, so a gateway there would not show[/]")]
         return [_row("NAT gateway", "none   [dim]outbound traffic leaves with the firewall's public IPs[/]")]
     rows: list[str] = []
+    if unread > 0:
+        rows.append(_note(f"{unread} of {len(fw.subnet_ids)} firewall subnets not readable; the list below may be incomplete"))
     for gw in nat_gateways:
         rows.extend(_one_nat_gateway_rows(gw))
     return rows

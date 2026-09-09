@@ -251,6 +251,16 @@ def test_apprule_without_rule_and_without_reason_keeps_the_policy_name(structure
     assert row.policy == "pol-hub"
 
 
+def test_apprule_with_a_partial_rule_path_keeps_what_the_record_carries(structured_record):
+    """RuleCollection and Rule without RuleCollectionGroup are still rule details, not a reason."""
+    row = parse_record(structured_record(
+        "AZFWApplicationRule", Protocol="HTTPS", SourceIp="10.0.1.4", DestinationPort=443,
+        Fqdn="example.com", Action="Allow", Policy="pol-hub", RuleCollection="rc-web", Rule="allow-web",
+        ActionReason="should not replace the rule path",
+    ))
+    assert row.policy == "pol-hub»rc-web»allow-web"
+
+
 def test_apprule_with_rule_still_builds_the_usual_policy_path(structured_record):
     row = parse_record(structured_record(
         "AZFWApplicationRule", Protocol="HTTPS", SourceIp="10.0.1.4", DestinationPort=443,

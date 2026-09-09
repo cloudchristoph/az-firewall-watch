@@ -275,6 +275,12 @@ def test_maintenance_rows_unexpected_sub_scope_is_flagged():
                            "   [dim]mc[/]")
 
 
+def test_maintenance_rows_assignment_without_a_configuration_id_is_not_a_rights_problem():
+    w = MaintenanceWindow(assignment_name="assign1", configuration_id="", readable=False)
+    rows = _maintenance_rows(_fw(), [w])
+    assert rows == [_row("Maintenance", "assigned: assign1   [dim]the assignment names no maintenance configuration[/]")]
+
+
 def test_maintenance_rows_not_readable():
     w = MaintenanceWindow(assignment_name="assign1", configuration_id=CONFIG_ID, configuration_name="mc-fw-nightly",
                           readable=False)

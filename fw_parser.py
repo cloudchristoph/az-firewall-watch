@@ -189,7 +189,9 @@ def _parse_structured(record: dict, category: str, time: str, resource_id: str =
         rcg = _s(props, "RuleCollectionGroup")
         rc = _s(props, "RuleCollection")
         rule = _s(props, "Rule")
-        if rcg:
+        if rcg or rc or rule:
+            # Whatever of the rule path the record carries; a partial path is
+            # still more than the reason.
             full_policy = "»".join(filter(None, [fw_policy, rcg, rc, rule]))
         else:
             # No rule: the firewall's own reason, like NetworkRule rows; and when

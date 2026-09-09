@@ -184,9 +184,10 @@ def _on_off(value: str) -> str:
 def _additional_property_rows(fw: FirewallInfo) -> list[str]:
     """Instance panel: the switches that live in ``additionalProperties``.
 
-    Fat flow logging and active FTP get a row even when absent (absent is
-    Azure's default, off); the rest only when set. Keys this viewer does not
-    know stay visible as ``key=value`` under *Additional* so nothing is lost.
+    Fat flow logging gets a row even when absent (absent is Azure's default,
+    off, and it explains a log category that never shows up); the rest only
+    when set. Keys this viewer does not know stay visible as ``key=value``
+    under *Additional* so nothing is lost.
     """
     props = fw.additional_properties
     rows = [
@@ -194,8 +195,8 @@ def _additional_property_rows(fw: FirewallInfo) -> list[str]:
     ]
     if DNS_FLOW_TRACE_KEY in props:
         rows.append(_row("DNS flow trace", _on_off(props[DNS_FLOW_TRACE_KEY])))
-    rows.append(_row("Active FTP", _on_off(props[ACTIVE_FTP_KEY]) if ACTIVE_FTP_KEY in props
-                     else "off   [dim]not set[/]"))
+    if ACTIVE_FTP_KEY in props:
+        rows.append(_row("Active FTP", _on_off(props[ACTIVE_FTP_KEY])))
     if CLASSIC_DNS_PROXY_KEY in props or CLASSIC_DNS_SERVERS_KEY in props:
         servers = escape(props.get(CLASSIC_DNS_SERVERS_KEY, "")) or "Azure DNS"
         state = _on_off(props[CLASSIC_DNS_PROXY_KEY]) if CLASSIC_DNS_PROXY_KEY in props else "servers set"
@@ -510,11 +511,8 @@ class FirewallView(Vertical):
         note.update("\n".join([
             _row("Subnets", escape(subnet_names)),
             _row("CIDRs", _v(", ".join(subnet_cidrs))),
-            # A management configuration is what forced tunneling needs (and what
-            # Basic requires), not proof that a route tunnels anything: routes
-            # are not read here, so the row describes the configuration only.
-            _row("Management", "own subnet and public IP   [dim]needed for forced tunneling and by the Basic SKU; "
-                 "whether a route tunnels traffic is not read here[/]" if fw.management_ip else "none"),
+            # The configuration only: whether a route tunnels anything is not read here.
+            _row("Management", "own subnet and public IP" if fw.management_ip else "none"),
             *_nat_gateway_rows(fw, subnets, nat_gateways),
         ]))
 

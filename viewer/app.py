@@ -817,36 +817,13 @@ class FirewallLogApp(App[None]):
                 policy_name, grp, rc, rule = found
                 out["rule_priority"] = f"RCG:{grp.priority} \u00bb RC:{rc.priority}"
                 out["rule_action"] = rc.action
-                out["rule_definition"] = self._rule_definition(rule)
                 if policy_name and policy_name != self._policy_info.name:
                     out["rule_policy"] = f"{policy_name} (inherited)"
-            elif logged is not None:
-                out["rule_definition"] = "logged rule not in loaded policy (Ctrl+R to refresh)"
+            # No one-line definition here: the trace beside the fields shows every
+            # criterion, Enter on the rule opens it in the Policy tab, and a rule
+            # missing from the loaded policy is the trace's own warning.
         return out
 
-    def _rule_definition(self, rule) -> str:
-        """One-line summary of a rule's definition with IP groups resolved to names."""
-        def names(ids: list[str]) -> list[str]:
-            return [self._ip_groups[g].name if g in self._ip_groups else g.rsplit("/", 1)[-1] for g in ids]
-        src = rule.source_addresses + names(rule.source_ip_groups)
-        dst = (rule.destination_addresses + names(rule.destination_ip_groups)
-               + rule.destination_fqdns + rule.fqdn_tags + rule.target_urls)
-        dst_txt = ", ".join(dst) or "any"
-        if rule.translated_address or rule.translated_fqdn:
-            target = rule.translated_address or rule.translated_fqdn
-            dst_txt += f" → {target}:{rule.translated_port}" if rule.translated_port else f" → {target}"
-        parts = [
-            ", ".join(rule.protocols) or "any",
-            ", ".join(rule.destination_ports) or "any port",
-            "from " + (", ".join(src) or "any"),
-            "to " + dst_txt,
-        ]
-        if rule.http_headers:
-            count = len(rule.http_headers)
-            noun = "HTTP header" if count == 1 else "HTTP headers"
-            header_names = ", ".join(h.name for h in rule.http_headers)
-            parts.append(f"inserts {count} {noun} ({header_names})")
-        return "  ".join(parts)
 
     # ── actions (key bindings) ─────────────────────────────────────────────────
     def action_toggle_pause(self) -> None:

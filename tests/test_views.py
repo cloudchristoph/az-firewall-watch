@@ -276,7 +276,7 @@ async def test_detail_dialog_shows_enrichment(structured_record, mgmt, firewall_
         await pilot.pause(0.2)
         text = _text(app.screen)
         assert "Src IP Groups" in text and "ipgroup-all-spokes" in text
-        assert "Rule Def." in text and "TCP  443  from ipgroup-all-spokes  to *" in text
+        assert "Rule Def." not in text and "TCP  443  from ipgroup-all-spokes  to *" not in text   # the trace shows the criteria
         assert "Dst IP Groups" not in text  # 1.1.1.1 is in no group
         # priorities, action and policy path are shown once — in the trace, not the fields
         assert "Rule Priority" not in text
@@ -284,7 +284,7 @@ async def test_detail_dialog_shows_enrichment(structured_record, mgmt, firewall_
         assert "[2000] rcg-net" in labels and "[100] rc-web  allow" in labels
 
 
-async def test_detail_dialog_shows_logged_rule_definition(structured_record, mgmt, firewall_id):
+async def test_detail_dialog_enrichment_names_priority_and_action_but_no_definition(structured_record, mgmt, firewall_id):
     app = FirewallLogApp()
     async with app.run_test(size=(160, 45)) as pilot:
         await pilot.pause()
@@ -293,13 +293,13 @@ async def test_detail_dialog_shows_logged_rule_definition(structured_record, mgm
         enr = app._compute_enrichment(row)
         assert enr["rule_priority"] == "RCG:2000 » RC:100"
         assert enr["rule_action"] == "Allow"
-        assert enr["rule_definition"] == "TCP  443  from ipgroup-all-spokes  to *"
+        assert "rule_definition" not in enr  # the trace shows the criteria, the Policy tab the definition
         assert "trace_hint" not in enr  # the trace sits in the dialog itself now
         renamed = parse_record(structured_record(
             "AZFWNetworkRule", SourceIp="10.3.5.4", DestinationIp="1.1.1.1", Action="Allow",
             Policy="fwp-hub-premium-gwc", RuleCollectionGroup="rcg-net", RuleCollection="rc-web", Rule="gone",
         ))
-        assert "not in loaded policy" in app._compute_enrichment(renamed)["rule_definition"]
+        assert "rule_definition" not in app._compute_enrichment(renamed)  # the trace warns about a missing rule
 
 
 # ── evaluation trace ─────────────────────────────────────────────────────────
@@ -542,7 +542,7 @@ async def test_enter_opens_entry_and_trace_side_by_side(structured_record, mgmt,
         screen = app.screen
         assert screen.has_trace and screen.has_class("-with-trace")
         left = "\n".join(str(s.content) for s in screen.query("#detail-pane Static"))
-        assert "Log Entry — NetworkRule" in left and "Rule Def." in left
+        assert "Log Entry — NetworkRule" in left and "Rule Def." not in left
         # nothing twice: the policy path, priorities, action and SKU live in the trace
         for dup in ("Policy       ", "RCG          ", "Rule Coll.", "Rule         ", "Rule Priority", "Rule Action", "Policy SKU"):
             assert dup not in left, dup
@@ -596,16 +596,6 @@ async def test_long_rule_details_are_shortened_on_collapsed_lines():
     rule_line = next(line for line in labels if line.startswith("✗ allow-many"))
     assert "…" in rule_line and len(rule_line) < 80, rule_line
     assert any(line.startswith("✗ port:") and many[-1] in line for line in labels)  # full detail on the leaf
-
-
-def test_rule_definition_formats_dnat_targets_without_trailing_colon():
-    app = FirewallLogApp()
-    with_port = Rule(name="rdp", rule_type="NatRule", source_addresses=["*"], destination_addresses=["20.1.1.1"],
-                     destination_ports=["3389"], protocols=["TCP"], translated_address="10.3.5.4", translated_port="3389")
-    without_port = Rule(name="web", rule_type="NatRule", source_addresses=["*"], destination_addresses=["20.1.1.1"],
-                        destination_ports=["443"], protocols=["TCP"], translated_fqdn="web.internal")
-    assert app._rule_definition(with_port).endswith("to 20.1.1.1 → 10.3.5.4:3389")
-    assert app._rule_definition(without_port).endswith("to 20.1.1.1 → web.internal")
 
 
 def test_flow_from_dnat_row_uses_the_public_destination(structured_record):
@@ -756,7 +746,7 @@ async def test_firewall_tab_shows_instance_networking_policy_and_logging(structu
         assert rows[2][0] == "management" and rows[2][2].endswith("72.144.91.185")
         net_note = str(view.query_one("#fw-network-note", Static).content)
         assert "10.2.0.0/26" in net_note and "AzureFirewallSubnet, AzureFirewallManagementSubnet" in net_note
-        assert "own subnet and public IP" in net_note and "needed for forced tunneling" in net_note
+        assert "own subnet and public IP" in net_note and "forced tunneling" not in net_note
         pol = str(view.query_one("#fw-policy", Static).content)
         assert "fwp-hub-premium-gwc" in pol and "1 rule collection groups" in pol
         assert "DNS proxy" in pol and "Azure DNS" in pol and "2 signature overrides" in pol and "CA: fw-tls-intermediate-ca" in pol

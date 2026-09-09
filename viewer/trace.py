@@ -251,6 +251,12 @@ def _destination_check(rule: Rule, flow: Flow, ip_groups: dict[str, IpGroupInfo]
         return Check("destination", MISS, f"{fqdn} not in {', '.join(rule.destination_fqdns)}")
 
     ip = _parse_ip(flow.dst_ip)
+    if rule.kind == "dnat" and ip is None and flow.dst_fqdn and flow.dst_fqdn != "-":
+        # A DNAT rule matches traffic addressed to the firewall's own public IP.
+        # A row that names its destination (an application-rule row) is a flow
+        # through the firewall to that name, not to the firewall: no DNAT.
+        targets = ", ".join(rule.destination_addresses) or "the firewall's public IP"
+        return Check("destination", MISS, f"{flow.dst_fqdn} is a name; DNAT matches {targets}")
     result, detail = _address_check(ip, rule.destination_addresses, rule.destination_ip_groups, ip_groups)
     if result != MATCH and rule.destination_fqdns:
         if flow.dst_fqdn and flow.dst_fqdn != "-":

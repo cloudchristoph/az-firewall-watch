@@ -248,6 +248,12 @@ class TracePanel(Vertical):
             self._logged_node = node
         for ch in r.checks:
             node.add_leaf(f"{_ICON[ch.result]} {ch.name}: [dim]{escape(ch.detail)}[/]")
+        if r.rule.http_headers:
+            # What the rule does to the flow beyond allowing it. Names only:
+            # the values can carry tokens, and the Policy tab reveals them on request.
+            n = len(r.rule.http_headers)
+            names = ", ".join(escape(h.name) for h in r.rule.http_headers)
+            node.add_leaf(f"[dim]✎ inserts {n} HTTP header{'s' if n != 1 else ''}: {names}[/]")
 
     # ── interaction ─────────────────────────────────────────────────────────
     def on_tree_node_selected(self, event: Tree.NodeSelected) -> None:

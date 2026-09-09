@@ -16,6 +16,7 @@ from viewer.trace import (
     build_trace,
     evaluate_rule,
     find_logged_rule,
+    first_problem,
 )
 
 G_SPOKES = "/g/spokes"
@@ -357,6 +358,18 @@ def test_trace_parent_policy_groups_come_first_per_pass():
     # the parent rule would match locally, but the log names the child rule → downgraded, never claimed as the match
     assert cols[0].verdict == UNKNOWN and "firewall continued" in cols[0].note
     assert cols[1].rules[0].logged
+
+
+def test_dnat_rule_against_a_named_destination_is_a_destination_miss_not_a_port_question():
+    """An application-rule row names its destination; a DNAT rule matches the
+    firewall's own public IP, so the miss is the destination, not the port."""
+    flow = Flow(category="AppRule", protocol="HTTPS", src_ip="10.3.11.4", dst_fqdn="www.lonelyplanet.com", dst_port="443")
+    rule = nat("dnat-to-web", destination_addresses=["72.144.131.50"], destination_ports=["18080"])
+    r = evaluate_rule(rule, flow, {})
+    checks = {c.name: c for c in r.checks}
+    assert checks["destination"].result == MISS
+    assert checks["destination"].detail == "www.lonelyplanet.com is a name; DNAT matches 72.144.131.50"
+    assert first_problem(r).name == "destination"
 
 
 def test_trace_dnat_pass_comes_first_and_terminates():

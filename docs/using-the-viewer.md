@@ -89,8 +89,9 @@ depending on it:
 - Everything else shows source, destination and ports as logged.
 
 When [policy context](policy-context.md) is available, the same dialog also carries
-the IP groups containing source and destination, the definition of the logged rule,
-and the evaluation trace beside the record's own fields.
+the IP groups containing source and destination and the evaluation trace beside
+the record's own fields. The trace shows every criterion of the logged rule;
+`Enter` on the rule opens its full definition in the Policy tab.
 
 Rows that are not a policy decision (`DnsQuery`, `DnsFailure`, `IDPS`, `FlowTrace`,
 `FatFlow`) show their fields alone, with a line underneath that says why, for

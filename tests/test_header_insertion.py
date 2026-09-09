@@ -1,8 +1,8 @@
 """HTTP header insertion on application rules (0.6.0 point: viewer/views/policy.py,
-FirewallLogApp._rule_definition in viewer/app.py).
+the header leaf in the trace tree in viewer/views/trace_screen.py).
 
 Covers: ARM parsing (present / absent / non-dict entries skipped), the on-disk
-cache round trip, the one-line rule definition shown in the row detail dialog,
+cache round trip, the header leaf under a rule node in the trace tree,
 and the Policy tab's reveal-on-request UI (hidden by default, "v" toggles,
 a re-render hides again, the tree label never carries names or values, and
 the three SKU/TLS scope lines).
@@ -112,37 +112,6 @@ def test_cache_round_trip_keeps_http_headers_as_httpheader_objects(cache_file):
     assert loaded_rule.http_headers == [HttpHeader(name="X-Tenant-Id", value=TENANT_ID_VALUE)]
     assert all(isinstance(h, HttpHeader) for h in loaded_rule.http_headers)
     assert loaded_rule.terminate_tls is True
-
-
-# ── _rule_definition (viewer/app.py) ─────────────────────────────────────────
-
-def test_rule_definition_without_headers_has_no_extra_part():
-    app = FirewallLogApp()
-    rule = Rule(name="r", rule_type="NetworkRule", source_addresses=["*"], destination_addresses=["1.1.1.1"],
-                destination_ports=["443"], protocols=["TCP"])
-    definition = app._rule_definition(rule)
-    assert "inserts" not in definition and "HTTP header" not in definition
-
-
-def test_rule_definition_one_header_uses_singular_and_hides_value():
-    app = FirewallLogApp()
-    rule = Rule(name="r", rule_type="ApplicationRule", source_addresses=["*"], destination_fqdns=["*.example.com"],
-                destination_ports=["443"], protocols=["Https"],
-                http_headers=[HttpHeader(name="X-Tenant-Id", value=TENANT_ID_VALUE)])
-    definition = app._rule_definition(rule)
-    assert definition.endswith("inserts 1 HTTP header (X-Tenant-Id)")
-    assert TENANT_ID_VALUE not in definition
-
-
-def test_rule_definition_two_headers_uses_plural_names_only():
-    app = FirewallLogApp()
-    rule = Rule(name="r", rule_type="ApplicationRule", source_addresses=["*"], destination_fqdns=["*.example.com"],
-                destination_ports=["443"], protocols=["Https"],
-                http_headers=[HttpHeader(name="X-Tenant-Id", value="s1"),
-                              HttpHeader(name="X-Forwarded-Tenant", value="s2")])
-    definition = app._rule_definition(rule)
-    assert definition.endswith("inserts 2 HTTP headers (X-Tenant-Id, X-Forwarded-Tenant)")
-    assert "s1" not in definition and "s2" not in definition
 
 
 # ── Policy tab UI ─────────────────────────────────────────────────────────────
@@ -306,6 +275,37 @@ async def test_rule_tree_label_never_carries_header_names_or_values(structured_r
         assert label == "insert-headers"
         assert "X-Tenant-Id" not in label and "X-Forwarded-Tenant" not in label
         assert TENANT_ID_VALUE not in label and MARKUP_VALUE not in label
+
+
+async def test_trace_tree_names_inserted_headers_under_the_logged_rule_never_values(structured_record, apprule_mgmt,
+                                                                                    firewall_id):
+    from textual.widgets import Tree as TreeWidget
+
+    from fw_parser import parse_record
+
+    from .test_views import _open_trace
+
+    app = FirewallLogApp()
+    async with app.run_test(size=(160, 45)) as pilot:
+        await pilot.pause()
+        await _load(app, pilot, firewall_id)
+        row = parse_record(structured_record(
+            "AZFWApplicationRule", Protocol="HTTPS", SourceIp="10.3.5.4", SourcePort=1, DestinationPort=443,
+            Fqdn="www.example.com", Action="Allow", Policy="fwp-hub-premium-gwc",
+            RuleCollectionGroup="rcg-app", RuleCollection="rc-app", Rule="insert-headers",
+        ))
+        screen = await _open_trace(app, pilot, row)
+        tree = screen.query_one("#trace-tree", TreeWidget)
+        labels = []
+
+        def walk(node):
+            labels.append(node.label.plain)
+            for child in node.children:
+                walk(child)
+
+        walk(tree.root)
+        assert any("inserts 2 HTTP headers: X-Tenant-Id, X-Forwarded-Tenant" in lbl for lbl in labels)
+        assert not any(TENANT_ID_VALUE in lbl or "x[/]" in lbl for lbl in labels)
 
 
 async def test_revealed_value_with_markup_characters_is_escaped(structured_record, apprule_mgmt, firewall_id):

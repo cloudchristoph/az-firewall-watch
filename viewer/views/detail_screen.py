@@ -222,8 +222,6 @@ class DetailDialog(ModalScreen[str | None]):
                 yield self._field("Rule Priority", enr["rule_priority"])
             if enr.get("rule_action") and not with_trace:
                 yield self._field("Rule Action  ", enr["rule_action"])
-            if enr.get("rule_definition"):
-                yield self._field("Rule Def.    ", enr["rule_definition"])  # the tree shows checks, not the whole rule
 
     def _flowtrace_fields(self, row: FirewallDataRow) -> ComposeResult:
         flag = row.action if row.category.lower() == "flowtrace" else ""  # FatFlow has a rate there

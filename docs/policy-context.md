@@ -65,10 +65,10 @@ The metadata also feeds back into the **Logs** tab:
 
 - Addresses inside the firewall's own subnets are rendered as `AzFw.<last octet>`,
   so traffic from the firewall instances themselves (DNS proxy, probes) stands out.
-- The row detail dialog lists the IP groups that contain source and destination
-  and the definition of the rule the firewall logged, looked up by name, never
-  guessed. Whatever the trace beside it already shows (policy path, priorities,
-  action, SKU) is left out rather than printed twice.
+- The row detail dialog lists the IP groups that contain source and destination.
+  Whatever the trace beside it already shows (the logged rule and its criteria,
+  policy path, priorities, action, SKU) is left out rather than printed twice;
+  the rule's full definition is one `Enter` away in the Policy tab.
 - The status bar shows a short summary: `Policy: Premium · 11 IP groups · fresh`.
 
 ## Evaluation trace

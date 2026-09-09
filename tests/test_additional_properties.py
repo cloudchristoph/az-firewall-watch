@@ -22,11 +22,8 @@ def _fw(**props: str) -> FirewallInfo:
                         additional_properties=props)
 
 
-def test_empty_bag_shows_the_two_defaults_and_no_additional_line():
-    assert _additional_property_rows(_fw()) == [
-        _row("Fat flow logging", "off   [dim]not set[/]"),
-        _row("Active FTP", "off   [dim]not set[/]"),
-    ]
+def test_empty_bag_shows_only_fat_flow_logging_and_no_additional_line():
+    assert _additional_property_rows(_fw()) == [_row("Fat flow logging", "off   [dim]not set[/]")]
 
 
 @pytest.mark.parametrize("value,expected", [("true", "on"), ("True", "on"), ("false", "off"), ("maybe", "maybe")])
@@ -41,9 +38,10 @@ def test_dns_flow_trace_row_only_when_the_key_is_present():
     assert _row("DNS flow trace", "on") in rows
 
 
-def test_active_ftp_row():
+def test_active_ftp_row_only_when_the_key_is_present():
     rows = _additional_property_rows(_fw(**{ACTIVE_FTP_KEY: "True"}))
     assert _row("Active FTP", "on") in rows
+    assert not any("Active FTP" in r for r in _additional_property_rows(_fw()))
 
 
 def test_classic_dns_proxy_and_snat_rows():
@@ -63,7 +61,7 @@ def test_unknown_keys_stay_visible_under_additional_and_known_ones_are_not_repea
 
 
 def test_instance_panel_places_the_switches_after_maintenance_and_before_the_resource_group():
-    fw = _fw(**{FAT_FLOW_KEY: "true"})
+    fw = _fw(**{FAT_FLOW_KEY: "true", ACTIVE_FTP_KEY: "true"})
     labels = [r.split("[/]", 1)[0].replace("[dim]", "").strip() for r in FirewallView._instance(fw, [])]
     assert labels.index("Fat flow logging") == labels.index("Maintenance") + 1
     assert labels.index("Active FTP") == labels.index("Resource group") - 1

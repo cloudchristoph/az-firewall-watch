@@ -11,6 +11,7 @@ from textual.widgets import DataTable, Input, Static, Switch
 import viewer.app as app_module
 from dialogs import StatusBar
 from fw_parser import parse_record
+from helpers import _to_local
 from viewer.app import FirewallLogApp
 from viewer.views.detail_screen import DetailDialog
 
@@ -57,7 +58,9 @@ async def test_enter_opens_detail_dialog_with_all_fields(structured_record):
         dialog = await _open_detail(app, pilot, _network_row(structured_record))
         text = _dialog_text(dialog)
         assert "NetworkRule" in text  # category now sits in the header, not a "Log Entry —" title
-        assert "2026-09-05 10:00:00" in text and "08:00:00Z UTC" in text
+        # Local time depends on the machine's zone (CI runs in UTC), so ask the
+        # same helper; the UTC clock beside it is fixed.
+        assert _to_local("2026-09-05T08:00:00Z") in text and "08:00:00Z UTC" in text
         assert "10.0.1.4" in text and "51000 → 443" in text  # ports on their own line
         assert "10.0.2.5" in text
         assert "Deny" in text

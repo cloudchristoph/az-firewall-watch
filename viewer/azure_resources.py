@@ -464,6 +464,8 @@ async def fetch_nat_gateway(arm: ArmClient, gateway_id: str, subnet_name: str = 
             readable=False,
         )
     props = raw.get("properties") or {}
+    if not isinstance(props, dict):
+        props = {}
     # The documented keys are publicIpAddresses / publicIpPrefixes (lower-case
     # "Ip", unlike the publicIPAddresses resource type); the other spelling is
     # accepted as well so a casing quirk never hides the gateway's addresses.
@@ -484,7 +486,7 @@ def _sub_resources(props: dict, *keys: str) -> list[dict]:
     """The ``{"id": ...}`` entries under the first of *keys* that is present."""
     for key in keys:
         items = props.get(key)
-        if items:
+        if isinstance(items, list) and items:
             return [ref for ref in items if isinstance(ref, dict) and ref.get("id")]
     return []
 
@@ -495,9 +497,15 @@ async def fetch_nat_gateways(arm: ArmClient, subnets: list[SubnetInfo]) -> list[
     if not targets:
         return []
     results = await asyncio.gather(
-        *(fetch_nat_gateway(arm, s.nat_gateway_id, s.name) for s in targets)
+        *(fetch_nat_gateway(arm, s.nat_gateway_id, s.name) for s in targets),
+        return_exceptions=True,
     )
-    return list(results)
+    # An optional detail must never abort the metadata fetch: anything that
+    # still went wrong leaves the gateway named but unreadable.
+    return [r if isinstance(r, NatGatewayInfo)
+            else NatGatewayInfo(id=s.nat_gateway_id, name=s.nat_gateway_id.rsplit("/", 1)[-1],
+                                subnet_name=s.name, readable=False)
+            for s, r in zip(targets, results, strict=True)]
 
 
 # Errors on the assignment list that mean "no assignment exists" (provider not

@@ -79,6 +79,27 @@ async def test_fetch_nat_gateway_no_public_ips_or_prefixes():
     assert gw.public_ip_ids == [] and gw.public_ip_prefix_names == []
 
 
+@pytest.mark.parametrize("properties", ["not a dict", None, {"publicIpAddresses": "not a list"}])
+async def test_fetch_nat_gateway_tolerates_odd_payload_shapes(properties):
+    arm = FakeArm({NATGW: {"id": NATGW, "name": "natgw-hub", "properties": properties}})
+    gw = await fetch_nat_gateway(arm, NATGW, subnet_name="AzureFirewallSubnet")
+    assert gw.readable is True and gw.public_ip_ids == [] and gw.public_ip_prefix_names == []
+
+
+async def test_fetch_nat_gateways_survives_an_unexpected_error(monkeypatch):
+    """An optional detail must not abort the whole metadata fetch."""
+    import viewer.azure_resources as res
+
+    async def boom(arm, gateway_id, subnet_name=""):
+        raise RuntimeError("unexpected")
+
+    monkeypatch.setattr(res, "fetch_nat_gateway", boom)
+    subnets = [SubnetInfo(id="/sn1", name="AzureFirewallSubnet", nat_gateway_id=NATGW)]
+    gws = await fetch_nat_gateways(FakeArm({}), subnets)
+    assert len(gws) == 1
+    assert gws[0].readable is False and gws[0].name == "natgw-hub" and gws[0].subnet_name == "AzureFirewallSubnet"
+
+
 async def test_fetch_nat_gateway_unreadable_never_raises():
     arm = FakeArm({NATGW: ArmError(403, "AuthorizationFailed", "denied")})
     gw = await fetch_nat_gateway(arm, NATGW, subnet_name="AzureFirewallSubnet")

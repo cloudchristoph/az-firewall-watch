@@ -774,6 +774,33 @@ async def test_firewall_tab_shows_the_0_6_0_facts_from_the_snapshot(structured_r
         assert "port 8080 for HTTP and HTTPS" in pol and "served on port 8090" in pol and "proxy.pac" in pol
 
 
+async def test_firewall_tab_panels_scroll_on_a_small_terminal(structured_record, mgmt, firewall_id):
+    """Regression for the Codex finding: a 120×30 terminal cannot show the whole
+    Policy block, so the panel must scroll rather than cut the rest off."""
+    from textual.containers import Vertical
+    snap = make_snapshot()
+    snap.policy.dns_proxy, snap.policy.dns_servers = True, ["10.0.0.53"]
+    snap.policy.idps_mode, snap.policy.tls_ca_name = "Alert", "fw-tls-intermediate-ca"
+    snap.policy.snat_auto_learn = "Enabled"
+    snap.policy.explicit_proxy, snap.policy.explicit_proxy_http_port = True, 8080
+    snap.policy.explicit_proxy_pac, snap.policy.explicit_proxy_pac_port = True, 8090
+    snap.policy.explicit_proxy_pac_file = "https://acct.blob.core.windows.net/c/proxy.pac"
+    mgmt["snapshot"] = snap
+    app = FirewallLogApp()
+    async with app.run_test(size=(120, 30)) as pilot:
+        await pilot.pause()
+        await _load(app, pilot, firewall_id)
+        app.query_one("#main-tabs", TabbedContent).active = "tab-firewall"
+        await pilot.pause()
+        panel = app.query_one("#panel-policy", Vertical)
+        text_lines = str(app.query_one("#fw-policy", Static).content).count("\n") + 1
+        assert text_lines > panel.size.height, "the fixture must overflow the panel for this test to mean anything"
+        assert panel.max_scroll_y > 0            # the overflow is reachable
+        panel.scroll_end(animate=False)
+        await pilot.pause()
+        assert panel.scroll_y == panel.max_scroll_y
+
+
 async def test_views_render_metadata(structured_record, mgmt, firewall_id):
     app = FirewallLogApp()
     async with app.run_test(size=(160, 45)) as pilot:

@@ -202,9 +202,29 @@ def _one_nat_gateway_rows(gw: NatGatewayInfo) -> list[str]:
         ]
     return [
         _row("NAT gateway", location),
-        _note(f"outbound traffic leaves with {_nat_gateway_address_text(gw)}; "
+        # Qualified on purpose: the snapshot reads no routes. A UDR to an NVA
+        # or a virtual network gateway bypasses the NAT gateway.
+        _note(f"traffic routed straight to the internet leaves with {_nat_gateway_address_text(gw)}; "
+              "routes to an NVA or virtual network gateway bypass the gateway; "
               "DNAT and management traffic stay on the firewall's public IPs"),
     ]
+
+
+def _no_gateway_row(fw: FirewallInfo) -> str:
+    """The "none" row, careful not to name an egress address the data does not establish.
+
+    The snapshot reads no route tables, and with forced tunneling (a management
+    IP configuration) internet-bound traffic can leave through on-premises
+    infrastructure; a data plane without any public IP cannot SNAT to one at all.
+    """
+    if fw.management_ip is not None:
+        return _row("NAT gateway", "none   [dim]forced tunneling: internet-bound traffic follows your routes, "
+                    "not necessarily a firewall public IP[/]")
+    if not any(c.public_ip_id for c in fw.ip_configs):
+        return _row("NAT gateway", "none   [dim]the data-plane IP configurations have no public IP; "
+                    "egress depends on your routes[/]")
+    return _row("NAT gateway", "none   [dim]traffic routed straight to the internet leaves with the firewall's "
+                "public IPs; routes to an NVA or gateway are not read here[/]")
 
 
 def _nat_gateway_rows(fw: FirewallInfo, subnets: list[SubnetInfo], nat_gateways: list[NatGatewayInfo]) -> list[str]:
@@ -225,7 +245,7 @@ def _nat_gateway_rows(fw: FirewallInfo, subnets: list[SubnetInfo], nat_gateways:
             # is only a statement about the readable ones.
             return [_row("NAT gateway", f"none on the readable subnets   [dim]{unread} of {len(fw.subnet_ids)} "
                          "firewall subnets not readable, so a gateway there would not show[/]")]
-        return [_row("NAT gateway", "none   [dim]outbound traffic leaves with the firewall's public IPs[/]")]
+        return [_no_gateway_row(fw)]
     rows: list[str] = []
     if unread > 0:
         rows.append(_note(f"{unread} of {len(fw.subnet_ids)} firewall subnets not readable; the list below may be incomplete"))
@@ -334,6 +354,9 @@ class FirewallView(Vertical):
         border-title-style: bold;
         padding: 0 1;
         height: 1fr;
+        /* The blocks grew in 0.6.0; on a small terminal the rest must be
+           reachable by scrolling rather than cut off below the border. */
+        overflow-y: auto;
     }
     FirewallView .panel > Static {
         height: auto;

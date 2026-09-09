@@ -281,7 +281,7 @@ async def test_management_keeps_a_slot_for_every_gateway_pip(world):
     assert snap is not None
     assert gw.public_ip_addresses == ["", "20.1.2.4"]
     rows = _nat_gateway_rows(VNET_FW, [subnet], [gw])
-    assert "outbound traffic leaves with pip-natgw-1 (address not readable), 20.1.2.4;" in rows[1]
+    assert "leaves with pip-natgw-1 (address not readable), 20.1.2.4;" in rows[1]
 
 
 async def test_management_asks_for_each_gateway_pip_once(world):
@@ -360,19 +360,48 @@ def test_nat_gateway_rows_subnet_not_readable():
     assert "unknown" in rows[0] and "firewall subnet not readable" in rows[0]
 
 
+def _vnet_fw(*, data_public: bool, forced_tunneling: bool, subnet_ids=("/sn1",)) -> FirewallInfo:
+    from viewer.azure_resources import IpConfig
+    data = IpConfig(name="AzureFirewallIpConfiguration0", private_ip="10.2.0.4", subnet_id="/sn1",
+                    public_ip_id="/pip-fw" if data_public else "", public_ip_name="pip-fw" if data_public else "")
+    mgmt = IpConfig(name="AzureFirewallMgmtIpConfiguration", subnet_id="/sn2", public_ip_id="/pip-mgmt",
+                    public_ip_name="pip-mgmt") if forced_tunneling else None
+    return FirewallInfo(id="/fw", name="fw", subscription_id="s", resource_group="rg", location="gwc",
+                        sku_name="AZFW_VNet", subnet_ids=list(subnet_ids), ip_configs=[data], management_ip=mgmt)
+
+
 def test_nat_gateway_rows_no_subnet_ids_treated_as_no_gateway():
     rows = _nat_gateway_rows(VNET_FW_NO_SUBNET_IDS, [], [])
     assert len(rows) == 1
-    assert "none" in rows[0]
-    assert "outbound traffic leaves with the firewall's public IPs" in rows[0]
+    assert rows[0].startswith(_row("NAT gateway", "none"))
 
 
-def test_nat_gateway_rows_subnets_readable_no_gateway():
+def test_nat_gateway_rows_no_gateway_with_a_public_data_plane_qualifies_the_egress():
+    """Without routes in the snapshot the firewall's public IPs are the egress only
+    for traffic that goes straight to the internet."""
     subnet = SubnetInfo(id="/sn1", name="AzureFirewallSubnet")
-    rows = _nat_gateway_rows(VNET_FW, [subnet], [])
-    assert len(rows) == 1
-    assert "none" in rows[0]
-    assert "outbound traffic leaves with the firewall's public IPs" in rows[0]
+    rows = _nat_gateway_rows(_vnet_fw(data_public=True, forced_tunneling=False), [subnet], [])
+    assert rows == [_row("NAT gateway", "none   [dim]traffic routed straight to the internet leaves with the "
+                         "firewall's public IPs; routes to an NVA or gateway are not read here[/]")]
+
+
+def test_nat_gateway_rows_forced_tunneling_never_names_a_firewall_public_ip_as_egress():
+    """Regression for the Codex finding: a private-only data NIC and a public
+    management NIC (forced tunneling) must not claim egress via a firewall PIP."""
+    subnets = [SubnetInfo(id="/sn1", name="AzureFirewallSubnet"),
+               SubnetInfo(id="/sn2", name="AzureFirewallManagementSubnet")]
+    fw = _vnet_fw(data_public=False, forced_tunneling=True, subnet_ids=("/sn1", "/sn2"))
+    rows = _nat_gateway_rows(fw, subnets, [])
+    assert rows == [_row("NAT gateway", "none   [dim]forced tunneling: internet-bound traffic follows your "
+                         "routes, not necessarily a firewall public IP[/]")]
+    assert "leaves with the firewall's public IPs" not in rows[0]
+
+
+def test_nat_gateway_rows_private_only_data_plane_without_forced_tunneling():
+    subnet = SubnetInfo(id="/sn1", name="AzureFirewallSubnet")
+    rows = _nat_gateway_rows(_vnet_fw(data_public=False, forced_tunneling=False), [subnet], [])
+    assert rows == [_row("NAT gateway", "none   [dim]the data-plane IP configurations have no public IP; "
+                         "egress depends on your routes[/]")]
 
 
 TWO_SUBNET_FW = FirewallInfo(id="/fw", name="fw", subscription_id="s", resource_group="rg", location="gwc",
@@ -404,8 +433,9 @@ def test_nat_gateway_rows_readable_with_resolved_addresses():
     rows = _nat_gateway_rows(VNET_FW, [subnet], [gw])
     assert len(rows) == 2
     assert "natgw-hub on AzureFirewallSubnet" in rows[0]
-    assert ("outbound traffic leaves with 20.1.2.3, 20.1.2.4; DNAT and management traffic "
-            "stay on the firewall's public IPs") in rows[1]
+    assert rows[1] == _note("traffic routed straight to the internet leaves with 20.1.2.3, 20.1.2.4; "
+                            "routes to an NVA or virtual network gateway bypass the gateway; "
+                            "DNAT and management traffic stay on the firewall's public IPs")
 
 
 def test_nat_gateway_rows_readable_unresolved_addresses_use_names():
@@ -413,7 +443,7 @@ def test_nat_gateway_rows_readable_unresolved_addresses_use_names():
     gw = NatGatewayInfo(id=NATGW, name="natgw-hub", subnet_name="AzureFirewallSubnet", readable=True,
                         public_ip_ids=[PIP1], public_ip_names=["pip-natgw-1"])
     rows = _nat_gateway_rows(VNET_FW, [subnet], [gw])
-    assert "outbound traffic leaves with pip-natgw-1 (address not readable);" in rows[1]
+    assert "leaves with pip-natgw-1 (address not readable);" in rows[1]
 
 
 def test_nat_gateway_rows_readable_with_prefix():
@@ -421,7 +451,7 @@ def test_nat_gateway_rows_readable_with_prefix():
     gw = NatGatewayInfo(id=NATGW, name="natgw-hub", subnet_name="AzureFirewallSubnet", readable=True,
                         public_ip_addresses=["20.1.2.3"], public_ip_prefix_names=["pfx-natgw"])
     rows = _nat_gateway_rows(VNET_FW, [subnet], [gw])
-    assert "outbound traffic leaves with 20.1.2.3, prefix pfx-natgw;" in rows[1]
+    assert "leaves with 20.1.2.3, prefix pfx-natgw;" in rows[1]
 
 
 def test_nat_gateway_rows_readable_no_ip_and_no_prefix():

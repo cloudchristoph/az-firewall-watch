@@ -74,8 +74,12 @@ How it interacts with the rest of the filter bar:
 
 ## Row details
 
-`Enter` on the highlighted row opens the detail dialog with the full record: every
-field the firewall logged, formatted and labelled. `Escape` or `q` closes it.
+`Enter` on the highlighted row opens the detail dialog. Its first line is the
+connection, protocol and logged action; below it the record's fields in groups:
+*Connection* (time local and UTC, ports, and what the category adds: flag, rate,
+query, response, threat, signature), *Inspection* (explicit proxy, TLS inspection,
+only when the record carries them) and *Rule* (policy, group, collection, rule).
+`Escape` or `q` closes it.
 
 The fields adapt to the category, because the raw log means different things
 depending on it:
@@ -88,10 +92,19 @@ depending on it:
   and a `Translated` line with what the firewall turned it into.
 - Everything else shows source, destination and ports as logged.
 
-When [policy context](policy-context.md) is available, the same dialog also carries
-the IP groups containing source and destination and the evaluation trace beside
-the record's own fields. The trace shows every criterion of the logged rule;
-`Enter` on the rule opens its full definition in the Policy tab.
+When [policy context](policy-context.md) is available, the same dialog gains a
+second header line with the trace's outcome and the cache age, a *Groups* block
+with the IP groups containing source and destination, and the evaluation trace
+beside the fields. The trace is described in
+[Evaluation trace](policy-context.md#evaluation-trace); the keys inside the
+dialog are `Enter` to fold a node, `p` to open the selected rule in the Policy
+tab, `a` to switch between the focused and the full tree.
+
+On a terminal narrower than 120 columns the fields and the trace become two
+tabs inside the dialog, *Fields* and *Policy trace*, switched with `Tab`; the
+trace tab opens first so the logged rule is the first thing on screen. Below
+40 rows the selection detail under the tree gives its rows to the tree, below
+30 the header shortens to the rule name. Every pane scrolls on its own.
 
 Rows that are not a policy decision (`DnsQuery`, `DnsFailure`, `IDPS`, `FlowTrace`,
 `FatFlow`) show their fields alone, with a line underneath that says why, for
@@ -124,6 +137,7 @@ authentication errors stop immediately with a hint rather than retrying.
 | `Ctrl` + `p` | Pause / resume streaming, same as clicking the status bar                                   |
 | `Ctrl` + `s` | Save an SVG screenshot of the current view                                                 |
 | `Enter`      | Open the row details, with the evaluation trace beside them when policy metadata is loaded |
+| `p`, `a`, `Tab` | In the row details: open the selected rule in the Policy tab, toggle the full trace, switch tabs on a narrow terminal |
 | `Escape`     | Clear all filter inputs (or close the open dialog)                                         |
 | `f`          | Jump focus to the filters                                                                  |
 | `Tab`        | Move between filter inputs                                                                 |

@@ -82,13 +82,29 @@ MSSQL flows.
 
 ![The detail dialog: the log entry's fields on the left, the evaluation trace on the right, ending at the rule the firewall logged](images/evaluation-trace.png)
 
-The log entry's own fields sit on the left, the trace on the right. Each pass
-reports its own verdict (`✓ matched`, `✗ no match`, `? no certain match`), and
-under it the rule collection groups with their collections in priority order.
-The collection's own action is the short tag after its name (`deny` in red,
-`allow` quiet, `dnat` in yellow): the ✓ or ✗ in front says whether the flow
-matched, the tag says what a match would have meant. Collections that did not
-match name their nearest miss, so you can see how close each one came.
+The dialog's header says what happened: connection, protocol and the logged
+action on the first line, the trace's outcome and the cache age on the second
+(`✓ Allow by rcg-net » rc-web » allow-web   cached policy · 12 min`). The log
+entry's own fields sit on the left, the trace on the right. Each pass reports
+its own verdict (`✓ matched`, `✗ no match`, `? no certain match`), and under it
+the rule collection groups with their collections in priority order. Lines are
+status, priority and name only; the collection's own action is the short tag
+after its name (`deny` in red, `allow` quiet, `dnat` in yellow): the mark in
+front says whether the flow matched, the tag says what a match would have
+meant.
+
+The tree opens focused on the logged rule: it is selected and scrolled into
+view, the collections the firewall rejected before it are folded into one line
+(`7 preceding collections   all ✗`), the ones it never reached into another
+(`3 not evaluated`). A `?` inside a folded range keeps that range open, so an
+unknown never disappears behind a fold. `a` switches to the full tree and back.
+
+Under the tree a detail line follows the selection: for a rule its full name,
+collection, group and action, then one line per criterion with the observed
+value and what the rule expected (`✗ port   8443 not in 443`); for a collection
+its verdict and the reason; for a pass its note. Names cut with `…` in the
+tree are whole here. A rule that inserts HTTP headers names them here, never
+their values.
 
 ### What you are looking at
 
@@ -127,10 +143,16 @@ checked against real records rather than the documentation.
 
 | Key            | In the trace tree                                             |
 | -------------- | ------------------------------------------------------------- |
-| `Enter`        | Unfold a rule; on an unfolded rule, open it in the Policy tab |
-| `Space`        | Fold it again                                                 |
-| `a`            | Expand the whole tree, including collections that were skipped |
+| `Enter`        | Fold or unfold the selected node                              |
+| `p`            | Open the selected rule in the Policy tab                      |
+| `a`            | The full tree, including the folded collections, and back     |
+| `Tab`          | On a terminal under 120 columns: switch between *Fields* and *Policy trace* |
 | `Escape` / `q` | Close the dialog                                              |
+
+Below 120 columns the fields and the trace are tabs rather than columns, and
+the trace tab opens first. Below 40 rows the selection detail shrinks so the
+tree keeps its rows; below 30 the header's outcome line drops the group and
+collection and keeps the rule name. Nothing is cut off: every pane scrolls.
 
 The trace is built only for rows that are a policy decision: `NetworkRule`,
 `AppRule`, `NATRule` and `ThreatIntel`. For anything else the dialog shows the

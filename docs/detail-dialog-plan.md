@@ -1,8 +1,8 @@
 # Row detail dialog: redesign plan
 
-Status: in progress, part of 0.6.0. Source: a Codex review of the dialog as it
+Status: done, shipped with 0.6.0. Source: a Codex review of the dialog as it
 stood after the 0.6.0 tabs work, reduced to what the code and the data can
-actually support. The packages below are ticked off as they land.
+actually support. All seven packages below have landed.
 
 The dialog is what `Enter` opens on a log row. Today it is two things glued
 together: the row's fields on the left, and, when policy context is on and the
@@ -63,7 +63,7 @@ footer reduced to `Esc close`, and under the fields the one-line reason from
 Each is one subagent brief with tests of its own; they build on each other in
 this order.
 
-1. **Header and footer** (`viewer/views/detail_screen.py`)
+1. ✓ **Header and footer** (`viewer/views/detail_screen.py`)
    One header line with connection, protocol and logged action, built from
    the row alone so it exists in both modes. Second line only with a trace:
    the logged rule (or *no rule in the log*) and the cache age from the
@@ -72,7 +72,7 @@ this order.
    Tests: header equal in both modes; second line absent without a trace;
    footer keys per mode; no key leaks to the app on close.
 
-2. **Left column in groups** (`viewer/views/detail_screen.py`)
+2. ✓ **Left column in groups** (`viewer/views/detail_screen.py`)
    *Connection* (time local and UTC, source, destination, ports, and the
    category-specific fields: Flag, Rate, Response, Query type, Threat,
    Signature), *Inspection* (explicit proxy, TLS inspected, only when the
@@ -82,7 +82,7 @@ this order.
    Tests: one test per category with the expected groups; IPv6 endpoints;
    a 60-entry IP group list stays scrollable.
 
-3. **Focused tree** (`viewer/views/trace_screen.py`)
+3. ✓ **Focused tree** (`viewer/views/trace_screen.py`)
    Tree lines are status, priority and name only; collection lines lose the
    `n rules · nearest miss: …` suffix, rule lines lose the inline check
    summary. Collections before the logged rule's collection collapse into one
@@ -94,7 +94,7 @@ this order.
    cursor node after open; unknown collections are visible in focused mode;
    `a` and back; inherited policies keep their `· policy` origin.
 
-4. **Selection detail under the tree** (`viewer/views/trace_screen.py`)
+4. ✓ **Selection detail under the tree** (`viewer/views/trace_screen.py`)
    A `Static` under the tree that follows the cursor: for a rule its full
    name, collection, group, action, then one line per check with the
    observed value and the rule's expectation as the trace already records
@@ -104,7 +104,7 @@ this order.
    Tests: cursor moves update the detail; every `Check.detail` reaches the
    detail verbatim; header values absent.
 
-5. **Keys** (`viewer/views/trace_screen.py`, `viewer/app.py`)
+5. ✓ **Keys** (`viewer/views/trace_screen.py`, `viewer/app.py`)
    `Enter` toggles a node, nothing else. `p` opens the selected rule in the
    Policy tab (dismisses with the rule ref as today). `a` full tree,
    `v` has no meaning here (values live in the Policy tab). `Esc`/`q` close
@@ -112,7 +112,7 @@ this order.
    Tests: `Enter` on an open rule no longer leaves the dialog; `p` does;
    `q` inside the dialog does not quit the app.
 
-6. **Small terminals** (`viewer/views/detail_screen.py`)
+6. ✓ **Small terminals** (`viewer/views/detail_screen.py`)
    Below 120 columns the two columns become tabs inside the dialog
    (*Fields* / *Policy trace*, `Tab` switches); below 30 rows the tree gets
    the space and the selection detail collapses to two lines. Every pane
@@ -121,7 +121,7 @@ this order.
    logged rule reachable at all three sizes; without policy context the
    dialog is the fields alone at all three sizes.
 
-7. **Colour** (both files)
+7. ✓ **Colour** (both files)
    ✓ green, ? yellow, ✗ dim (a miss is the normal case), not-evaluated
    dimmer still; `deny` stays loud red, `allow` the quiet green from 0.6.0.
    Every symbol and colour name goes through the same rendering path (Rich

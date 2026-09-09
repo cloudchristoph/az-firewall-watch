@@ -2,6 +2,7 @@
 Firewall-tab rendering (0.6.0 point 5)."""
 from __future__ import annotations
 
+from datetime import date
 from pathlib import Path
 
 import pytest
@@ -9,7 +10,7 @@ import pytest
 import viewer.cache as cache
 from viewer.arm import ArmError
 from viewer.azure_resources import FirewallInfo, MaintenanceWindow, fetch_maintenance
-from viewer.views.firewall import _maintenance_rows, _note, _row
+from viewer.views.firewall import _maintenance_rows, _note, _row, _split_start
 
 SUB = "/subscriptions/25ca1d83-3de5-46c7-9941-fb98c2ea026e"
 FW_ID = f"{SUB}/resourceGroups/rg-hub-network-gwc/providers/Microsoft.Network/azureFirewalls/fw-hub-gwc"
@@ -235,6 +236,25 @@ def test_maintenance_rows_with_missing_fields_say_so_instead_of_a_sentence_with_
     if expect_present:
         assert expect_present in rows[0]
     assert " for , " not in rows[0] and "daily  " not in rows[0]
+
+
+@pytest.mark.parametrize("value,expected", [
+    ("2026-09-10 22:00", (date(2026, 9, 10), "22:00")),
+    ("2026-09-10", (None, "2026-09-10")),          # date without a time: not the documented shape
+    ("tonight 22:00", (None, "tonight 22:00")),
+    ("", (None, "")),
+])
+def test_split_start_only_accepts_the_documented_shape(value, expected):
+    assert _split_start(value) == expected
+
+
+def test_maintenance_rows_date_only_start_is_shown_raw_and_never_dated():
+    w = MaintenanceWindow(assignment_name="assign1", configuration_id=CONFIG_ID, configuration_name="mc-fw-nightly",
+                          readable=True, start="2099-01-01", duration="05:00", time_zone="UTC", recur_every="Day",
+                          expiration="9999-12-31 23:59")
+    rows = _maintenance_rows(_fw(), [w])
+    assert rows[0] == _row("Maintenance", "daily 2099-01-01 for 5 h, UTC   [dim]mc-fw-nightly[/]")
+    assert "from " not in rows[0]
 
 
 def test_maintenance_rows_duration_with_minutes():

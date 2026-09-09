@@ -85,11 +85,13 @@ def _split_start(value: str) -> tuple[date | None, str]:
     if not value:
         return None, ""
     head, _, rest = value.partition(" ")
+    if not rest:
+        return None, value   # a date without a time is not the documented shape
     try:
         d = date.fromisoformat(head)
     except ValueError:
         return None, value
-    return d, rest or value
+    return d, rest
 
 
 def _duration_human(duration: str) -> str:

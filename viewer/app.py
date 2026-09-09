@@ -329,6 +329,14 @@ class FirewallLogApp(App[None]):
         age = "fresh" if age_min < 1 else f"cache {age_min}m"
         return f"{policy_txt} · {len(snap.ip_groups)} IP groups · {age}"
 
+    def _cache_age_label(self) -> str:
+        """The detail dialog's cache-age phrase, e.g. ``fresh`` or ``12 min old``."""
+        snap = self._snapshot
+        if snap is None:
+            return ""
+        age_min = int(snap.age_seconds() // 60)
+        return "fresh" if age_min < 1 else f"{age_min} min old"
+
     # ── keeping the policy context current ────────────────────────────────────
     _AUTO_REFRESH_INTERVAL = 300.0  # seconds between automatic re-fetches
 
@@ -756,7 +764,8 @@ class FirewallLogApp(App[None]):
                 trace = build_trace(self._flow_from_row(row), self._policy_info, self._ip_groups,
                                     self._logged_from_row(row))
         self.push_screen(
-            DetailDialog(row, enrichment=self._compute_enrichment(row), trace=trace, trace_note=note),
+            DetailDialog(row, enrichment=self._compute_enrichment(row), trace=trace, trace_note=note,
+                         cache_age=self._cache_age_label()),
             callback=self._on_trace_result,
         )
 

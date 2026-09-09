@@ -230,6 +230,52 @@ async def test_pressing_v_reveals_then_hides_values(structured_record, apprule_m
         assert "press v to show values" in details
 
 
+async def test_v_on_a_node_without_headers_arms_nothing(structured_record, apprule_mgmt, firewall_id):
+    """A stray v on a group must not reveal values on the next rule selected."""
+    app = FirewallLogApp()
+    async with app.run_test(size=(160, 45)) as pilot:
+        await pilot.pause()
+        view = await _open_policy_tab_on_rule(app, pilot, firewall_id)
+        tree = app.query_one("#policy-tree", Tree)
+        tree.focus()
+        await pilot.pause()
+        group_node = tree.root.children[0]
+        tree.move_cursor(group_node)
+        tree.select_node(group_node)
+        await pilot.pause()
+        await pilot.press("v")
+        await pilot.pause()
+        assert view._reveal_header_values is False
+
+        assert view.focus_rule(RULE_REF)
+        await wait_until(pilot, lambda: "Rule: insert-headers" in str(app.query_one("#policy-details", Static).content))
+        details = str(app.query_one("#policy-details", Static).content)
+        assert TENANT_ID_VALUE not in details and "••••••" in details
+
+
+async def test_selecting_another_node_hides_revealed_values(structured_record, apprule_mgmt, firewall_id):
+    app = FirewallLogApp()
+    async with app.run_test(size=(160, 45)) as pilot:
+        await pilot.pause()
+        view = await _open_policy_tab_on_rule(app, pilot, firewall_id)
+        tree = app.query_one("#policy-tree", Tree)
+        tree.focus()
+        await pilot.pause()
+        await pilot.press("v")
+        await pilot.pause()
+        assert view._reveal_header_values is True
+
+        group_node = tree.root.children[0]
+        tree.move_cursor(group_node)
+        tree.select_node(group_node)
+        await pilot.pause()
+        assert view._reveal_header_values is False
+
+        assert view.focus_rule(RULE_REF)
+        await wait_until(pilot, lambda: "Rule: insert-headers" in str(app.query_one("#policy-details", Static).content))
+        assert TENANT_ID_VALUE not in str(app.query_one("#policy-details", Static).content)
+
+
 async def test_rerender_hides_previously_revealed_values(structured_record, apprule_mgmt, firewall_id):
     app = FirewallLogApp()
     async with app.run_test(size=(160, 45)) as pilot:

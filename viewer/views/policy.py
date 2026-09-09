@@ -138,6 +138,10 @@ class PolicyView(Static):
     def on_tree_node_selected(self, event: Tree.NodeSelected) -> None:
         payload = event.node.data
         details = self.query_one("#policy-details", Static)
+        if payload is not self._last_payload:
+            # Values are revealed per rule and per request: moving to another
+            # node hides them again.
+            self._reveal_header_values = False
         self._last_payload = payload if isinstance(payload, dict) else None
         if not isinstance(payload, dict):
             details.update("No details available")
@@ -178,16 +182,26 @@ class PolicyView(Static):
             self.action_toggle_header_values()
 
     def action_toggle_header_values(self) -> None:
+        """Reveal or hide the header values of the selected rule.
+
+        Only a rule that inserts headers reacts: a stray ``v`` on a group or
+        on a rule without headers must not arm a reveal for the next rule.
+        """
+        rule = self._selected_rule_with_headers()
+        if rule is None:
+            return
         self._reveal_header_values = not self._reveal_header_values
         self._rerender_selected_rule()
 
-    def _rerender_selected_rule(self) -> None:
-        """Re-render the details pane for the currently selected rule, if any.
+    def _selected_rule_with_headers(self) -> Rule | None:
+        payload = self._last_payload
+        if not isinstance(payload, dict) or payload.get("kind") != "rule":
+            return None
+        rule = payload.get("rule")
+        return rule if isinstance(rule, Rule) and rule.http_headers else None
 
-        If the last selected node was not a rule, toggling still flips the
-        reveal flag (it applies the next time a rule is selected) but there
-        is nothing to redraw right now.
-        """
+    def _rerender_selected_rule(self) -> None:
+        """Re-render the details pane for the currently selected rule."""
         payload = self._last_payload
         if not isinstance(payload, dict) or payload.get("kind") != "rule":
             return

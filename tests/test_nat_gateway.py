@@ -284,6 +284,29 @@ async def test_management_keeps_a_slot_for_every_gateway_pip(world):
     assert "outbound traffic leaves with pip-natgw-1 (address not readable), 20.1.2.4;" in rows[1]
 
 
+async def test_management_asks_for_each_gateway_pip_once(world):
+    """Duplicate ids across gateways, and ids the firewall lookup already covers, cost no extra GET."""
+    from viewer.azure_resources import IpConfig
+    fw = FirewallInfo(id=FW_ID, name="fw", subscription_id="s", resource_group="rg", location="gwc",
+                      subnet_ids=["/sn1", "/sn2"],
+                      ip_configs=[IpConfig(name="c0", public_ip_id=PIP1, public_ip_name="pip-natgw-1")])
+    subnets = [SubnetInfo(id="/sn1", name="AzureFirewallSubnet", nat_gateway_id=NATGW),
+               SubnetInfo(id="/sn2", name="AzureFirewallManagementSubnet", nat_gateway_id=NATGW)]
+    gws = [NatGatewayInfo(id=NATGW, name="natgw-hub", subnet_name=s.name, readable=True,
+                          public_ip_ids=[PIP1, PIP2], public_ip_names=["pip-natgw-1", "pip-natgw-2"]) for s in subnets]
+    world["firewall"] = fw
+    world["subnets"] = subnets
+    world["nat_gateways"] = gws
+    world["pips"] = {PIP1: "20.1.2.3", PIP2: "20.1.2.4"}
+
+    snap = await mgmt.load_management_data(FW_ID)
+
+    assert snap is not None
+    pip_calls = [ids for name, ids in world["calls"] if name == "pips"]
+    assert pip_calls == [[PIP1], [PIP2]]  # the firewall's own PIP once, the gateway's extra PIP once
+    assert all(gw.public_ip_addresses == ["20.1.2.3", "20.1.2.4"] for gw in gws)
+
+
 # ── cache round trip (same cache_file fixture pattern as tests/test_cache.py) ─
 
 @pytest.fixture

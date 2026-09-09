@@ -80,7 +80,10 @@ async def load_management_data(firewall_id: str, *, force: bool = False) -> Cach
             # outbound traffic leaves with; its public IPs are resolved like
             # the firewall's own (one optional GET each).
             nat_gateways = await fetch_nat_gateways(arm, subnets)
-            nat_pip_ids = [pid for gw in nat_gateways for pid in gw.public_ip_ids]
+            # Distinct ids only, and none the firewall lookup already covers:
+            # every one of these is an optional GET.
+            nat_pip_ids = list(dict.fromkeys(
+                pid for gw in nat_gateways for pid in gw.public_ip_ids if pid and pid not in pip_ids))
             try:
                 addresses = await pip_task
             except ArmError:

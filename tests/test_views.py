@@ -351,10 +351,17 @@ async def test_flow_trace_rows_get_no_evaluation_tree(structured_record, mgmt, f
         tbl.focus()
         tbl.move_cursor(row=0, animate=False)
         await pilot.pause()
+        status_before = app.query_one("#status", StatusBar).meta
         await pilot.press("enter")
         await wait_until(pilot, lambda: isinstance(app.screen, DetailDialog))
         assert not app.screen.has_trace
-        assert app.query_one("#status", StatusBar).meta == "no policy evaluation for FlowTrace rows"
+        # The reason sits in the dialog, as a property of this row; the status
+        # bar keeps the policy and cache state it had before.
+        note = str(app.screen.query_one("#trace-note", Static).content)
+        assert "No rule decision in this log" in note
+        assert "FlowTrace records the handshake and flags of a connection, not a rule decision." in note
+        assert app.query_one("#status", StatusBar).meta == status_before
+        assert status_before.startswith("Policy: ")
 
 
 async def test_detail_without_policy_metadata_has_no_trace(structured_record, mgmt, firewall_id):
@@ -370,13 +377,16 @@ async def test_detail_without_policy_metadata_has_no_trace(structured_record, mg
         tbl.focus()
         tbl.move_cursor(row=0, animate=False)
         await pilot.pause()
+        status_before = status.meta
         await pilot.press("enter")
         await pilot.pause()
-        assert status.meta == "trace needs policy metadata (not loaded)"
         # the plain detail dialog still opens — just without the trace column
         await wait_until(pilot, lambda: isinstance(app.screen, DetailDialog))
         assert not app.screen.has_trace
         assert not app.screen.query("#trace-tree")
+        note = str(app.screen.query_one("#trace-note", Static).content)
+        assert "Policy trace not available" in note and "not loaded yet" in note
+        assert status.meta == status_before
 
 
 async def test_trace_screen_shows_logged_match_and_closes(structured_record, mgmt, firewall_id):

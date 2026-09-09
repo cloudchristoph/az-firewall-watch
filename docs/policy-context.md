@@ -130,9 +130,11 @@ checked against real records rather than the documentation.
 
 The trace is built only for rows that are a policy decision: `NetworkRule`,
 `AppRule`, `NATRule` and `ThreatIntel`. For anything else the dialog shows the
-row's fields alone and the status bar says why, either
-*no policy evaluation for `<category>` rows* or
-*trace needs policy metadata (not loaded)*.
+row's fields alone and says why underneath: *No rule decision in this log*, with
+what that category records instead (FatFlow the top flows by rate, FlowTrace the
+handshake and flags, DNS proxy rows the query and its answer, IDPS a signature
+hit), or *Policy trace not available* while the firewall metadata is not loaded
+yet. The status bar keeps showing the policy and cache state.
 
 > [!NOTE]
 > The trace explains the **cached** policy. If the rule the firewall logged is

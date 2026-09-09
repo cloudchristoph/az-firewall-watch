@@ -720,23 +720,43 @@ class FirewallLogApp(App[None]):
     def _is_traceable(self, row: FirewallDataRow) -> bool:
         return row.category.lower() in self._TRACEABLE
 
+    # Why an observation row has no trace: what the category records instead of
+    # a rule decision. The wording must not read as "the firewall skipped the
+    # policy": it did not, the log simply does not carry its decision here.
+    _NO_DECISION = {
+        "flowtrace": "FlowTrace records the handshake and flags of a connection, not a rule decision.",
+        "fatflow": "FatFlow records the top flows by rate, not a rule decision.",
+        "dnsquery": "DNS proxy rows record the query and its answer, not a rule decision.",
+        "dnsfailure": "DNS proxy rows record a failed resolution, not a rule decision.",
+        "idps": "IDPS rows record a signature hit; the rule decision for the flow is a separate row.",
+    }
+
+    def _trace_note(self, row: FirewallDataRow) -> str:
+        """Title and reason for a missing trace, empty when a trace can be built."""
+        cat = row.category.lower()
+        if cat not in self._TRACEABLE:
+            why = self._NO_DECISION.get(cat, f"{row.category} rows record observations, not a rule decision.")
+            return f"No rule decision in this log\n{why} There is no policy trace to show."
+        if not self._mgmt_loaded or self._policy_info is None:
+            return "Policy trace not available\nIt needs the firewall metadata, which is not loaded yet."
+        return ""
+
     def _open_detail(self, row: FirewallDataRow) -> None:
         """Open the row detail dialog; the evaluation trace sits beside it when possible.
 
-        When policy context is on but no trace can be built, the status bar says why.
+        When policy context is on but no trace can be built, the dialog itself
+        says why. The status bar keeps the policy and cache state: a property
+        of one row must not overwrite the state of the application.
         """
         trace = None
+        note = ""
         if self._policy_context:
-            status = self.query_one("#status", StatusBar)
-            if not self._is_traceable(row):
-                status.meta = f"no policy evaluation for {row.category} rows"
-            elif not self._mgmt_loaded or self._policy_info is None:
-                status.meta = "trace needs policy metadata (not loaded)"
-            else:
+            note = self._trace_note(row)
+            if not note and self._policy_info is not None:
                 trace = build_trace(self._flow_from_row(row), self._policy_info, self._ip_groups,
                                     self._logged_from_row(row))
         self.push_screen(
-            DetailDialog(row, enrichment=self._compute_enrichment(row), trace=trace),
+            DetailDialog(row, enrichment=self._compute_enrichment(row), trace=trace, trace_note=note),
             callback=self._on_trace_result,
         )
 

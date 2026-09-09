@@ -93,8 +93,9 @@ the IP groups containing source and destination, the definition of the logged ru
 and the evaluation trace beside the record's own fields.
 
 Rows that are not a policy decision (`DnsQuery`, `DnsFailure`, `IDPS`, `FlowTrace`,
-`FatFlow`) show their fields alone, and the status bar says why, for example
-*no policy evaluation for FlowTrace rows*.
+`FatFlow`) show their fields alone, with a line underneath that says why, for
+example *No rule decision in this log: FatFlow records the top flows by rate, not
+a rule decision*.
 
 ## Status bar
 

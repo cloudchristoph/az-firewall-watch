@@ -5,6 +5,7 @@ policy metadata loaded). Without it the dialog is the plain, narrow entry view.
 """
 from __future__ import annotations
 
+from rich.markup import escape
 from textual import events
 from textual.app import ComposeResult
 from textual.containers import Horizontal, Vertical
@@ -92,6 +93,9 @@ class DetailDialog(ModalScreen[str | None]):
         text-style: bold;
         margin-bottom: 1;
     }
+    DetailDialog #trace-note {
+        margin-top: 1;
+    }
     DetailDialog .detail-row {
         height: auto;
     }
@@ -107,11 +111,14 @@ class DetailDialog(ModalScreen[str | None]):
     """
 
     def __init__(self, row: FirewallDataRow, *, enrichment: dict | None = None,
-                 trace: Trace | None = None) -> None:
+                 trace: Trace | None = None, trace_note: str = "") -> None:
         super().__init__()
         self._row = row
         self._enrichment: dict = enrichment or {}
         self._trace = trace
+        # Why there is no trace beside the fields; shown in the dialog itself,
+        # because it is a property of this row, not of the application state.
+        self._trace_note = trace_note
         if trace is not None:
             self.add_class("-with-trace")
 
@@ -130,6 +137,10 @@ class DetailDialog(ModalScreen[str | None]):
         with Horizontal(id="dialog"):
             with Vertical(id="detail-pane"):
                 yield from self._entry_fields()
+                if self._trace is None and self._trace_note:
+                    title, _, why = self._trace_note.partition("\n")
+                    yield Static(f"[b]{escape(title)}[/b]\n[dim]{escape(why)}[/]", id="trace-note",
+                                 classes="detail-row", markup=True)
                 with Horizontal(classes="btn-row"):
                     yield Button("Close  (Esc)", variant="primary", id="btn-close")
             if self._trace is not None:

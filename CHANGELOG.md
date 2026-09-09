@@ -25,6 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The reason for a missing trace sits in the dialog, not in the status bar.** Opening a FlowTrace, FatFlow, DNS or IDPS row used to write *no policy evaluation for FatFlow rows* into the status bar, where it replaced the policy and cache state and stayed there until the next refresh, and where it read as if the firewall had skipped the policy. The dialog now says it itself, under the row's fields: *No rule decision in this log*, with what that category records instead (FatFlow the top flows by rate, FlowTrace the handshake and flags, DNS proxy rows the query and its answer, IDPS a signature hit). A row opened before the metadata is loaded says *Policy trace not available* the same way. The status bar keeps showing the policy and the cache age.
 - **A TLS-inspected HTTPS request no longer misses an HTTPS-only rule.** The firewall logs an inspected request as the decrypted inner one: `Protocol` is `HTTP/1.1` and `IsTlsInspected` is true, while an uninspected request says `HTTPS`. The trace compared the bare `HTTP` against the rule's `Https` and marked the protocol as a miss, which on the very rule that terminates TLS was a confident wrong verdict. With the flag the trace treats the row as HTTPS and says so (`HTTPS (TLS inspected, logged as HTTP/1.1)`). Found on real records during the 0.6.0 lab pass; the legacy `properties.msg` format has no such flag and keeps its old reading.
 
 ### Known limitations

@@ -303,7 +303,7 @@ class TracePanel(Vertical):
             # An unknown must stay visible from the outside, so it goes in the summary text.
             summary = f"{unknown_n} with ?" if unknown_n else "all ✗"
             fold = group_node.add(
-                f"▸ {n} preceding collections   {summary}",
+                f"{n} preceding collections   {summary}",
                 data={"kind": "summary", "name": logged_col.group.name, "priority": logged_col.group.priority,
                       "collections": preceding},
                 expand=self._expand_all,
@@ -316,7 +316,7 @@ class TracePanel(Vertical):
         if after:
             n = len(after)
             fold = group_node.add(
-                f"▸ {n} not evaluated",
+                f"{n} not evaluated",
                 data={"kind": "summary", "name": logged_col.group.name, "priority": logged_col.group.priority,
                       "collections": after},
                 expand=self._expand_all,

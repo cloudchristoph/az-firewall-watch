@@ -57,7 +57,7 @@ async def test_enter_opens_detail_dialog_with_all_fields(structured_record):
         dialog = await _open_detail(app, pilot, _network_row(structured_record))
         text = _dialog_text(dialog)
         assert "NetworkRule" in text  # category now sits in the header, not a "Log Entry —" title
-        assert "2026-09-05T08:00:00Z" in text
+        assert "2026-09-05 10:00:00" in text and "08:00:00Z UTC" in text
         assert "10.0.1.4" in text and "51000 → 443" in text  # ports on their own line
         assert "10.0.2.5" in text
         assert "Deny" in text
@@ -101,7 +101,7 @@ async def test_threat_intel_entry_labels_and_long_values(structured_record):
         dialog = await _open_detail(app, pilot, row)
         contents = [str(s.content) for s in dialog.query(Static)]
         text = "\n".join(contents)
-        assert "2026-09-07T16:14:09Z" in text and ".903912" not in text      # UTC trimmed to seconds
+        assert "16:14:09Z" in text and ".903912" not in text      # UTC trimmed to seconds, date only when it differs
         assert "Threat" in text and "More Info" not in text                   # category-specific label
         # The destination and protocol are the header's job now (ThreatIntel's
         # Source/Destination equal it exactly); no separate field repeats them.

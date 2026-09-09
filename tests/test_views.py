@@ -415,7 +415,7 @@ async def test_trace_screen_shows_logged_match_and_closes(structured_record, mgm
         assert any(line.startswith("  Threat Intelligence") for line in labels)
         assert any(line.startswith("  DNAT rules") for line in labels)
         # focused view: the missed collection before the match folds into one line
-        fold = next(n for n in _tree_nodes(tree) if n.label.plain.startswith("▸ 1 preceding collections"))
+        fold = next(n for n in _tree_nodes(tree) if n.label.plain.startswith("1 preceding collections"))
         assert "all ✗" in fold.label.plain
         assert not fold.is_expanded and len(fold.children) == 1
         deny = fold.children[0]

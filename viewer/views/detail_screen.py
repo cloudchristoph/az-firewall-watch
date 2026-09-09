@@ -222,9 +222,13 @@ class DetailDialog(ModalScreen[str | None]):
         return Static(f"[dim]{label.ljust(13)}[/]  {safe}", markup=True, classes="detail-row")
 
     def _time_field(self, row: FirewallDataRow) -> Static:
-        local = escape(_to_local(row.time))
-        utc = escape(_utc_short(row.time))
-        text = f"[dim]{'Time'.ljust(13)}[/]  {local} local   [dim]{utc} UTC[/]"
+        """Local time first, UTC dim beside it; the UTC date only when it differs
+        from the local one, so the line fits the pane beside the trace."""
+        local = _to_local(row.time)
+        utc = _utc_short(row.time)                       # 2026-09-09T16:41:46Z
+        utc_date, _, utc_clock = utc.partition("T")
+        utc_short = utc_clock if local.startswith(utc_date) else utc
+        text = f"[dim]{'Time'.ljust(13)}[/]  {escape(local)}   [dim]{escape(utc_short)} UTC[/]"
         return Static(text, markup=True, classes="detail-row")
 
     def _ip_groups_field(self, label: str, groups: list[str]) -> Static:

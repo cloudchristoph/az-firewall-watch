@@ -166,7 +166,7 @@ async def test_preceding_collections_fold_and_flag_the_unknown_one(structured_re
         await _load(app, pilot, firewall_id)
         screen = await _open_trace(app, pilot, _open_focused_group_row(structured_record))
         tree = screen.query_one("#trace-tree", Tree)
-        fold = next(n for n in _tree_nodes(tree) if n.label.plain.startswith("▸ 3 preceding collections"))
+        fold = next(n for n in _tree_nodes(tree) if n.label.plain.startswith("3 preceding collections"))
         assert "1 with ?" in fold.label.plain
         assert not fold.is_expanded  # collapsed by default, but still expandable
         assert fold.allow_expand and len(fold.children) == 3
@@ -182,7 +182,7 @@ async def test_not_evaluated_collections_fold_after_the_logged_one(structured_re
         await _load(app, pilot, firewall_id)
         screen = await _open_trace(app, pilot, _open_focused_group_row(structured_record))
         tree = screen.query_one("#trace-tree", Tree)
-        fold = next(n for n in _tree_nodes(tree) if n.label.plain.startswith("▸ 1 not evaluated"))
+        fold = next(n for n in _tree_nodes(tree) if n.label.plain.startswith("1 not evaluated"))
         assert len(fold.children) == 1
         skipped = fold.children[0]
         assert skipped.label.plain.startswith("– [50] rc-after")
@@ -224,17 +224,17 @@ async def test_a_expands_everything_then_returns_to_focused(structured_record, m
         await _load(app, pilot, firewall_id)
         screen = await _open_trace(app, pilot, _open_focused_group_row(structured_record))
         tree = screen.query_one("#trace-tree", Tree)
-        fold = next(n for n in _tree_nodes(tree) if n.label.plain.startswith("▸ 3 preceding collections"))
+        fold = next(n for n in _tree_nodes(tree) if n.label.plain.startswith("3 preceding collections"))
         assert not fold.is_expanded
         await pilot.press("a")
         await pilot.pause()
         tree = screen.query_one("#trace-tree", Tree)
-        fold = next(n for n in _tree_nodes(tree) if n.label.plain.startswith("▸ 3 preceding collections"))
+        fold = next(n for n in _tree_nodes(tree) if n.label.plain.startswith("3 preceding collections"))
         assert fold.is_expanded and all(c.is_expanded for c in fold.children if c.allow_expand)
         await pilot.press("a")
         await pilot.pause()
         tree = screen.query_one("#trace-tree", Tree)
-        fold = next(n for n in _tree_nodes(tree) if n.label.plain.startswith("▸ 3 preceding collections"))
+        fold = next(n for n in _tree_nodes(tree) if n.label.plain.startswith("3 preceding collections"))
         assert not fold.is_expanded  # back to focused
 
 

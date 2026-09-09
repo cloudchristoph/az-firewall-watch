@@ -299,11 +299,12 @@ async def test_detail_shows_every_check_verbatim_and_header_names_never_values(s
         ))
         screen = await _open_trace(app, pilot, row)
         detail = str(screen.query_one("#trace-detail", Static).content)
-        # every Check.detail, verbatim
-        assert "*" in detail
-        assert "www.example.com" in detail
-        assert "443" in detail
-        assert "HTTPS" in detail
+        # every Check.detail, verbatim: the logged rule's own checks, taken
+        # from the trace rather than retyped here
+        logged = [r for p in screen._trace.passes for c in p.collections for r in c.rules if r.logged]
+        assert len(logged) == 1 and logged[0].checks
+        for check in logged[0].checks:
+            assert check.detail and check.detail in detail
         # header name, never the value
         assert "X-Tenant-Id" in detail and "inserts 1 HTTP header" in detail
         assert HEADER_VALUE not in detail

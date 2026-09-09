@@ -6,6 +6,8 @@ min > max case that Azure should reject but this viewer must not trust.
 """
 from __future__ import annotations
 
+import pytest
+
 from viewer.arm import ArmError
 from viewer.azure_resources import FirewallInfo, fetch_firewall
 from viewer.views.firewall import FirewallView, _row, _scaling_rows
@@ -98,15 +100,13 @@ def test_scaling_prescaled_range():
     ]
 
 
-def test_scaling_min_only_no_upper_bound():
-    assert _scaling_rows(_fw(autoscale_min=5, autoscale_max=0)) == [
-        _row("Scaling", "autoscaling from 5 capacity units   [dim]no upper bound set[/]")
-    ]
-
-
-def test_scaling_max_only():
-    assert _scaling_rows(_fw(autoscale_min=0, autoscale_max=10)) == [
-        _row("Scaling", "autoscaling up to 10 capacity units")
+@pytest.mark.parametrize("lo,hi", [(5, 0), (0, 10)])
+def test_scaling_with_one_bound_only_shows_the_raw_pair_and_claims_nothing(lo, hi):
+    """0 is also what an absent field parses to: a single bound must not turn
+    into "no upper bound" or "from zero"."""
+    assert _scaling_rows(_fw(autoscale_min=lo, autoscale_max=hi)) == [
+        _row("Scaling", f"[yellow]autoscaleConfiguration with min {lo} and max {hi}: not understood, "
+             "shape not documented[/]")
     ]
 
 

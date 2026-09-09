@@ -71,9 +71,11 @@ def _scaling_rows(fw: FirewallInfo) -> list[str]:
         return [_row("Scaling", f"[yellow]fixed at {lo} capacity units, autoscaling off[/]")]
     if lo > 0 and hi > 0 and lo < hi:
         return [_row("Scaling", f"autoscaling between {lo} and {hi} capacity units   [dim]prescaled[/]")]
-    if lo > 0 and hi == 0:
-        return [_row("Scaling", f"autoscaling from {lo} capacity units   [dim]no upper bound set[/]")]
-    return [_row("Scaling", f"autoscaling up to {hi} capacity units")]
+    # Only one bound: 0 is also what an absent or unreadable field parses to,
+    # so a single value says nothing certain about the other bound. Show the
+    # raw pair rather than imply "no upper bound" or "from zero".
+    return [_row("Scaling", f"[yellow]autoscaleConfiguration with min {lo} and max {hi}: not understood, "
+                 "shape not documented[/]")]
 
 
 def _split_start(value: str) -> tuple[date | None, str]:

@@ -197,6 +197,26 @@ def test_maintenance_rows_readable_window_common_case():
     ]
 
 
+@pytest.mark.parametrize("missing,expect_missing,expect_present", [
+    ({"start": ""}, "start", "duration 05:00 · zone W. Europe Standard Time · recurs Day"),
+    ({"duration": "", "time_zone": ""}, "duration, time zone", "start 2020-01-01 22:00 · recurs Day"),
+    ({"start": "", "duration": "", "time_zone": "", "recur_every": ""}, "start, duration, time zone", ""),
+])
+def test_maintenance_rows_with_missing_fields_say_so_instead_of_a_sentence_with_blanks(missing, expect_missing, expect_present):
+    w = MaintenanceWindow(assignment_name="assign1", configuration_id=CONFIG_ID, configuration_name="mc-fw-nightly",
+                          readable=True, start="2020-01-01 22:00", duration="05:00",
+                          time_zone="W. Europe Standard Time", recur_every="Day", **{})
+    for k, v in missing.items():
+        setattr(w, k, v)
+    rows = _maintenance_rows(_fw(), [w])
+    assert len(rows) == 1
+    assert f"[yellow]assigned, but the configuration names no {expect_missing}[/]" in rows[0]
+    assert "mc-fw-nightly" in rows[0]
+    if expect_present:
+        assert expect_present in rows[0]
+    assert " for , " not in rows[0] and "daily  " not in rows[0]
+
+
 def test_maintenance_rows_duration_with_minutes():
     w = MaintenanceWindow(assignment_name="a", configuration_name="mc", readable=True,
                           start="2020-01-01 22:00", duration="05:30", time_zone="UTC", recur_every="Day",

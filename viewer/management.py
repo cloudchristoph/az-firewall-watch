@@ -90,7 +90,10 @@ async def load_management_data(firewall_id: str, *, force: bool = False) -> Cach
             for cfg in firewall.ip_configs + ([firewall.management_ip] if firewall.management_ip else []):
                 cfg.public_ip_address = addresses.get(cfg.public_ip_id, "")
             for gw in nat_gateways:
-                gw.public_ip_addresses = [addresses[pid] for pid in gw.public_ip_ids if pid in addresses]
+                # One entry per public IP, in id order; an unreadable one stays ""
+                # so the view can name it as unresolved instead of the list
+                # silently looking complete with the readable ones only.
+                gw.public_ip_addresses = [addresses.get(pid, "") for pid in gw.public_ip_ids]
             try:
                 diagnostics = await diag_task
             except ArmError:

@@ -121,6 +121,18 @@ def _maintenance_window_rows(w: MaintenanceWindow) -> list[str]:
     if exp_open and exp_date is not None and exp_date < date.today():
         return [_row("Maintenance", f"[yellow]expired {exp_date.isoformat()}[/]   [dim]{name}[/]")]
 
+    missing = [label for label, value in (("start", w.start), ("duration", w.duration), ("time zone", w.time_zone))
+               if not value]
+    if missing:
+        # A configuration without a start, a duration or a time zone is not a
+        # window anyone can read off a sentence; say what is missing and show
+        # the rest raw rather than assembling "daily  for , ".
+        present = " · ".join(f"{label} {escape(value)}" for label, value in
+                             (("start", w.start), ("duration", w.duration), ("zone", w.time_zone), ("recurs", w.recur_every))
+                             if value)
+        return [_row("Maintenance", f"[yellow]assigned, but the configuration names no {', '.join(missing)}[/]"
+                     + (f"   [dim]{present} · {name}[/]" if present else f"   [dim]{name}[/]"))]
+
     start_date, start_time = _split_start(w.start)
     prefix = f"from {start_date.isoformat()}, " if start_date is not None and start_date > date.today() else ""
     recur = "daily" if w.recur_every == "Day" else (f"every {escape(w.recur_every)}" if w.recur_every else "")
@@ -152,11 +164,16 @@ def _maintenance_rows(fw: FirewallInfo, maintenance: list[MaintenanceWindow]) ->
 
 
 def _nat_gateway_address_text(gw: NatGatewayInfo) -> str:
-    """The addresses a note names for one readable, attached gateway."""
-    if gw.public_ip_addresses:
-        addresses = [escape(a) for a in gw.public_ip_addresses]
-    else:
-        addresses = [f"{escape(n)} (address not readable)" for n in gw.public_ip_names]
+    """The addresses a note names for one readable, attached gateway.
+
+    ``public_ip_addresses`` is positional with ``public_ip_names`` (an empty
+    entry is a public IP that could not be read), so a partly resolved list
+    names every unreadable address instead of looking complete.
+    """
+    resolved = list(gw.public_ip_addresses) + [""] * (len(gw.public_ip_names) - len(gw.public_ip_addresses))
+    addresses = [escape(addr) if addr else f"{escape(name)} (address not readable)"
+                 for name, addr in zip(gw.public_ip_names, resolved, strict=False)]
+    addresses += [escape(a) for a in gw.public_ip_addresses[len(gw.public_ip_names):] if a]  # addresses without names
     addresses += [f"prefix {escape(n)}" for n in gw.public_ip_prefix_names]
     if not addresses:
         return "an unknown address (the gateway lists no public IP)"

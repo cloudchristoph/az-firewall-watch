@@ -214,18 +214,22 @@ async def test_management_resolves_nat_gateway_public_ips(world):
     assert any(PIP1 in call and PIP2 in call for call in pip_calls)
 
 
-async def test_management_skips_unresolved_gateway_pips(world):
+async def test_management_keeps_a_slot_for_every_gateway_pip(world):
+    """An unreadable public IP stays as "" in its position: a partly resolved
+    list must never look like the complete one."""
     subnet = SubnetInfo(id="/sn1", name="AzureFirewallSubnet", nat_gateway_id=NATGW)
     gw = NatGatewayInfo(id=NATGW, name="natgw-hub", subnet_name="AzureFirewallSubnet", readable=True,
-                        public_ip_ids=[PIP1], public_ip_names=["pip-natgw-1"])
+                        public_ip_ids=[PIP1, PIP2], public_ip_names=["pip-natgw-1", "pip-natgw-2"])
     world["subnets"] = [subnet]
     world["nat_gateways"] = [gw]
-    world["pips"] = {}  # unresolvable
+    world["pips"] = {PIP2: "20.1.2.4"}  # only the second one is readable
 
     snap = await mgmt.load_management_data(FW_ID)
 
     assert snap is not None
-    assert gw.public_ip_addresses == []
+    assert gw.public_ip_addresses == ["", "20.1.2.4"]
+    rows = _nat_gateway_rows(VNET_FW, [subnet], [gw])
+    assert "outbound traffic leaves with pip-natgw-1 (address not readable), 20.1.2.4;" in rows[1]
 
 
 # ── cache round trip (same cache_file fixture pattern as tests/test_cache.py) ─

@@ -1,8 +1,8 @@
 # Row detail dialog: redesign plan
 
-Status: plan, not started. Target: the release after 0.6.0. Source: a Codex
-review of the dialog as it stands in 0.6.0, reduced to what the code and the
-data can actually support.
+Status: in progress, part of 0.6.0. Source: a Codex review of the dialog as it
+stood after the 0.6.0 tabs work, reduced to what the code and the data can
+actually support. The packages below are ticked off as they land.
 
 The dialog is what `Enter` opens on a log row. Today it is two things glued
 together: the row's fields on the left, and, when policy context is on and the

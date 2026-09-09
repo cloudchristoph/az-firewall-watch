@@ -19,15 +19,19 @@ resource ID from the first log record it receives and fetches from there.
 - **Firewall**: four blocks about the instance itself.
   - *Instance*: SKU tier and name, zones, provisioning state, how the firewall
     scales (service default, prescaled range, or fixed capacity with autoscaling
-    off), the customer-controlled maintenance window if one is assigned, resource
-    group, subscription, location, tags.
+    off), the customer-controlled maintenance window if one is assigned, the
+    switches that live in the firewall's property bag (fat flow logging, DNS
+    flow trace, active FTP, and the classic DNS proxy and SNAT settings when
+    set), resource group, subscription, location, tags.
   - *Networking*: a table with one row per IP configuration, each with its
     private IP and the name and address of its public IP, plus the management IP
-    when the firewall uses forced tunnelling. Underneath: subnets, their CIDRs,
-    whether forced tunnelling is on, and whether a NAT gateway sits on the
-    firewall subnet. With a gateway, outbound traffic leaves with the gateway's
-    public IPs while DNAT and management traffic stay on the firewall's own, and
-    the line says so.
+    configuration when the firewall has one. Underneath: subnets, their CIDRs,
+    what the management configuration means (it is what forced tunnelling needs
+    and what the Basic SKU requires, not proof that a route tunnels anything),
+    and whether a NAT gateway sits on the firewall subnet. With a gateway,
+    traffic routed straight to the internet leaves with the gateway's public IPs
+    while DNAT and management traffic stay on the firewall's own. The viewer
+    reads no route tables, so both lines say what they cannot know.
   - *Policy*: the attached policy with its number of rule collection groups
     including inherited ones, base policy, Threat Intelligence mode and allowlist,
     DNS proxy and its servers, IDPS mode with bypass and override counts, TLS

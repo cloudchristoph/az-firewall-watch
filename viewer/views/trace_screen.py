@@ -8,6 +8,7 @@ view and a fully expanded tree.
 from __future__ import annotations
 
 from rich.markup import escape
+from rich.text import Text
 from textual.app import ComposeResult
 from textual.containers import Vertical
 from textual.message import Message
@@ -50,7 +51,7 @@ def _action_tag(action: str, kind: str) -> str:
     if a == "deny":
         return "[bold red]deny[/]"
     if a == "allow":
-        return "[dim]allow[/]"
+        return "[dim green]allow[/]"   # quiet, but still readable as the good outcome
     if a == "dnat" or kind == "dnat":
         return "[bold yellow]dnat[/]"
     return f"[dim]{escape(a or kind or '')}[/]"
@@ -112,11 +113,15 @@ class TracePanel(Vertical):
         # Two lines, each starting with a symbol: the flow, then the verdict.
         port = f":{f.dst_port}" if f.dst_port and f.dst_port != "-" else ""  # ICMP has none
         flow_line = escape(f"{f.src_ip} → {f.dst_fqdn or f.dst_ip}{port} {f.protocol}".rstrip())
-        yield Static(f"[b]▸ {flow_line}[/b]\n{icon} {escape(t.outcome)}", id="trace-title", markup=True)
+        # Rich Text, not Textual markup: the tree renders its labels as Rich
+        # Text through the terminal's ANSI theme, so a "yellow" there is the
+        # theme's yellow. A Static with markup=True takes the colour names
+        # literally (#ffff00) and the legend's ? would not match the tree's.
+        yield Static(Text.from_markup(f"[b]▸ {flow_line}[/b]\n{icon} {escape(t.outcome)}"), id="trace-title")
         if t.warnings:
             yield Static("\n".join(f"⚠ {escape(w)}" for w in t.warnings), id="trace-warnings", markup=True)
         yield Tree("Policy evaluation", id="trace-tree")
-        yield Static(LEGEND, id="trace-legend", markup=True)
+        yield Static(Text.from_markup(LEGEND), id="trace-legend")
 
     def on_mount(self) -> None:
         self._build()

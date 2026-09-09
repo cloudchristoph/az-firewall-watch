@@ -23,6 +23,7 @@ from viewer.azure_resources import (
 from viewer.cache import CachedSnapshot
 from viewer.views import FirewallView, IpGroupsView, PolicyView
 from viewer.views.detail_screen import DetailDialog, _ports_join
+from viewer.views.firewall import _row
 from viewer.views.ip_groups import IpGroupDetailDialog
 
 pytestmark = pytest.mark.usefixtures("no_eventhub_env", "no_update_check")
@@ -545,8 +546,11 @@ async def test_enter_opens_entry_and_trace_side_by_side(structured_record, mgmt,
         # nothing twice: the policy path, priorities, action and SKU live in the trace
         for dup in ("Policy       ", "RCG          ", "Rule Coll.", "Rule         ", "Rule Priority", "Rule Action", "Policy SKU"):
             assert dup not in left, dup
-        title = str(screen.query_one("#trace-title", Static).content)
-        assert title.startswith("[b]▸ 10.3.5.4 → 1.1.1.1:443 TCP[/b]\n[green]✓[/] Allow by rcg-net » rc-web » allow-web")
+        title = screen.query_one("#trace-title", Static).content
+        assert str(title).startswith("▸ 10.3.5.4 → 1.1.1.1:443 TCP\n✓ Allow by rcg-net » rc-web » allow-web")
+        # rendered as Rich Text, like the tree labels, so ✓ / ? / ✗ take the same theme colours everywhere
+        from rich.text import Text as RichText
+        assert isinstance(title, RichText) and "green" in str(title.spans)
         assert not screen.query("#trace-meta")  # the status bar already shows the metadata line
         tree = screen.query_one("#trace-tree", Tree)
         assert tree.has_focus  # Enter on the tree opens the rule right away
@@ -629,6 +633,25 @@ def test_flow_from_legacy_ipv6_network_rule_keeps_full_address(legacy_record):
     flow = FirewallLogApp._flow_from_row(row)
     assert flow.dst_ip == "fd00::2"
     assert flow.dst_fqdn == ""
+
+
+def test_detail_values_stay_inline_in_the_wide_dialog_and_wrap_beside_the_trace(structured_record):
+    """The own-line threshold follows the pane width: 84 columns alone, 52 beside the trace."""
+    from viewer.trace import Flow, Trace
+    row = parse_record(structured_record("AZFWFatFlow", Protocol="TCP", SourceIp="10.2.0.5", SourcePort=9684,
+                                         DestinationIp="142.251.14.102", DestinationPort=443, Flag="", Rate="2.8 Mbps"))
+    flow = "10.2.0.5:9684 → 142.251.14.102:443"      # 34 characters: the old threshold wrapped it nowhere
+    assert len(flow) == 34
+    alone = DetailDialog(row)
+    assert str(alone._field("Flow         ", flow).content).startswith("[dim]Flow")
+    assert "\n" not in str(alone._field("Flow         ", flow).content)
+    beside = DetailDialog(row, trace=Trace(flow=Flow(), logged=None, threat_intel="", passes=[],
+                                            infrastructure=None, outcome="x"))
+    v6_flow = "[fd10:2:0:1::4]:9684 → [2603:1020:c01:16::275]:443"   # 50 characters: fits alone, not beside the trace
+    assert "\n" not in str(alone._field("Flow         ", v6_flow).content)
+    assert "\n" in str(beside._field("Flow         ", v6_flow).content)
+    long_value = "x" * 70
+    assert "\n" in str(alone._field("Rule Def.    ", long_value).content)   # still wraps when it would not fit
 
 
 def test_ports_join_brackets_ipv6_addresses():
@@ -725,7 +748,7 @@ async def test_firewall_tab_shows_instance_networking_policy_and_logging(structu
         assert "fw-hub-gwc" in title and "Premium · AZFW_VNet · germanywestcentral" in title
         instance = str(view.query_one("#fw-instance", Static).content)
         assert "1, 2, 3" in instance and "Succeeded" in instance and "project=cclab" in instance
-        assert "EnableFatFlowLogging=true" in instance
+        assert _row("Fat flow logging", "on") in instance and "EnableFatFlowLogging" not in instance
         net = view.query_one("#fw-network", DataTable)
         rows = [[str(c) for c in net.get_row_at(i)] for i in range(net.row_count)]
         assert rows[0] == ["IpConfiguration0", "10.2.0.4", "pip-fw-hub-gwc-001\n72.144.131.50"]
@@ -733,7 +756,7 @@ async def test_firewall_tab_shows_instance_networking_policy_and_logging(structu
         assert rows[2][0] == "management" and rows[2][2].endswith("72.144.91.185")
         net_note = str(view.query_one("#fw-network-note", Static).content)
         assert "10.2.0.0/26" in net_note and "AzureFirewallSubnet, AzureFirewallManagementSubnet" in net_note
-        assert "forced tunneling" in net_note
+        assert "own subnet and public IP" in net_note and "needed for forced tunneling" in net_note
         pol = str(view.query_one("#fw-policy", Static).content)
         assert "fwp-hub-premium-gwc" in pol and "1 rule collection groups" in pol
         assert "DNS proxy" in pol and "Azure DNS" in pol and "2 signature overrides" in pol and "CA: fw-tls-intermediate-ca" in pol

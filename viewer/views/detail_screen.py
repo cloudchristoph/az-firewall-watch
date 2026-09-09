@@ -19,8 +19,12 @@ from ..trace import Trace
 from .trace_screen import TracePanel
 
 # Values longer than this go on their own line under the label instead of
-# wrapping mid-word at the pane edge (long FQDNs, rule definitions).
-_INLINE_VALUE_MAX = 34
+# wrapping mid-word at the pane edge (long FQDNs, rule definitions). The pane
+# is 52 columns beside the trace and 84 on its own, so the threshold follows
+# the layout: a flow like ``10.2.0.5:9684 → 142.251.14.102:443`` fits inline
+# in the wide dialog and only needs its own line next to the trace.
+_INLINE_VALUE_MAX_WITH_TRACE = 34
+_INLINE_VALUE_MAX_ALONE = 62
 
 # The columns mean different things per category; the labels say what a row's
 # value really is instead of the table's generic column names.
@@ -119,6 +123,7 @@ class DetailDialog(ModalScreen[str | None]):
         # Why there is no trace beside the fields; shown in the dialog itself,
         # because it is a property of this row, not of the application state.
         self._trace_note = trace_note
+        self._inline_max = _INLINE_VALUE_MAX_WITH_TRACE if trace is not None else _INLINE_VALUE_MAX_ALONE
         if trace is not None:
             self.add_class("-with-trace")
 
@@ -126,10 +131,9 @@ class DetailDialog(ModalScreen[str | None]):
     def has_trace(self) -> bool:
         return self._trace is not None
 
-    @staticmethod
-    def _field(label: str, value: str) -> Static:
+    def _field(self, label: str, value: str) -> Static:
         safe = value.replace("[", "\\[")
-        if len(value) > _INLINE_VALUE_MAX:
+        if len(value) > self._inline_max:
             return Static(f"[dim]{label.rstrip()}[/]\n  {safe}", markup=True, classes="detail-row")
         return Static(f"[dim]{label.ljust(13)}[/]  {safe}", markup=True, classes="detail-row")
 

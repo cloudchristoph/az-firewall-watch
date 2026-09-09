@@ -26,8 +26,20 @@ VIEWER_CATEGORIES = [
     "AZFWNetworkRule", "AZFWApplicationRule", "AZFWNatRule", "AZFWThreatIntel", "AZFWIdpsSignature",
     "AZFWDnsQuery", "AZFWFqdnResolveFailure", "AZFWFlowTrace", "AZFWFatFlow",
 ]
-_ADDITIONAL_PREFIX = "Network.AdditionalLogs."
 _LABEL_WIDTH = 18
+
+# additionalProperties is a free-form bag; these are the keys Azure documents
+# (or that the lab has shown), each of which deserves a row of its own instead
+# of a "key=value" dump. The Route Server key has its own row in the Policy
+# block, see _snat_rows.
+FAT_FLOW_KEY = "Network.AdditionalLogs.EnableFatFlowLogging"      # seen on the lab firewall
+DNS_FLOW_TRACE_KEY = "Network.AdditionalLogs.EnableDnstapLogging"   # PowerShell EnableDnstapLogging; key by analogy
+ACTIVE_FTP_KEY = "Network.FTP.AllowActiveFTP"                       # documented (ftp-support)
+CLASSIC_DNS_PROXY_KEY = "Network.DNS.EnableProxy"                   # classic rules, documented in the AVM module
+CLASSIC_DNS_SERVERS_KEY = "Network.DNS.Servers"
+CLASSIC_SNAT_KEY = "Network.SNAT.PrivateRanges"                     # classic rules
+_HANDLED_KEYS = {ROUTE_SERVER_KEY, FAT_FLOW_KEY, DNS_FLOW_TRACE_KEY, ACTIVE_FTP_KEY,
+                 CLASSIC_DNS_PROXY_KEY, CLASSIC_DNS_SERVERS_KEY, CLASSIC_SNAT_KEY}
 
 
 def _v(value: str) -> str:
@@ -158,6 +170,44 @@ def _maintenance_window_rows(w: MaintenanceWindow) -> list[str]:
     ]
 
 
+def _on_off(value: str) -> str:
+    """``"true"`` / ``"false"`` as Azure writes them into the bag → ``on`` / ``off``;
+    anything else is shown as written rather than guessed at."""
+    low = value.strip().lower()
+    if low == "true":
+        return "on"
+    if low == "false":
+        return "off"
+    return escape(value)
+
+
+def _additional_property_rows(fw: FirewallInfo) -> list[str]:
+    """Instance panel: the switches that live in ``additionalProperties``.
+
+    Fat flow logging and active FTP get a row even when absent (absent is
+    Azure's default, off); the rest only when set. Keys this viewer does not
+    know stay visible as ``key=value`` under *Additional* so nothing is lost.
+    """
+    props = fw.additional_properties
+    rows = [
+        _row("Fat flow logging", _on_off(props[FAT_FLOW_KEY]) if FAT_FLOW_KEY in props else "off   [dim]not set[/]"),
+    ]
+    if DNS_FLOW_TRACE_KEY in props:
+        rows.append(_row("DNS flow trace", _on_off(props[DNS_FLOW_TRACE_KEY])))
+    rows.append(_row("Active FTP", _on_off(props[ACTIVE_FTP_KEY]) if ACTIVE_FTP_KEY in props
+                     else "off   [dim]not set[/]"))
+    if CLASSIC_DNS_PROXY_KEY in props or CLASSIC_DNS_SERVERS_KEY in props:
+        servers = escape(props.get(CLASSIC_DNS_SERVERS_KEY, "")) or "Azure DNS"
+        state = _on_off(props[CLASSIC_DNS_PROXY_KEY]) if CLASSIC_DNS_PROXY_KEY in props else "servers set"
+        rows.append(_row("DNS proxy (classic)", f"{state}   [dim]servers: {servers}[/]"))
+    if CLASSIC_SNAT_KEY in props:
+        rows.append(_row("SNAT ranges (classic)", escape(props[CLASSIC_SNAT_KEY]) or "-"))
+    leftovers = {k: v for k, v in props.items() if k not in _HANDLED_KEYS}
+    if leftovers:
+        rows.append(_row("Additional", ", ".join(f"{escape(k)}={escape(v)}" for k, v in sorted(leftovers.items()))))
+    return rows
+
+
 def _maintenance_rows(fw: FirewallInfo, maintenance: list[MaintenanceWindow], readable: bool = True) -> list[str]:
     """Instance panel: the customer-controlled maintenance window, if any.
 
@@ -213,18 +263,16 @@ def _one_nat_gateway_rows(gw: NatGatewayInfo) -> list[str]:
 def _no_gateway_row(fw: FirewallInfo) -> str:
     """The "none" row, careful not to name an egress address the data does not establish.
 
-    The snapshot reads no route tables, and with forced tunneling (a management
-    IP configuration) internet-bound traffic can leave through on-premises
-    infrastructure; a data plane without any public IP cannot SNAT to one at all.
+    The snapshot reads no route tables: a route to an NVA or a virtual network
+    gateway (forced tunneling) sends internet-bound traffic elsewhere, and a
+    management configuration alone does not say whether such a route exists.
+    A data plane without any public IP cannot SNAT to one at all.
     """
-    if fw.management_ip is not None:
-        return _row("NAT gateway", "none   [dim]forced tunneling: internet-bound traffic follows your routes, "
-                    "not necessarily a firewall public IP[/]")
     if not any(c.public_ip_id for c in fw.ip_configs):
         return _row("NAT gateway", "none   [dim]the data-plane IP configurations have no public IP; "
                     "egress depends on your routes[/]")
     return _row("NAT gateway", "none   [dim]traffic routed straight to the internet leaves with the firewall's "
-                "public IPs; routes to an NVA or gateway are not read here[/]")
+                "public IPs; routes to an NVA or gateway (forced tunneling) are not read here[/]")
 
 
 def _nat_gateway_rows(fw: FirewallInfo, subnets: list[SubnetInfo], nat_gateways: list[NatGatewayInfo]) -> list[str]:
@@ -427,20 +475,17 @@ class FirewallView(Vertical):
         if state not in ("Succeeded", "-"):
             state = f"[red]{escape(state)}[/]"
         tags = ", ".join(f"{escape(k)}={escape(v)}" for k, v in sorted(fw.tags.items()))
-        # The Route Server association has its own row (see _snat_rows).
-        extras = {k[len(_ADDITIONAL_PREFIX):] if k.startswith(_ADDITIONAL_PREFIX) else k: v
-                  for k, v in fw.additional_properties.items() if k != ROUTE_SERVER_KEY}
         return [
             _row("SKU", _v(" · ".join(filter(None, [fw.sku_tier, fw.sku_name])))),
             _row("Zones", _v(", ".join(fw.zones)) if fw.zones else "none (regional)"),
             _row("Provisioning", state),
             *_scaling_rows(fw),
             *_maintenance_rows(fw, maintenance, maintenance_readable),
+            *_additional_property_rows(fw),
             _row("Resource group", _v(fw.resource_group)),
             _row("Subscription", _v(fw.subscription_id)),
             _row("Location", _v(fw.location)),
             _row("Tags", tags or "-"),
-            _row("Additional", ", ".join(f"{escape(k)}={escape(v)}" for k, v in sorted(extras.items())) or "-"),
         ]
 
     # ── Networking ──────────────────────────────────────────────────────────
@@ -465,7 +510,11 @@ class FirewallView(Vertical):
         note.update("\n".join([
             _row("Subnets", escape(subnet_names)),
             _row("CIDRs", _v(", ".join(subnet_cidrs))),
-            _row("Management", "forced tunneling (own subnet and public IP)" if fw.management_ip else "none"),
+            # A management configuration is what forced tunneling needs (and what
+            # Basic requires), not proof that a route tunnels anything: routes
+            # are not read here, so the row describes the configuration only.
+            _row("Management", "own subnet and public IP   [dim]needed for forced tunneling and by the Basic SKU; "
+                 "whether a route tunnels traffic is not read here[/]" if fw.management_ip else "none"),
             *_nat_gateway_rows(fw, subnets, nat_gateways),
         ]))
 

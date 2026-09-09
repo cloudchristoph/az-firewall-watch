@@ -103,7 +103,8 @@ async def test_threat_intel_entry_labels_and_long_values(structured_record):
         text = "\n".join(contents)
         assert "2026-09-07T16:14:09Z" in text and ".903912" not in text      # UTC trimmed to seconds
         assert "Threat" in text and "More Info" not in text                   # category-specific label
-        assert any(c.startswith("[dim]Destination[/]\n  " + fqdn) for c in contents)  # long value on its own line
+        # 45 characters fit the 84-column dialog inline; only beside the trace would this wrap
+        assert any(c.startswith("[dim]Destination  [/]  " + fqdn) for c in contents)
         assert any(c.startswith("[dim]Protocol     [/]  HTTP") for c in contents)     # short values stay inline
         assert dialog.query_one("#btn-close").region.width < dialog.query_one("#detail-pane").region.width
 

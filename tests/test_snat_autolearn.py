@@ -177,4 +177,4 @@ def test_instance_panel_hides_route_server_key_but_shows_other_additional_proper
                       })
     out = "\n".join(FirewallView._instance(fw, []))
     assert ROUTE_SERVER_KEY not in out and "rs-hub" not in out and RS_STANDALONE_ID not in out
-    assert "EnableFatFlowLogging=true" in out
+    assert "Fat flow logging" in out and "EnableFatFlowLogging" not in out

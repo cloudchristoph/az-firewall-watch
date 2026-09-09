@@ -118,8 +118,9 @@ def _maintenance_window_rows(w: MaintenanceWindow) -> list[str]:
             # and no rights question either.
             return [_row("Maintenance",
                          f"assigned: {name}   [dim]the assignment names no maintenance configuration[/]")]
-        return [_row("Maintenance",
-                     f"assigned: {name}   [dim]window not readable (no Reader on the maintenance configuration)[/]")]
+        # Cause-agnostic on purpose: the configuration may be gone, moved, or
+        # simply not readable with these rights; the GET does not say which.
+        return [_row("Maintenance", f"assigned: {name}   [dim]window not readable from here[/]")]
 
     exp_date, _ = _split_start(w.expiration)
     exp_open = exp_date is not None and exp_date.year != _MAINTENANCE_SENTINEL_YEAR
@@ -153,13 +154,16 @@ def _maintenance_window_rows(w: MaintenanceWindow) -> list[str]:
     ]
 
 
-def _maintenance_rows(fw: FirewallInfo, maintenance: list[MaintenanceWindow]) -> list[str]:
+def _maintenance_rows(fw: FirewallInfo, maintenance: list[MaintenanceWindow], readable: bool = True) -> list[str]:
     """Instance panel: the customer-controlled maintenance window, if any.
 
     Says what the window covers (guest OS and service updates) and what it
     does not (host updates, urgent security fixes), so a RST burst outside
-    the window is not read as proof of an incident.
+    the window is not read as proof of an incident. ``readable`` False means
+    the assignment list itself could not be read: unknown, not none.
     """
+    if not readable:
+        return [_row("Maintenance", "unknown   [dim]maintenance assignments not readable from here[/]")]
     if not maintenance:
         return [_row("Maintenance", "no customer-controlled window   [dim]Azure picks the time for updates[/]")]
     out: list[str] = []
@@ -372,6 +376,7 @@ class FirewallView(Vertical):
         subnets: list[SubnetInfo] | None = None,
         nat_gateways: list[NatGatewayInfo] | None = None,
         maintenance: list[MaintenanceWindow] | None = None,
+        maintenance_readable: bool = True,
     ) -> None:
         title = self.query_one("#fw-title", Static)
         grid = self.query_one("#fw-grid", Grid)
@@ -382,14 +387,15 @@ class FirewallView(Vertical):
         tier = policy.sku_tier if policy and policy.sku_tier else firewall.sku_tier
         title.update(f"{escape(firewall.name)}   [dim]{escape(' · '.join(filter(None, [tier, firewall.sku_name, firewall.location])))}[/]")
         grid.display = True
-        self.query_one("#fw-instance", Static).update("\n".join(self._instance(firewall, maintenance or [])))
+        self.query_one("#fw-instance", Static).update(
+            "\n".join(self._instance(firewall, maintenance or [], maintenance_readable)))
         self._fill_network(firewall, subnet_cidrs, subnets or [], nat_gateways or [])
         self.query_one("#fw-policy", Static).update("\n".join(self._policy(policy, firewall)))
         self._fill_logging(diagnostics or [])
 
     # ── Instance ────────────────────────────────────────────────────────────
     @staticmethod
-    def _instance(fw: FirewallInfo, maintenance: list[MaintenanceWindow]) -> list[str]:
+    def _instance(fw: FirewallInfo, maintenance: list[MaintenanceWindow], maintenance_readable: bool = True) -> list[str]:
         state = fw.provisioning_state or "-"
         if state not in ("Succeeded", "-"):
             state = f"[red]{escape(state)}[/]"
@@ -402,7 +408,7 @@ class FirewallView(Vertical):
             _row("Zones", _v(", ".join(fw.zones)) if fw.zones else "none (regional)"),
             _row("Provisioning", state),
             *_scaling_rows(fw),
-            *_maintenance_rows(fw, maintenance),
+            *_maintenance_rows(fw, maintenance, maintenance_readable),
             _row("Resource group", _v(fw.resource_group)),
             _row("Subscription", _v(fw.subscription_id)),
             _row("Location", _v(fw.location)),

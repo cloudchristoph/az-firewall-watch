@@ -117,10 +117,24 @@ async def test_fetch_maintenance_configuration_get_raises_arm_error_marks_unread
     assert w.start == "" and w.scope == ""                  # nothing else guessed at
 
 
-@pytest.mark.parametrize("status,code", [(404, "ResourceNotFound"), (409, "MissingSubscriptionRegistration")])
-async def test_fetch_maintenance_assignment_list_arm_error_returns_empty(status, code):
+@pytest.mark.parametrize("status,code", [(404, "ResourceNotFound"), (409, "MissingSubscriptionRegistration"),
+                                         (409, "NoRegisteredProviderFound")])
+async def test_fetch_maintenance_absent_provider_or_assignments_is_an_empty_list(status, code):
     arm = FakeArm({ASSIGNMENTS_PATH: ArmError(status, code, "boom")})
     assert await fetch_maintenance(arm, FW_ID) == []
+
+
+@pytest.mark.parametrize("status,code", [(403, "AuthorizationFailed"), (0, "Transport"), (500, "InternalServerError")])
+async def test_fetch_maintenance_unreadable_list_is_none_not_empty(status, code):
+    """Could not look is not the same as looked and found nothing."""
+    arm = FakeArm({ASSIGNMENTS_PATH: ArmError(status, code, "boom")})
+    assert await fetch_maintenance(arm, FW_ID) is None
+
+
+def test_maintenance_rows_unreadable_assignment_list_is_unknown_not_none():
+    rows = _maintenance_rows(_fw(), [], readable=False)
+    assert rows == [_row("Maintenance", "unknown   [dim]maintenance assignments not readable from here[/]")]
+    assert "no customer-controlled window" not in rows[0]
 
 
 async def test_fetch_maintenance_empty_list():
@@ -163,7 +177,13 @@ def test_maintenance_round_trips_through_the_cache(cache_file):
     cache.save(FW_ID, snap)
     loaded = cache.load(FW_ID)
     assert loaded is not None
-    assert loaded.maintenance == maintenance
+    assert loaded.maintenance == maintenance and loaded.maintenance_readable is True
+
+    unreadable = cache.CachedSnapshot(firewall=fw, policy=policy, maintenance=[], maintenance_readable=False,
+                                      fetched_at=1.0)
+    cache.save(FW_ID, unreadable)
+    reloaded = cache.load(FW_ID)
+    assert reloaded is not None and reloaded.maintenance_readable is False
 
 
 def test_maintenance_defaults_to_empty_list_when_absent_from_an_older_cache_entry(cache_file):
@@ -286,8 +306,7 @@ def test_maintenance_rows_not_readable():
                           readable=False)
     rows = _maintenance_rows(_fw(), [w])
     assert rows == [
-        _row("Maintenance", "assigned: mc-fw-nightly   [dim]window not readable "
-             "(no Reader on the maintenance configuration)[/]"),
+        _row("Maintenance", "assigned: mc-fw-nightly   [dim]window not readable from here[/]"),
     ]
 
 
@@ -301,7 +320,7 @@ def test_maintenance_rows_several_entries_each_get_their_own_row_and_note_in_ord
     assert rows == [
         _row("Maintenance", "daily 22:00 for 5 h, UTC   [dim]mc-a[/]"),
         _note("covers guest OS and service updates; host updates and urgent security fixes can fall outside the window"),
-        _row("Maintenance", "assigned: mc-b   [dim]window not readable (no Reader on the maintenance configuration)[/]"),
+        _row("Maintenance", "assigned: mc-b   [dim]window not readable from here[/]"),
     ]
 
 

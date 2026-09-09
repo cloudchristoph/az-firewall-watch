@@ -89,7 +89,7 @@ def world(monkeypatch):
         state["calls"].append(("maint", fw_id))
         if isinstance(state.get("maintenance"), Exception):
             raise state["maintenance"]
-        return state.get("maintenance") or []
+        return state.get("maintenance", [])  # None passes through: "list not readable"
 
     async def fetch_public_ips(arm, ids):
         state["calls"].append(("pips", ids))
@@ -138,6 +138,14 @@ async def test_stale_cache_triggers_full_fetch_and_save(world):
     assert world["saved"][0][0] == FW_ID
     assert world["invalidated"] == []
     assert FakeCredential.instances[0].closed
+
+
+async def test_unreadable_maintenance_list_is_flagged_on_the_snapshot(world):
+    world["cached"] = None
+    world["maintenance"] = None  # fetch_maintenance could not read the assignment list
+    snap = await mgmt.load_management_data(FW_ID)
+    assert snap is not None
+    assert snap.maintenance == [] and snap.maintenance_readable is False
 
 
 async def test_force_invalidates_and_skips_cache_read(world):

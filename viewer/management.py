@@ -106,7 +106,10 @@ async def load_management_data(firewall_id: str, *, force: bool = False) -> Cach
             try:
                 maintenance = await maint_task
             except ArmError:
-                maintenance = []
+                maintenance = None
+            # None: the assignment list could not be read, which the tab must
+            # report as unknown rather than as "no window".
+            maintenance_readable = maintenance is not None
 
             ip_groups: dict = {}
             if policy is not None:
@@ -125,7 +128,8 @@ async def load_management_data(firewall_id: str, *, force: bool = False) -> Cach
                 diagnostics=diagnostics,
                 subnets=subnets,
                 nat_gateways=nat_gateways,
-                maintenance=maintenance,
+                maintenance=maintenance or [],
+                maintenance_readable=maintenance_readable,
             )
             try:
                 save(firewall_id, snap)

@@ -43,6 +43,7 @@ class CachedSnapshot:
     subnets: list[SubnetInfo] = field(default_factory=list)
     nat_gateways: list[NatGatewayInfo] = field(default_factory=list)
     maintenance: list[MaintenanceWindow] = field(default_factory=list)
+    maintenance_readable: bool = True   # False: the assignment list could not be read (unknown, not none)
 
     def age_seconds(self) -> float:
         return max(0.0, time.time() - self.fetched_at)
@@ -160,6 +161,7 @@ def _serialize(snap: CachedSnapshot) -> dict[str, Any]:
         "subnets": [asdict(s) for s in snap.subnets],
         "nat_gateways": [asdict(n) for n in snap.nat_gateways],
         "maintenance": [asdict(m) for m in snap.maintenance],
+        "maintenance_readable": snap.maintenance_readable,
     }
 
 
@@ -218,4 +220,5 @@ def _hydrate(entry: dict[str, Any]) -> CachedSnapshot:
         subnets=[SubnetInfo(**s) for s in (entry.get("subnets") or [])],
         nat_gateways=[NatGatewayInfo(**n) for n in (entry.get("nat_gateways") or [])],
         maintenance=[MaintenanceWindow(**m) for m in (entry.get("maintenance") or [])],
+        maintenance_readable=bool(entry.get("maintenance_readable", True)),
     )

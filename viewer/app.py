@@ -379,6 +379,7 @@ class FirewallLogApp(App[None]):
             subnets=snap.subnets if snap else [],
             nat_gateways=snap.nat_gateways if snap else [],
             maintenance=snap.maintenance if snap else [],
+            maintenance_readable=snap.maintenance_readable if snap else True,
         )
         self.query_one("#policy-view", PolicyView).render_data(self._policy_info, self._ip_groups)
         self.query_one("#ipgroups-view", IpGroupsView).render_data(

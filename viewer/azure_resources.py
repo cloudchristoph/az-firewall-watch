@@ -500,20 +500,31 @@ async def fetch_nat_gateways(arm: ArmClient, subnets: list[SubnetInfo]) -> list[
     return list(results)
 
 
-async def fetch_maintenance(arm: ArmClient, firewall_id: str) -> list[MaintenanceWindow]:
+# Errors on the assignment list that mean "no assignment exists" (provider not
+# registered, nothing under the firewall), as opposed to "could not read".
+_MAINT_ABSENT_CODES = {"MissingSubscriptionRegistration", "SubscriptionNotRegistered",
+                       "NoRegisteredProviderFound", "ResourceNotFound"}
+
+
+async def fetch_maintenance(arm: ArmClient, firewall_id: str) -> list[MaintenanceWindow] | None:
     """Customer-controlled maintenance windows assigned to the firewall.
 
     Lists ``{firewall}/providers/Microsoft.Maintenance/configurationAssignments``
-    and reads each configuration it points to. Never raises: an unregistered
-    ``Microsoft.Maintenance`` provider or missing rights simply mean there is
-    nothing to read, and a configuration that cannot be read is returned with
-    ``readable=False`` so the tab can still name it.
+    and reads each configuration it points to. Never raises. Three outcomes,
+    kept apart because the tab must not say *none* when it only failed to look:
+    an empty list when no assignment exists (an unregistered
+    ``Microsoft.Maintenance`` provider, nothing under the firewall); ``None``
+    when the list itself could not be read (rights, transport); and a window
+    with ``readable=False`` when an assignment exists but its configuration
+    could not be read, so the tab can still name it.
     """
     try:
         items = await arm.get_all(
             f"{firewall_id}/providers/Microsoft.Maintenance/configurationAssignments", _API_MAINT)
-    except ArmError:
-        return []
+    except ArmError as exc:
+        if exc.status == 404 or exc.code in _MAINT_ABSENT_CODES:
+            return []
+        return None
     windows: list[MaintenanceWindow] = []
     for item in items:
         props = item.get("properties") or {}

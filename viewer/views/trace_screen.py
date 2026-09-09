@@ -35,10 +35,14 @@ from ..trace import (
     nearest_rules,
 )
 
-_ICON = {MATCH: "[green]✓[/]", MISS: "[red]✗[/]", UNKNOWN: "[yellow]?[/]", NA: "[dim]–[/]"}
+_ICON = {MATCH: "[green]✓[/]", MISS: "[dim]✗[/]", UNKNOWN: "[yellow]?[/]", NA: "[dim]–[/]"}
+# A miss is the normal case for most rules, not an alarm — only ? (an
+# uncertainty we cannot resolve locally) earns full visual weight; a default
+# deny is a different thing (see detail_screen._header_line2) and stays loud
+# there, not here.
 # Azure Firewall's processing order top to bottom; the tree keeps it.
 _PASS_TITLE = {"dnat": "DNAT rules", "network": "Network rules", "application": "Application rules"}
-LEGEND = "[green]✓[/] match   [red]✗[/] miss   [yellow]?[/] cannot evaluate   [dim]–[/] not in log"
+LEGEND = "[green]✓[/] match   [dim]✗ miss[/]   [yellow]?[/] cannot evaluate   [dim]– not in log[/]"
 # Leaves render without the ▶/▼ marker, so their text would sit two cells left of
 # sibling nodes. Pad root-level leaves to keep one column.
 _LEAF_PAD = "  "
@@ -153,8 +157,42 @@ class TracePanel(Vertical):
         margin-top: 1;
     }
     TracePanel > #trace-legend {
-        color: $text-muted;
+        /* No blanket $text-muted here: LEGEND now colours each mark itself
+         * ([dim] for a miss/not-in-log, exactly as the tree does), and a base
+         * text-muted color would dim an already-dim span a second time —
+         * a different, darker grey than the tree's, breaking the one promise
+         * this legend makes (it shows the tree's own colours). */
         margin-top: 1;
+    }
+
+    /* The tree stays focused the whole time it is shown (see _build), which
+     * means Tree's own built-in rules — the saturated $block-cursor-background
+     * bar, defined inside "&:focus" — have higher specificity than a plain
+     * "Tree > .tree--cursor" override and would win regardless of what we
+     * write here. The ":focus" variant below is required, not decorative, to
+     * actually replace that primary bar with something that does not shout.
+     * Tree also self-tints its whole background 5% on focus; left alone, a
+     * [dim] glyph — a relative style, blended against whatever background it
+     * sits on — would render a visibly different grey inside the tree than
+     * the same [dim] glyph in the legend below it. Cancelling the tint keeps
+     * the promise that a mark means the same colour everywhere in this panel.
+     */
+    TracePanel > Tree:focus {
+        background-tint: $foreground 0%;
+    }
+    TracePanel > Tree > .tree--cursor,
+    TracePanel > Tree:focus > .tree--cursor {
+        background: $surface-lighten-2;
+        color: $text;
+        text-style: bold;
+    }
+    TracePanel > Tree > .tree--highlight-line,
+    TracePanel > Tree:focus > .tree--highlight-line {
+        background: $surface-lighten-1;
+    }
+    TracePanel > Tree > .tree--guides,
+    TracePanel > Tree:focus > .tree--guides {
+        color: $text-muted;
     }
     """
 
@@ -253,7 +291,7 @@ class TracePanel(Vertical):
         elif any(c.verdict == MATCH for c in evaluated):
             summary = "[green]✓ computed match[/]"
         else:
-            summary = "[red]✗ no match[/]"
+            summary = "[dim]✗ no match[/]"  # the common outcome for a whole pass, not an alarm
         has_star = any(id(r) in highlight for c in p.collections for r in c.rules)
         has_unknown = any(c.verdict == UNKNOWN for c in evaluated)
         pass_expand = self._expand_all or p.stopped_here or has_star or has_unknown
@@ -300,8 +338,10 @@ class TracePanel(Vertical):
         if preceding:
             n = len(preceding)
             unknown_n = sum(1 for c in preceding if c.verdict == UNKNOWN)
-            # An unknown must stay visible from the outside, so it goes in the summary text.
-            summary = f"{unknown_n} with ?" if unknown_n else "all ✗"
+            # An unknown must stay visible from the outside, so it goes in the summary
+            # text — and, being the mark that matters most, keeps full colour even
+            # collapsed. A fold that is all misses is the ordinary case, so it stays dim.
+            summary = f"[yellow]{unknown_n} with ?[/]" if unknown_n else "[dim]all ✗[/]"
             fold = group_node.add(
                 f"{n} preceding collections   {summary}",
                 data={"kind": "summary", "name": logged_col.group.name, "priority": logged_col.group.priority,
@@ -316,7 +356,7 @@ class TracePanel(Vertical):
         if after:
             n = len(after)
             fold = group_node.add(
-                f"{n} not evaluated",
+                f"[dim]{n} not evaluated[/]",
                 data={"kind": "summary", "name": logged_col.group.name, "priority": logged_col.group.priority,
                       "collections": after},
                 expand=self._expand_all,
@@ -339,7 +379,9 @@ class TracePanel(Vertical):
     def _add_notevaluated_leaf(self, parent: TreeNode, c: CollectionTrace) -> None:
         rc = c.collection
         head = escape(f"[{rc.priority}] {_short(rc.name)}") + "  " + _action_tag(rc.action, rc.kind)
-        parent.add_leaf(f"{_ICON[NA]} {head}", data={"kind": "collection", "collection": c})
+        # Never evaluated outranks a miss in how little it matters here, so the
+        # whole line — action tag included — goes dim as one unit, not just the icon.
+        parent.add_leaf(f"[dim]{_ICON[NA]} {head}[/]", data={"kind": "collection", "collection": c})
 
     def _add_rule(self, parent: TreeNode, c: CollectionTrace, r: RuleTrace, highlight: set[int]) -> None:
         ref = c.rule_ref_prefix + r.rule.name

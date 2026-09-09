@@ -279,6 +279,11 @@ async def test_rule_tree_label_never_carries_header_names_or_values(structured_r
 
 async def test_trace_tree_names_inserted_headers_under_the_logged_rule_never_values(structured_record, apprule_mgmt,
                                                                                     firewall_id):
+    """The header leaf moved out of the tree in the trace_screen redesign
+    (docs/detail-dialog-plan.md, package 4): names now live in the selection
+    detail under the tree, never in the tree label — and values never
+    anywhere in the panel."""
+    from textual.widgets import Static as StaticWidget
     from textual.widgets import Tree as TreeWidget
 
     from fw_parser import parse_record
@@ -304,8 +309,12 @@ async def test_trace_tree_names_inserted_headers_under_the_logged_rule_never_val
                 walk(child)
 
         walk(tree.root)
-        assert any("inserts 2 HTTP headers: X-Tenant-Id, X-Forwarded-Tenant" in lbl for lbl in labels)
+        assert not any("HTTP header" in lbl for lbl in labels)  # names/values live in the detail now
         assert not any(TENANT_ID_VALUE in lbl or "x[/]" in lbl for lbl in labels)
+        # the logged rule is the cursor node after open; its detail carries the header names
+        detail = str(screen.query_one("#trace-detail", StaticWidget).content)
+        assert "inserts 2 HTTP headers: X-Tenant-Id, X-Forwarded-Tenant" in detail
+        assert TENANT_ID_VALUE not in detail and "x[/]" not in detail
 
 
 async def test_revealed_value_with_markup_characters_is_escaped(structured_record, apprule_mgmt, firewall_id):

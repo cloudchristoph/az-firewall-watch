@@ -282,6 +282,7 @@ async def test_revealed_value_with_markup_characters_is_escaped(structured_recor
     ("Standard", False, "HTTPS on Standard/Basic: headers are inserted into HTTP only"),
     ("Premium", False, "HTTPS without TLS inspection on this rule: headers are inserted into HTTP only"),
     ("Premium", True, "inserted into HTTP and TLS-inspected HTTPS"),
+    ("", False, "policy SKU unknown: whether HTTPS gets the headers cannot be told from here"),
 ])
 async def test_sku_and_tls_scope_line(structured_record, monkeypatch, firewall_id, sku_tier, terminate_tls, expected):
     _install_snapshot(monkeypatch, _apprule_snapshot(sku_tier=sku_tier, terminate_tls=terminate_tls))

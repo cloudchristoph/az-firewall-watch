@@ -83,10 +83,15 @@ async def load_management_data(firewall_id: str, *, force: bool = False) -> Cach
             nat_pip_ids = [pid for gw in nat_gateways for pid in gw.public_ip_ids]
             try:
                 addresses = await pip_task
-                if nat_pip_ids:
-                    addresses.update(await fetch_public_ips(arm, nat_pip_ids))
             except ArmError:
                 addresses = {}
+            if nat_pip_ids:
+                # Separate from the firewall's own lookup: a failure here must
+                # not blank the firewall's addresses that were already read.
+                try:
+                    addresses.update(await fetch_public_ips(arm, nat_pip_ids))
+                except ArmError:
+                    pass
             for cfg in firewall.ip_configs + ([firewall.management_ip] if firewall.management_ip else []):
                 cfg.public_ip_address = addresses.get(cfg.public_ip_id, "")
             for gw in nat_gateways:

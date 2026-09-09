@@ -340,7 +340,12 @@ class PolicyView(Static):
         has_https = any(p.lower() == "https" for p in rule.protocols)
         if not has_https:
             return "[dim]inserted into HTTP[/]"
-        if self._policy_sku_tier != "Premium":
+        tier = self._policy_sku_tier
+        if not tier:
+            # No SKU on the policy read: whether HTTPS gets the headers depends
+            # on it, so say that it is not known rather than assume a tier.
+            return "[yellow]policy SKU unknown: whether HTTPS gets the headers cannot be told from here[/]"
+        if tier != "Premium":
             return "[yellow]HTTPS on Standard/Basic: headers are inserted into HTTP only[/]"
         if not rule.terminate_tls:
             return "[yellow]HTTPS without TLS inspection on this rule: headers are inserted into HTTP only[/]"

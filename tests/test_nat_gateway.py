@@ -143,7 +143,7 @@ def world(monkeypatch):
     state: dict = {
         "cached": None, "saved": [], "invalidated": [], "calls": [],
         "firewall": FW, "policy": None, "groups": {}, "cidrs": ["10.2.0.0/26"],
-        "nat_gateways": [], "pips": {},
+        "nat_gateways": [], "pips": {}, "monkeypatch": monkeypatch,
     }
     FakeCredential.instances = []
 
@@ -212,6 +212,37 @@ async def test_management_resolves_nat_gateway_public_ips(world):
     assert gw.public_ip_addresses == ["20.1.2.3", "20.1.2.4"]
     pip_calls = [c[1] for c in world["calls"] if c[0] == "pips"]
     assert any(PIP1 in call and PIP2 in call for call in pip_calls)
+
+
+async def test_gateway_pip_failure_keeps_the_firewall_addresses(world):
+    """The NAT gateway lookup is optional; when it raises, the firewall's own
+    public IP addresses, already read, must stay on the tab."""
+    from viewer.azure_resources import IpConfig
+    fw = FirewallInfo(id=FW_ID, name="fw", subscription_id="s", resource_group="rg", location="gwc",
+                      subnet_ids=["/sn1"],  # no policy: this fixture fakes no policy fetch
+                      ip_configs=[IpConfig(name="c0", public_ip_id="/fwpip", public_ip_name="pip-fw")])
+    subnet = SubnetInfo(id="/sn1", name="AzureFirewallSubnet", nat_gateway_id=NATGW)
+    gw = NatGatewayInfo(id=NATGW, name="natgw-hub", subnet_name="AzureFirewallSubnet", readable=True,
+                        public_ip_ids=[PIP1], public_ip_names=["pip-natgw-1"])
+    world["firewall"] = fw
+    world["subnets"] = [subnet]
+    world["nat_gateways"] = [gw]
+    calls = {"n": 0}
+
+    async def fetch_public_ips(arm, ids):
+        calls["n"] += 1
+        if PIP1 in ids:
+            raise ArmError(403, "AuthorizationFailed", "no Reader on the gateway's public IP")
+        return {"/fwpip": "72.144.131.50"}
+
+    monkeypatch_fetch = world["monkeypatch"]
+    monkeypatch_fetch.setattr(mgmt, "fetch_public_ips", fetch_public_ips)
+
+    snap = await mgmt.load_management_data(FW_ID)
+
+    assert snap is not None and calls["n"] == 2
+    assert fw.ip_configs[0].public_ip_address == "72.144.131.50"
+    assert gw.public_ip_addresses == [""]
 
 
 async def test_management_keeps_a_slot_for_every_gateway_pip(world):

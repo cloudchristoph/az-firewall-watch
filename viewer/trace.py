@@ -39,6 +39,7 @@ class Flow:
     dst_port: str = ""
     action: str = ""        # the action the firewall logged (used for rows decided outside the rules)
     explicit_proxy: bool = False   # AZFWApplicationRule.IsExplicitProxyRequest == "yes"
+    tls_inspected: bool = False    # AZFWApplicationRule.IsTlsInspected == "yes"
 
     @property
     def threat_intel(self) -> bool:
@@ -180,10 +181,17 @@ def _protocol_check(rule: Rule, flow: Flow) -> Check:
         # The log says HTTP/1.1, HTTPS or MSSQL; the rule says Http, Https, Mssql.
         # Compare the bare names: a prefix test would let HTTPS match Http.
         app_proto = proto.split("/", 1)[0]
+        inspected = False
+        if flow.tls_inspected and app_proto == "HTTP":
+            # A TLS-inspected HTTPS request is logged as the decrypted inner
+            # request, Protocol "HTTP/1.1" with IsTlsInspected true (seen on real
+            # records, 2026-09-09). On the wire and for the rule it is HTTPS.
+            app_proto, inspected = "HTTPS", True
         for rp in rule_protos:
             if rp == app_proto:
-                return Check("protocol", MATCH, rp)
-        return Check("protocol", MISS, f"{flow.protocol} not in {', '.join(rule.protocols)}")
+                return Check("protocol", MATCH, f"{rp} (TLS inspected, logged as {flow.protocol})" if inspected else rp)
+        shown = f"{flow.protocol} (TLS inspected, so HTTPS)" if inspected else flow.protocol
+        return Check("protocol", MISS, f"{shown} not in {', '.join(rule.protocols)}")
     # Network / DNAT rules see layer 4: an application-rule log line says
     # HTTPS or HTTP/1.1, but on the wire that is TCP.
     l4 = "TCP" if proto.startswith(APP_PROTOCOLS) else proto
@@ -194,20 +202,19 @@ def _protocol_check(rule: Rule, flow: Flow) -> Check:
 
 
 def _port_check(rule: Rule, flow: Flow) -> Check:
-    if flow.explicit_proxy:
-        # The client addressed the firewall's own proxy port; whether the log's
-        # DestinationPort is that proxy port or the real destination (80/443)
-        # is not documented, so a comparison against the rule's port could
-        # produce a confident wrong miss. Stay unknown rather than guess.
-        return Check("port", UNKNOWN, "cannot evaluate: explicit proxy request; whether the log carries "
-                     "the proxy port or the destination port is not verified")
+    # An explicit-proxy request addresses the firewall's proxy port (8080),
+    # but the log's DestinationPort is the real destination port (80 / 443):
+    # verified on real records, 2026-09-09, proxied HTTP and CONNECT side by
+    # side with the transparent request. So the port compares like any other;
+    # the detail only says where the request came in.
+    via = " (via explicit proxy)" if flow.explicit_proxy else ""
     if not flow.dst_port or flow.dst_port == "-":
         return Check("port", NA, "no port in log")
     if not rule.destination_ports:
-        return Check("port", MATCH, "any")
+        return Check("port", MATCH, "any" + via)
     if any(_port_matches(flow.dst_port, spec) for spec in rule.destination_ports):
-        return Check("port", MATCH, flow.dst_port)
-    return Check("port", MISS, f"{flow.dst_port} not in {', '.join(rule.destination_ports)}")
+        return Check("port", MATCH, flow.dst_port + via)
+    return Check("port", MISS, f"{flow.dst_port} not in {', '.join(rule.destination_ports)}{via}")
 
 
 def _destination_check(rule: Rule, flow: Flow, ip_groups: dict[str, IpGroupInfo]) -> Check:

@@ -110,10 +110,14 @@ nor rejects them:
 - destination addresses on an **application** rule: Azure matches those against
   the address the firewall resolved from the `Host` header or the SNI, and that
   resolution is nowhere in the log
-- the port of a request that came in through the **explicit proxy**: the log
-  marks such rows (`IsExplicitProxyRequest`), but whether it records the proxy
-  port or the real destination port is not verified, so the port criterion stays
-  open rather than risk a confident wrong miss
+
+Two things the log writes differently from what the rule says, and the trace
+translates rather than marks: a request through the **explicit proxy** is logged
+with the real destination port, not the proxy port, so the port compares as usual
+and the criterion only notes *via explicit proxy*; a **TLS-inspected** HTTPS
+request is logged as the decrypted inner request, `Protocol` `HTTP/1.1` with
+`IsTlsInspected` true, and the trace reads it as HTTPS for the rule. Both were
+checked against real records rather than the documentation.
 
 ### Navigating it
 

@@ -9,7 +9,7 @@ import pytest
 from fw_parser import parse_record
 from viewer.arm import ArmError
 from viewer.azure_resources import FirewallInfo, FirewallPolicyInfo, fetch_policy
-from viewer.trace import MATCH, NA, UNKNOWN, Flow, evaluate_rule
+from viewer.trace import MATCH, MISS, NA, Flow, evaluate_rule
 from viewer.views.detail_screen import DetailDialog
 from viewer.views.firewall import FirewallView, _explicit_proxy_rows
 
@@ -269,16 +269,64 @@ def _app_rule(**kw):
     return Rule(**base)
 
 
-def test_port_check_unknown_for_explicit_proxy_flow():
-    flow = Flow(category="AppRule", protocol="HTTPS", src_ip="10.3.5.4", dst_fqdn="example.com",
-                dst_port="8080", explicit_proxy=True)
-    rule = _app_rule(destination_ports=["443"])
+# The two proxied rows and their transparent twin, as the lab logged them on
+# 2026-09-09 (curl -x http://10.2.0.4:8080 against httpbin.org/headers):
+# the log carries the destination port, not the proxy port, and a TLS-inspected
+# request is logged as Protocol "HTTP/1.1" with IsTlsInspected true.
+
+def test_proxied_http_row_compares_the_destination_port():
+    flow = Flow(category="AppRule", protocol="HTTP/1.1", src_ip="10.3.8.4", dst_fqdn="httpbin.org",
+                dst_port="80", explicit_proxy=True)
+    rule = _app_rule(destination_fqdns=["httpbin.org"], protocols=["Http", "Https"], destination_ports=["80", "443"])
     r = evaluate_rule(rule, flow, {})
     port_check = next(c for c in r.checks if c.name == "port")
-    assert port_check.result == UNKNOWN
-    assert port_check.detail == ("cannot evaluate: explicit proxy request; whether the log carries "
-                                  "the proxy port or the destination port is not verified")
-    assert r.verdict == UNKNOWN  # never a confident match or miss on an unverifiable port
+    assert port_check.result == MATCH and port_check.detail == "80 (via explicit proxy)"
+    assert r.verdict == MATCH
+
+
+def test_proxied_connect_row_is_https_for_the_rule():
+    flow = Flow(category="AppRule", protocol="HTTP/1.1", src_ip="10.3.8.4", dst_fqdn="httpbin.org",
+                dst_port="443", explicit_proxy=True, tls_inspected=True)
+    rule = _app_rule(destination_fqdns=["httpbin.org"], protocols=["Https"], destination_ports=["443"])
+    r = evaluate_rule(rule, flow, {})
+    checks = {c.name: c for c in r.checks}
+    assert checks["port"].result == MATCH and checks["port"].detail == "443 (via explicit proxy)"
+    assert checks["protocol"].result == MATCH
+    assert checks["protocol"].detail == "HTTPS (TLS inspected, logged as HTTP/1.1)"
+    assert r.verdict == MATCH
+
+
+def test_proxied_row_with_the_wrong_port_is_a_miss_that_names_the_proxy():
+    flow = Flow(category="AppRule", protocol="HTTP/1.1", src_ip="10.3.8.4", dst_fqdn="httpbin.org",
+                dst_port="8080", explicit_proxy=True)
+    rule = _app_rule(destination_fqdns=["httpbin.org"], protocols=["Http"], destination_ports=["80"])
+    port_check = next(c for c in evaluate_rule(rule, flow, {}).checks if c.name == "port")
+    assert port_check.result == MISS and port_check.detail == "8080 not in 80 (via explicit proxy)"
+
+
+def test_transparent_tls_inspected_row_matches_an_https_only_rule():
+    """Before this fix the inspected row's HTTP/1.1 was a confident miss on a Https rule."""
+    flow = Flow(category="AppRule", protocol="HTTP/1.1", src_ip="10.3.8.4", dst_fqdn="httpbin.org",
+                dst_port="443", tls_inspected=True)
+    rule = _app_rule(destination_fqdns=["httpbin.org"], protocols=["Https"], destination_ports=["443"])
+    r = evaluate_rule(rule, flow, {})
+    assert r.verdict == MATCH
+    assert next(c for c in r.checks if c.name == "protocol").result == MATCH
+
+
+def test_tls_inspected_row_misses_an_http_only_rule():
+    flow = Flow(category="AppRule", protocol="HTTP/1.1", src_ip="10.3.8.4", dst_fqdn="httpbin.org",
+                dst_port="443", tls_inspected=True)
+    rule = _app_rule(destination_fqdns=["httpbin.org"], protocols=["Http"], destination_ports=["443"])
+    proto = next(c for c in evaluate_rule(rule, flow, {}).checks if c.name == "protocol")
+    assert proto.result == MISS and proto.detail == "HTTP/1.1 (TLS inspected, so HTTPS) not in Http"
+
+
+def test_plain_http_row_without_inspection_still_misses_an_https_only_rule():
+    flow = Flow(category="AppRule", protocol="HTTP/1.1", src_ip="10.3.8.4", dst_fqdn="httpbin.org", dst_port="80")
+    rule = _app_rule(destination_fqdns=["httpbin.org"], protocols=["Https"], destination_ports=["80"])
+    proto = next(c for c in evaluate_rule(rule, flow, {}).checks if c.name == "protocol")
+    assert proto.result == MISS and proto.detail == "HTTP/1.1 not in Https"
 
 
 def test_port_check_normal_when_proxy_flag_is_off():

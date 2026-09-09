@@ -759,6 +759,7 @@ class FirewallLogApp(App[None]):
             dst_port="" if port == "-" else port,
             action=row.action if row.action != "-" else "",
             explicit_proxy=row.explicit_proxy == "yes",
+            tls_inspected=row.tls_inspected == "yes",
         )
 
     @staticmethod

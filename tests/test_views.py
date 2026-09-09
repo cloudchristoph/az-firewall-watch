@@ -25,6 +25,7 @@ from viewer.views import FirewallView, IpGroupsView, PolicyView
 from viewer.views.detail_screen import DetailDialog, _ports_join
 from viewer.views.firewall import _row
 from viewer.views.ip_groups import IpGroupDetailDialog
+from viewer.views.trace_screen import TracePanel
 
 pytestmark = pytest.mark.usefixtures("no_eventhub_env", "no_update_check")
 
@@ -403,30 +404,38 @@ async def test_trace_screen_shows_logged_match_and_closes(structured_record, mgm
         assert "DNAT rules   no collections" in joined
         assert "Network rules   ✓ matched" in joined
         assert "[2000] rcg-net" in joined and "✓ [100] rc-web  allow" in joined  # group once, collection below it
-        assert "allow-web" in joined and "← logged" in joined
+        assert "allow-web" in joined and "LOGGED" in joined
         assert "Application rules   not evaluated" in joined
         assert "evaluation stopped at the logged rule" in joined
-        header = _text(screen)
-        assert "10.3.5.4 → 1.1.1.1:443 TCP" in header and "Allow by rcg-net » rc-web » allow-web" in header
-        assert "Enter: expand · Enter on an open rule: show in Policy tab" in header
+        # the flow/outcome header and its key hints now live in the dialog itself
+        # (owned and tested by the detail_screen work package); no "nearest miss" /
+        # "rules ·" suffix survives on any tree line.
+        assert "nearest miss" not in joined and "rules ·" not in joined
         # top-level leaves are padded so their text lines up with expandable siblings
         assert any(line.startswith("  Threat Intelligence") for line in labels)
         assert any(line.startswith("  DNAT rules") for line in labels)
-        # path view: the missed collection before the match is one collapsed line with the reason
-        deny = next(n for n in _tree_nodes(tree) if n.label.plain.startswith("✗ [50] rc-deny"))
-        assert "1 rule · nearest miss: destination" in deny.label.plain
+        # focused view: the missed collection before the match folds into one line
+        fold = next(n for n in _tree_nodes(tree) if n.label.plain.startswith("▸ 1 preceding collections"))
+        assert "all ✗" in fold.label.plain
+        assert not fold.is_expanded and len(fold.children) == 1
+        deny = fold.children[0]
+        assert deny.label.plain == "✗ [50] rc-deny  deny"
         assert not deny.is_expanded and len(deny.children) == 1
-        assert deny.children[0].label.plain == "✗ deny-bad   destination: 1.1.1.1"
+        assert deny.children[0].label.plain == "✗ deny-bad"
         await pilot.press("a")  # expand all
         await pilot.pause()
         deny = next(n for n in _tree_nodes(screen.query_one("#trace-tree", Tree)) if n.label.plain.startswith("✗ [50] rc-deny"))
-        assert deny.is_expanded and deny.children[0].is_expanded
+        assert deny.is_expanded  # "a" opens even the folded-away collections
         await pilot.press("escape")
         await pilot.press("escape")
         await wait_until(pilot, lambda: not isinstance(app.screen, DetailDialog))
 
 
 async def test_trace_screen_enter_jumps_to_policy_rule(structured_record, mgmt, firewall_id):
+    """Enter no longer opens the rule (it only toggles a node); the Policy tab is
+    reached through TracePanel.open_selected_rule(), which the dialog calls on
+    ``p`` — tested here through the method itself since that key binding lives
+    in detail_screen.py, owned by the parallel work package."""
     app = FirewallLogApp()
     async with app.run_test(size=(160, 45)) as pilot:
         await pilot.pause()
@@ -434,7 +443,7 @@ async def test_trace_screen_enter_jumps_to_policy_rule(structured_record, mgmt, 
         screen = await _open_trace(app, pilot, _net(structured_record, "10.3.5.4", "1.1.1.1"))
         tree = screen.query_one("#trace-tree", Tree)
         assert tree.cursor_node is not None and "allow-web" in tree.cursor_node.label.plain  # pre-selected
-        await pilot.press("enter")
+        screen.query_one(TracePanel).open_selected_rule()
         await wait_until(pilot, lambda: not isinstance(app.screen, DetailDialog))
         await pilot.pause()
         assert app.query_one("#main-tabs", TabbedContent).active == "tab-policy"
@@ -458,36 +467,10 @@ async def test_threat_intel_trace_is_two_lines(structured_record, mgmt, firewall
         assert len(labels) == 2, labels
         assert labels[0].startswith("  Threat Intelligence   hit — Alert by Threat Intelligence (mode Alert)")
         assert labels[1].startswith("  DNAT, Network and Application rules   not evaluated")
-        title = str(screen.query_one("#trace-title", Static).content)
-        assert "Alert by Threat Intelligence" in title  # the verdict lives in the header only
-
-
-async def test_enter_on_collapsed_rule_expands_before_it_opens(structured_record, mgmt, firewall_id):
-    app = FirewallLogApp()
-    async with app.run_test(size=(160, 45)) as pilot:
-        await pilot.pause()
-        await _load(app, pilot, firewall_id)
-        row = parse_record(structured_record(
-            "AZFWNetworkRule", Protocol="TCP", SourceIp="10.3.5.4", SourcePort=1, DestinationIp="1.1.1.1",
-            DestinationPort=8443, Action="Deny", ActionReason="No rule matched. Proceeding with default action.",
-        ))
-        screen = await _open_trace(app, pilot, row)
-        tree = screen.query_one("#trace-tree", Tree)
-        rule = next(n for n in _tree_nodes(tree) if n.label.plain.startswith("✗ allow-web"))
-        assert not rule.is_expanded
-        tree.move_cursor(rule)
-        await pilot.pause()
-        await pilot.press("enter")
-        await pilot.pause()
-        assert rule.is_expanded and app.screen is screen  # first Enter only unfolds the checks
-        await pilot.press("space")
-        await pilot.pause()
-        assert not rule.is_expanded  # Space folds again
-        await pilot.press("enter")
-        await pilot.pause()
-        await pilot.press("enter")
-        await wait_until(pilot, lambda: not isinstance(app.screen, DetailDialog))
-        assert app.query_one("#main-tabs", TabbedContent).active == "tab-policy"
+        # the flow/outcome header (including this verdict) is the dialog's now,
+        # tested by the parallel detail_screen work package — not #trace-title
+        # here any more.
+        assert not screen.query("#trace-title")
 
 
 async def test_trace_for_no_rule_matched_row_shows_near_miss(structured_record, mgmt, firewall_id):
@@ -503,28 +486,14 @@ async def test_trace_for_no_rule_matched_row_shows_near_miss(structured_record, 
         tree = screen.query_one("#trace-tree", Tree)
         joined = "\n".join(_tree_labels(tree))
         assert "Network rules   ✗ no match" in joined
-        assert "✗ [100] rc-web  allow   2 rules · nearest miss: port" in joined
-        assert "✗ allow-web   port: 8443 not in 443 ★ nearest" in joined   # first problem inline, ranked
+        assert "✗ [100] rc-web  allow" in joined
+        assert "nearest miss" not in joined and "rules ·" not in joined  # that detail moved to the selection panel
+        assert "✗ allow-web   ★ nearest" in joined   # nearest-miss candidate, still flagged
         assert "skipped — protocol TCP is not HTTP, HTTPS or MSSQL" in joined
         assert "default action: Deny" in joined
-        # the collection holding the nearest misses is expanded in path view
+        # the collection holding the nearest misses is expanded in focused view
         rc_node = next(n for n in _tree_nodes(tree) if n.label.plain.startswith("✗ [100] rc-web"))
         assert rc_node.is_expanded
-
-
-async def test_trace_header_omits_missing_port(structured_record, mgmt, firewall_id):
-    """Copilot review: ICMP rows have no port; the header must not read '1.1.1.1:-'."""
-    app = FirewallLogApp()
-    async with app.run_test(size=(160, 45)) as pilot:
-        await pilot.pause()
-        await _load(app, pilot, firewall_id)
-        row = parse_record(structured_record(
-            "AZFWNetworkRule", Protocol="ICMP", SourceIp="10.3.5.4", DestinationIp="1.1.1.1", Action="Deny",
-            ActionReason="No rule matched. Proceeding with default action.",
-        ))
-        screen = await _open_trace(app, pilot, row)
-        header = _text(screen)
-        assert "10.3.5.4 → 1.1.1.1 ICMP" in header and ":-" not in header
 
 
 async def test_enter_opens_entry_and_trace_side_by_side(structured_record, mgmt, firewall_id):
@@ -546,14 +515,13 @@ async def test_enter_opens_entry_and_trace_side_by_side(structured_record, mgmt,
         # nothing twice: the policy path, priorities, action and SKU live in the trace
         for dup in ("Policy       ", "RCG          ", "Rule Coll.", "Rule         ", "Rule Priority", "Rule Action", "Policy SKU"):
             assert dup not in left, dup
-        title = screen.query_one("#trace-title", Static).content
-        assert str(title).startswith("▸ 10.3.5.4 → 1.1.1.1:443 TCP\n✓ Allow by rcg-net » rc-web » allow-web")
-        # rendered as Rich Text, like the tree labels, so ✓ / ? / ✗ take the same theme colours everywhere
-        from rich.text import Text as RichText
-        assert isinstance(title, RichText) and "green" in str(title.spans)
+        # the flow/outcome header (previously #trace-title, rendered as Rich Text so
+        # ✓ / ? / ✗ take the same theme colours as the tree) is the dialog's now,
+        # tested by the parallel detail_screen work package.
+        assert not screen.query("#trace-title")
         assert not screen.query("#trace-meta")  # the status bar already shows the metadata line
         tree = screen.query_one("#trace-tree", Tree)
-        assert tree.has_focus  # Enter on the tree opens the rule right away
+        assert tree.has_focus  # the logged rule is pre-selected and scrolled into view
         assert tree.cursor_node is not None and "allow-web" in tree.cursor_node.label.plain
         # the pane sits left of the trace, both inside the same dialog
         assert screen.query_one("#detail-pane").region.x < tree.region.x
@@ -562,23 +530,24 @@ async def test_enter_opens_entry_and_trace_side_by_side(structured_record, mgmt,
         assert app.screen is screen and tree.has_focus
 
 
-async def test_long_rule_details_are_shortened_on_collapsed_lines():
-    """The collapsed rule line keeps a short reason; the full text lives on the child leaf."""
+async def test_long_rule_names_are_shortened_in_the_tree_but_whole_in_detail():
+    """Long entity names are cut with an ellipsis in the tree; the selection
+    detail (package 4) always shows them whole."""
     from textual.app import App
 
     from viewer.trace import Flow, build_trace
     from viewer.views.trace_screen import TracePanel, _short
 
     assert _short("short") == "short"
-    assert _short("x" * 60).endswith("…") and len(_short("x" * 60)) == 40
+    assert _short("x" * 60).endswith("…") and len(_short("x" * 60)) == 48
 
-    many = [str(8000 + i) for i in range(14)]  # long port list → long miss detail
+    long_name = "allow-many-" + "x" * 50  # well past the 48-character tree limit
     policy = FirewallPolicyInfo(id="/p", name="p", sku_tier="Standard", threat_intel_mode="Alert",
                                 rule_collection_groups=[
         RuleCollectionGroup(id="/p/g", name="g", priority=100, rule_collections=[
             RuleCollection(name="rc", priority=100, action="Allow", rule_collection_type="Filter", rules=[
-                Rule(name="allow-many", rule_type="NetworkRule", source_addresses=["*"],
-                     destination_addresses=["*"], destination_ports=many, protocols=["Any"]),
+                Rule(name=long_name, rule_type="NetworkRule", source_addresses=["*"],
+                     destination_addresses=["*"], destination_ports=["8080"], protocols=["Any"]),
             ]),
         ]),
     ])
@@ -592,10 +561,15 @@ async def test_long_rule_details_are_shortened_on_collapsed_lines():
     app = _Host()
     async with app.run_test(size=(120, 30)) as pilot:
         await pilot.pause()
-        labels = _tree_labels(app.query_one("#trace-tree", Tree))
-    rule_line = next(line for line in labels if line.startswith("✗ allow-many"))
-    assert "…" in rule_line and len(rule_line) < 80, rule_line
-    assert any(line.startswith("✗ port:") and many[-1] in line for line in labels)  # full detail on the leaf
+        tree = app.query_one("#trace-tree", Tree)
+        labels = _tree_labels(tree)
+        rule_line = next(line for line in labels if line.startswith("✗ allow-many"))
+        assert "…" in rule_line and long_name not in rule_line
+        rule_node = next(n for n in _tree_nodes(tree) if n.label.plain.startswith("✗ allow-many"))
+        tree.move_cursor(rule_node)
+        await pilot.pause()
+        detail = str(app.query_one("#trace-detail", Static).content)
+        assert long_name in detail  # whole, unlike the tree line
 
 
 def test_flow_from_dnat_row_uses_the_public_destination(structured_record):

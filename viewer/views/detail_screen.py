@@ -79,17 +79,23 @@ def _flow_client_server(row: FirewallDataRow) -> tuple[str, str, str]:
 
 
 def _action_markup(action: str) -> str:
-    """The action, coloured like the log table's Action column."""
+    """The action, coloured like the log table's Action column.
+
+    Same weights as the trace tree's action tag (see trace_screen._action_tag):
+    deny is what a reader must not miss, allow is the common case and stays
+    quiet, dnat sits between the two. One row's logged action, not a verdict —
+    so this stays independent of trace_screen._ICON.
+    """
     if not action or action == "-":
         return ""
     safe = escape(action)
     a = action.lower()
     if a in ("deny", "denywiththreat"):
-        return f"[red]{safe}[/]"
+        return f"[bold red]{safe}[/]"
     if a == "allow":
-        return f"[green]{safe}[/]"
+        return f"[dim green]{safe}[/]"
     if a == "dnat":
-        return f"[yellow]{safe}[/]"
+        return f"[bold yellow]{safe}[/]"
     if a == "alert":
         return f"[magenta]{safe}[/]"
     return safe

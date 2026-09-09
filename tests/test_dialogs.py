@@ -56,7 +56,7 @@ async def test_enter_opens_detail_dialog_with_all_fields(structured_record):
         await pilot.pause()
         dialog = await _open_detail(app, pilot, _network_row(structured_record))
         text = _dialog_text(dialog)
-        assert "Log Entry — NetworkRule" in text
+        assert "NetworkRule" in text  # category now sits in the header, not a "Log Entry —" title
         assert "2026-09-05T08:00:00Z" in text
         assert "10.0.1.4" in text and "51000 → 443" in text  # ports on their own line
         assert "10.0.2.5" in text
@@ -103,10 +103,12 @@ async def test_threat_intel_entry_labels_and_long_values(structured_record):
         text = "\n".join(contents)
         assert "2026-09-07T16:14:09Z" in text and ".903912" not in text      # UTC trimmed to seconds
         assert "Threat" in text and "More Info" not in text                   # category-specific label
-        # 45 characters fit the 84-column dialog inline; only beside the trace would this wrap
-        assert any(c.startswith("[dim]Destination  [/]  " + fqdn) for c in contents)
-        assert any(c.startswith("[dim]Protocol     [/]  HTTP") for c in contents)     # short values stay inline
-        assert dialog.query_one("#btn-close").region.width < dialog.query_one("#detail-pane").region.width
+        # The destination and protocol are the header's job now (ThreatIntel's
+        # Source/Destination equal it exactly); no separate field repeats them.
+        assert fqdn in text and "HTTP" in text
+        assert not any(c.startswith("[dim]Destination  [/]") for c in contents)
+        assert not any(c.startswith("[dim]Protocol     [/]") for c in contents)
+        assert not dialog.query("#btn-close")
 
 
 async def test_flowtrace_dialog_shows_connection_and_packet_direction(structured_record):
@@ -212,16 +214,6 @@ async def test_q_in_detail_dialog_does_not_quit_the_app(structured_record):
         assert app.is_running
         assert app.return_value is None
         assert not app._exit
-
-
-async def test_detail_dialog_closes_on_button(structured_record):
-    app = FirewallLogApp()
-    async with app.run_test(size=(140, 40)) as pilot:
-        await pilot.pause()
-        await _open_detail(app, pilot, _network_row(structured_record))
-        await pilot.click("#btn-close")
-        await pilot.pause(0.2)
-        assert not isinstance(app.screen, DetailDialog)
 
 
 async def test_escape_in_dialog_does_not_clear_main_screen_filters(structured_record):

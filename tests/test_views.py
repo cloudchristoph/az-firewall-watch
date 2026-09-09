@@ -275,9 +275,9 @@ async def test_detail_dialog_shows_enrichment(structured_record, mgmt, firewall_
         await wait_until(pilot, lambda: isinstance(app.screen, DetailDialog))
         await pilot.pause(0.2)
         text = _text(app.screen)
-        assert "Src IP Groups" in text and "ipgroup-all-spokes" in text
+        assert "Src IP groups" in text and "ipgroup-all-spokes" in text
         assert "Rule Def." not in text and "TCP  443  from ipgroup-all-spokes  to *" not in text   # the trace shows the criteria
-        assert "Dst IP Groups" not in text  # 1.1.1.1 is in no group
+        assert "Dst IP groups" not in text  # 1.1.1.1 is in no group
         # priorities, action and policy path are shown once — in the trace, not the fields
         assert "Rule Priority" not in text
         labels = "\n".join(_tree_labels(app.screen.query_one("#trace-tree", Tree)))
@@ -542,7 +542,11 @@ async def test_enter_opens_entry_and_trace_side_by_side(structured_record, mgmt,
         screen = app.screen
         assert screen.has_trace and screen.has_class("-with-trace")
         left = "\n".join(str(s.content) for s in screen.query("#detail-pane Static"))
-        assert "Log Entry — NetworkRule" in left and "Rule Def." not in left
+        assert "Rule Def." not in left
+        # the category now lives in the dialog header, not repeated inside the pane
+        assert "NetworkRule" not in left
+        header = str(screen.query_one("#dialog-header", Static).content)
+        assert "NetworkRule" in header
         # nothing twice: the policy path, priorities, action and SKU live in the trace
         for dup in ("Policy       ", "RCG          ", "Rule Coll.", "Rule         ", "Rule Priority", "Rule Action", "Policy SKU"):
             assert dup not in left, dup

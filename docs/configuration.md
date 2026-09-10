@@ -100,11 +100,14 @@ to the second question, and you can skip it entirely by writing `.env` yourself.
 | ----------------------------------- | ---------------------------------- | -------------------------------------------------------------------- |
 | Event Hub namespace or hub          | **Azure Event Hubs Data Receiver** | Entra ID auth. Not needed with a SAS connection string                |
 | Firewall, its policy, its IP groups, its subnets and public IPs | **Reader**     | [Policy context](policy-context.md), which is on by default. Not needed with `POLICY_CONTEXT=off` |
+| A NAT gateway on the firewall subnet, a maintenance configuration assigned to the firewall | **Reader**, optional | Only for the corresponding lines on the Firewall tab. Without it the line says the resource is not readable |
 
 That is the complete list for day-to-day use. The viewer only ever reads, and
 without these roles it degrades instead of failing: no Data Receiver means the
 connection is refused with a hint, no Reader means *metadata unavailable* and the
-Logs tab alone.
+Logs tab alone. Nothing the viewer does is an ARM action: the learned SNAT
+prefixes of an auto-learn firewall, for example, are only available through a
+POST and therefore stay off screen by design.
 
 ### For the setup wizard
 

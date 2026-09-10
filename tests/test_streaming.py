@@ -145,6 +145,14 @@ async def wait_until(pilot, cond: Callable[[], bool], timeout: float = 5.0) -> N
         await pilot.pause(0.05)
 
 
+def _connected(app: FirewallLogApp) -> bool:
+    """True once the status bar exists and says Connected. On a slow runner the
+    first poll can land before the main screen is mounted, and the query must
+    not fail there."""
+    bar = app.query("#status")
+    return bool(bar) and bar.first(StatusBar).status == "Connected"
+
+
 async def wait_for_dialog(pilot, app, cls, timeout: float = 5.0) -> None:
     """Wait until *cls* is the active screen and its widgets are composed."""
     await wait_until(pilot, lambda: isinstance(app.screen, cls), timeout)
@@ -205,7 +213,7 @@ async def test_splash_shows_namespace_and_hub_but_never_the_key(monkeypatch, fak
     app = FirewallLogApp()
     async with app.run_test(size=(140, 40)) as pilot:
         await wait_for_dialog(pilot, app, ConnectingDialog)
-        await wait_until(pilot, lambda: app.query_one("#status", StatusBar).status == "Connected")
+        await wait_until(pilot, lambda: _connected(app))
         text = _dialog_text(app.screen)
         fields = {k.strip(): v.strip() for k, v in (line.split(":", 1) for line in text.splitlines() if ":" in line)}
         assert fields["Namespace"] == "lab-ns.servicebus.windows.net"
@@ -275,7 +283,7 @@ async def test_update_dialog_survives_first_event(monkeypatch, fake_client, fire
     fake_client.script = [{"events": []}]
     app = FirewallLogApp()
     async with app.run_test(size=(140, 40)) as pilot:
-        await wait_until(pilot, lambda: app.query_one("#status", StatusBar).status == "Connected")
+        await wait_until(pilot, lambda: _connected(app))
         await app.push_screen(UpdateDialog("9.9.9", "https://example.test/rel"))
         await pilot.pause()
         assert isinstance(app.screen, UpdateDialog)
@@ -302,7 +310,7 @@ async def test_policy_context_notice_survives_first_event(monkeypatch, fake_clie
     env.write_text(f"EVENT_HUB_CONNECTION_STRING={SAS_CONN}\n", encoding="utf-8")
     app = FirewallLogApp(policy_context=True, policy_context_notice=True, env_file=env)
     async with app.run_test(size=(140, 40)) as pilot:
-        await wait_until(pilot, lambda: app.query_one("#status", StatusBar).status == "Connected")
+        await wait_until(pilot, lambda: _connected(app))
         # the splash is pushed *beneath* the notice, so the question is visible at once
         assert [type(s).__name__ for s in app.screen_stack] == ["Screen", "ConnectingDialog", "PolicyContextNoticeDialog"]
 
@@ -466,7 +474,7 @@ async def test_worker_cancellation_pops_splash_and_stops(monkeypatch, fake_clien
     fake_client.script = [{"events": []}]
     app = FirewallLogApp()
     async with app.run_test(size=(140, 40)) as pilot:
-        await wait_until(pilot, lambda: app.query_one("#status", StatusBar).status == "Connected")
+        await wait_until(pilot, lambda: _connected(app))
         assert isinstance(app.screen, ConnectingDialog)
         app.workers.cancel_all()
         await wait_until(pilot, lambda: app.query_one("#status", StatusBar).status == "Streaming stopped")

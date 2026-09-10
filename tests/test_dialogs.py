@@ -11,6 +11,7 @@ from textual.widgets import DataTable, Input, Static, Switch
 import viewer.app as app_module
 from dialogs import StatusBar
 from fw_parser import parse_record
+from helpers import _to_local
 from viewer.app import FirewallLogApp
 from viewer.views.detail_screen import DetailDialog
 
@@ -56,8 +57,10 @@ async def test_enter_opens_detail_dialog_with_all_fields(structured_record):
         await pilot.pause()
         dialog = await _open_detail(app, pilot, _network_row(structured_record))
         text = _dialog_text(dialog)
-        assert "Log Entry — NetworkRule" in text
-        assert "2026-09-05T08:00:00Z" in text
+        assert "NetworkRule" in text  # category now sits in the header, not a "Log Entry —" title
+        # Local time depends on the machine's zone (CI runs in UTC), so ask the
+        # same helper; the UTC clock beside it is fixed.
+        assert _to_local("2026-09-05T08:00:00Z") in text and "08:00:00Z UTC" in text
         assert "10.0.1.4" in text and "51000 → 443" in text  # ports on their own line
         assert "10.0.2.5" in text
         assert "Deny" in text
@@ -101,11 +104,14 @@ async def test_threat_intel_entry_labels_and_long_values(structured_record):
         dialog = await _open_detail(app, pilot, row)
         contents = [str(s.content) for s in dialog.query(Static)]
         text = "\n".join(contents)
-        assert "2026-09-07T16:14:09Z" in text and ".903912" not in text      # UTC trimmed to seconds
+        assert "16:14:09Z" in text and ".903912" not in text      # UTC trimmed to seconds, date only when it differs
         assert "Threat" in text and "More Info" not in text                   # category-specific label
-        assert any(c.startswith("[dim]Destination[/]\n  " + fqdn) for c in contents)  # long value on its own line
-        assert any(c.startswith("[dim]Protocol     [/]  HTTP") for c in contents)     # short values stay inline
-        assert dialog.query_one("#btn-close").region.width < dialog.query_one("#detail-pane").region.width
+        # The destination and protocol are the header's job now (ThreatIntel's
+        # Source/Destination equal it exactly); no separate field repeats them.
+        assert fqdn in text and "HTTP" in text
+        assert not any(c.startswith("[dim]Destination  [/]") for c in contents)
+        assert not any(c.startswith("[dim]Protocol     [/]") for c in contents)
+        assert not dialog.query("#btn-close")
 
 
 async def test_flowtrace_dialog_shows_connection_and_packet_direction(structured_record):
@@ -211,16 +217,6 @@ async def test_q_in_detail_dialog_does_not_quit_the_app(structured_record):
         assert app.is_running
         assert app.return_value is None
         assert not app._exit
-
-
-async def test_detail_dialog_closes_on_button(structured_record):
-    app = FirewallLogApp()
-    async with app.run_test(size=(140, 40)) as pilot:
-        await pilot.pause()
-        await _open_detail(app, pilot, _network_row(structured_record))
-        await pilot.click("#btn-close")
-        await pilot.pause(0.2)
-        assert not isinstance(app.screen, DetailDialog)
 
 
 async def test_escape_in_dialog_does_not_clear_main_screen_filters(structured_record):

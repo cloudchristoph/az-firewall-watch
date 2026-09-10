@@ -329,6 +329,14 @@ class FirewallLogApp(App[None]):
         age = "fresh" if age_min < 1 else f"cache {age_min}m"
         return f"{policy_txt} · {len(snap.ip_groups)} IP groups · {age}"
 
+    def _cache_age_label(self) -> str:
+        """The detail dialog's cache-age phrase, e.g. ``fresh`` or ``12 min old``."""
+        snap = self._snapshot
+        if snap is None:
+            return ""
+        age_min = int(snap.age_seconds() // 60)
+        return "fresh" if age_min < 1 else f"{age_min} min old"
+
     # ── keeping the policy context current ────────────────────────────────────
     _AUTO_REFRESH_INTERVAL = 300.0  # seconds between automatic re-fetches
 
@@ -372,9 +380,14 @@ class FirewallLogApp(App[None]):
         """Refresh Firewall / Policy / IP Groups tabs from current state."""
         if not self._policy_context:
             return
+        snap = self._snapshot
         self.query_one("#firewall-view", FirewallView).render_data(
             self._fw_info, self._policy_info, self._subnet_cidrs,
-            self._snapshot.diagnostics if self._snapshot else [],
+            snap.diagnostics if snap else [],
+            subnets=snap.subnets if snap else [],
+            nat_gateways=snap.nat_gateways if snap else [],
+            maintenance=snap.maintenance if snap else [],
+            maintenance_readable=snap.maintenance_readable if snap else True,
         )
         self.query_one("#policy-view", PolicyView).render_data(self._policy_info, self._ip_groups)
         self.query_one("#ipgroups-view", IpGroupsView).render_data(
@@ -715,23 +728,48 @@ class FirewallLogApp(App[None]):
     def _is_traceable(self, row: FirewallDataRow) -> bool:
         return row.category.lower() in self._TRACEABLE
 
+    # Why an observation row has no trace: what the category records instead of
+    # a rule decision. The wording must not read as "the firewall skipped the
+    # policy": it did not, the log simply does not carry its decision here.
+    _NO_DECISION = {
+        "flowtrace": "FlowTrace records the handshake and flags of a connection, not a rule decision.",
+        "fatflow": "FatFlow records the top flows by rate, not a rule decision.",
+        "dnsquery": "DNS proxy rows record the query and its answer, not a rule decision.",
+        "dnsfailure": "DNS proxy rows record a failed resolution, not a rule decision.",
+        "idps": "IDPS rows record a signature hit; the rule decision for the flow is a separate row.",
+    }
+
+    def _trace_note(self, row: FirewallDataRow) -> str:
+        """Title and reason for a missing trace, empty when a trace can be built."""
+        cat = row.category.lower()
+        if cat not in self._TRACEABLE:
+            why = self._NO_DECISION.get(cat, f"{row.category} rows record observations, not a rule decision.")
+            return f"No rule decision in this log\n{why} There is no policy trace to show."
+        if not self._mgmt_loaded:
+            return "Policy trace not available\nIt needs the firewall metadata, which is not loaded yet."
+        if self._policy_info is None:
+            # Loaded, but without a policy: waiting changes nothing here.
+            return ("Policy trace not available\nThe firewall metadata is loaded, but it carries no policy: "
+                    "the policy could not be read, or the firewall uses classic rules.")
+        return ""
+
     def _open_detail(self, row: FirewallDataRow) -> None:
         """Open the row detail dialog; the evaluation trace sits beside it when possible.
 
-        When policy context is on but no trace can be built, the status bar says why.
+        When policy context is on but no trace can be built, the dialog itself
+        says why. The status bar keeps the policy and cache state: a property
+        of one row must not overwrite the state of the application.
         """
         trace = None
+        note = ""
         if self._policy_context:
-            status = self.query_one("#status", StatusBar)
-            if not self._is_traceable(row):
-                status.meta = f"no policy evaluation for {row.category} rows"
-            elif not self._mgmt_loaded or self._policy_info is None:
-                status.meta = "trace needs policy metadata (not loaded)"
-            else:
+            note = self._trace_note(row)
+            if not note and self._policy_info is not None:
                 trace = build_trace(self._flow_from_row(row), self._policy_info, self._ip_groups,
                                     self._logged_from_row(row))
         self.push_screen(
-            DetailDialog(row, enrichment=self._compute_enrichment(row), trace=trace),
+            DetailDialog(row, enrichment=self._compute_enrichment(row), trace=trace, trace_note=note,
+                         cache_age=self._cache_age_label()),
             callback=self._on_trace_result,
         )
 
@@ -754,6 +792,8 @@ class FirewallLogApp(App[None]):
             dst_fqdn=target if is_fqdn else "",
             dst_port="" if port == "-" else port,
             action=row.action if row.action != "-" else "",
+            explicit_proxy=row.explicit_proxy == "yes",
+            tls_inspected=row.tls_inspected == "yes",
         )
 
     @staticmethod
@@ -790,31 +830,13 @@ class FirewallLogApp(App[None]):
                 policy_name, grp, rc, rule = found
                 out["rule_priority"] = f"RCG:{grp.priority} \u00bb RC:{rc.priority}"
                 out["rule_action"] = rc.action
-                out["rule_definition"] = self._rule_definition(rule)
                 if policy_name and policy_name != self._policy_info.name:
                     out["rule_policy"] = f"{policy_name} (inherited)"
-            elif logged is not None:
-                out["rule_definition"] = "logged rule not in loaded policy (Ctrl+R to refresh)"
+            # No one-line definition here: the trace beside the fields shows every
+            # criterion, Enter on the rule opens it in the Policy tab, and a rule
+            # missing from the loaded policy is the trace's own warning.
         return out
 
-    def _rule_definition(self, rule) -> str:
-        """One-line summary of a rule's definition with IP groups resolved to names."""
-        def names(ids: list[str]) -> list[str]:
-            return [self._ip_groups[g].name if g in self._ip_groups else g.rsplit("/", 1)[-1] for g in ids]
-        src = rule.source_addresses + names(rule.source_ip_groups)
-        dst = (rule.destination_addresses + names(rule.destination_ip_groups)
-               + rule.destination_fqdns + rule.fqdn_tags + rule.target_urls)
-        dst_txt = ", ".join(dst) or "any"
-        if rule.translated_address or rule.translated_fqdn:
-            target = rule.translated_address or rule.translated_fqdn
-            dst_txt += f" → {target}:{rule.translated_port}" if rule.translated_port else f" → {target}"
-        parts = [
-            ", ".join(rule.protocols) or "any",
-            ", ".join(rule.destination_ports) or "any port",
-            "from " + (", ".join(src) or "any"),
-            "to " + dst_txt,
-        ]
-        return "  ".join(parts)
 
     # ── actions (key bindings) ─────────────────────────────────────────────────
     def action_toggle_pause(self) -> None:

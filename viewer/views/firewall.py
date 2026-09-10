@@ -1,7 +1,7 @@
 """Firewall tab: four panels — Instance, Networking, Policy, Logging — in a 2×2 grid."""
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, timedelta
 
 from rich.markup import escape
 from rich.text import Text
@@ -138,9 +138,14 @@ def _maintenance_window_rows(w: MaintenanceWindow) -> list[str]:
         # simply not readable with these rights; the GET does not say which.
         return [_row("Maintenance", f"assigned: {name}   [dim]window not readable from here[/]")]
 
-    exp_date, _ = _split_start(w.expiration)
+    exp_date, exp_time = _split_start(w.expiration)
     exp_open = exp_date is not None and exp_date.year != _MAINTENANCE_SENTINEL_YEAR
-    if exp_open and exp_date is not None and exp_date < date.today():
+    if exp_open and exp_date is not None and exp_date < date.today() - timedelta(days=1):
+        # The expiration is written in the window's own zone (a Windows zone
+        # name the viewer does not resolve), the comparison uses the local
+        # calendar; a full day of margin makes "expired" true in every zone.
+        # On the day itself and the day after, the line below shows the
+        # expiration with its time instead of claiming it has passed.
         return [_row("Maintenance", f"[yellow]expired {exp_date.isoformat()}[/]   [dim]{name}[/]")]
 
     missing = [label for label, value in (("start", w.start), ("duration", w.duration), ("time zone", w.time_zone))
@@ -161,7 +166,7 @@ def _maintenance_window_rows(w: MaintenanceWindow) -> list[str]:
     body = " ".join(filter(None, [recur, escape(start_time)]))
     value = f"{prefix}{body} for {_duration_human(w.duration)}, {escape(w.time_zone)}"
     if exp_open and exp_date is not None:
-        value += f" until {exp_date.isoformat()}"
+        value += f" until {exp_date.isoformat()} {escape(exp_time)}".rstrip()
     if w.sub_scope and w.sub_scope != "NetworkSecurity":
         value += f"   [yellow]subscope {escape(w.sub_scope)}: not a firewall maintenance window[/]"
     return [

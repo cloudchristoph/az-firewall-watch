@@ -391,6 +391,21 @@ async def test_detail_without_policy_metadata_has_no_trace(structured_record, mg
         assert status.meta == status_before
 
 
+def test_trace_note_tells_not_loaded_from_no_policy(structured_record):
+    """Loaded metadata without a policy is not a state that waiting resolves,
+    so the note must not say "not loaded yet" there."""
+    from fw_parser import parse_record
+    app = FirewallLogApp()
+    row = parse_record(structured_record("AZFWNetworkRule", Protocol="TCP", SourceIp="10.0.0.1",
+                                         DestinationIp="10.0.0.2", DestinationPort=443, Action="Deny"))
+    assert "not loaded yet" in app._trace_note(row)
+    app._mgmt_loaded = True
+    app._policy_info = None
+    note = app._trace_note(row)
+    assert "Policy trace not available" in note and "not loaded yet" not in note
+    assert "carries no policy" in note and "classic rules" in note
+
+
 async def test_trace_screen_shows_logged_match_and_closes(structured_record, mgmt, firewall_id):
     app = FirewallLogApp()
     async with app.run_test(size=(160, 45)) as pilot:
@@ -572,7 +587,7 @@ async def test_long_rule_names_are_shortened_in_the_tree_but_whole_in_detail():
         rule_node = next(n for n in _tree_nodes(tree) if n.label.plain.startswith("✗ allow-many"))
         tree.move_cursor(rule_node)
         await pilot.pause()
-        detail = str(app.query_one("#trace-detail", Static).content)
+        detail = str(app.query_one("#trace-detail-text", Static).content)
         assert long_name in detail  # whole, unlike the tree line
 
 

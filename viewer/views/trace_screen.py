@@ -17,7 +17,7 @@ from rich.markup import escape
 from rich.text import Text
 from textual import events
 from textual.app import ComposeResult
-from textual.containers import Vertical
+from textual.containers import Vertical, VerticalScroll
 from textual.message import Message
 from textual.widgets import Static, Tree
 from textual.widgets.tree import TreeNode
@@ -177,6 +177,9 @@ class TracePanel(Vertical):
         overflow-y: auto;
         margin-top: 1;
     }
+    TracePanel > #trace-detail > #trace-detail-text {
+        height: auto;
+    }
     TracePanel > #trace-legend {
         /* No blanket $text-muted here: LEGEND now colours each mark itself
          * ([dim] for a miss/not-in-log, exactly as the tree does), and a base
@@ -234,7 +237,11 @@ class TracePanel(Vertical):
         if t.warnings:
             yield Static("\n".join(f"⚠ {escape(w)}" for w in t.warnings), id="trace-warnings", markup=True)
         yield _TraceTree("Policy evaluation", id="trace-tree")
-        yield Static(id="trace-detail")
+        # A Static clips what does not fit; only a scroll container gives the
+        # rows beyond the height cap a way to be reached (wheel, or Shift+↑↓
+        # from the dialog).
+        with VerticalScroll(id="trace-detail"):
+            yield Static(id="trace-detail-text")
         yield Static(Text.from_markup(LEGEND), id="trace-legend")
 
     def on_mount(self) -> None:
@@ -246,6 +253,10 @@ class TracePanel(Vertical):
 
     def focus_tree(self) -> None:
         self.query_one("#trace-tree", Tree).focus()
+
+    def scroll_detail(self, lines: int) -> None:
+        """Scroll the selection detail by ``lines`` (negative scrolls up)."""
+        self.query_one("#trace-detail", VerticalScroll).scroll_relative(y=lines, animate=False)
 
     def open_selected_rule(self) -> None:
         """Post :class:`RuleChosen` for the cursor node's rule, if it has one."""
@@ -359,15 +370,16 @@ class TracePanel(Vertical):
         if preceding:
             n = len(preceding)
             unknown_n = sum(1 for c in preceding if c.verdict == UNKNOWN)
-            # An unknown must stay visible from the outside, so it goes in the summary
-            # text — and, being the mark that matters most, keeps full colour even
-            # collapsed. A fold that is all misses is the ordinary case, so it stays dim.
+            # An unknown must stay visible: the summary names it, and the fold
+            # opens one level so the collection carrying the ? is on screen
+            # without a keypress. A fold that is all misses is the ordinary
+            # case, so it stays closed and dim.
             summary = f"[yellow]{unknown_n} with ?[/]" if unknown_n else "[dim]all ✗[/]"
             fold = group_node.add(
                 f"{n} preceding collections   {summary}",
                 data={"kind": "summary", "name": logged_col.group.name, "priority": logged_col.group.priority,
                       "collections": preceding},
-                expand=self._expand_all,
+                expand=self._expand_all or unknown_n > 0,
             )
             for c in preceding:
                 self._add_collection(fold, c, highlight)
@@ -433,7 +445,7 @@ class TracePanel(Vertical):
         self._render_detail(event.node)
 
     def _render_detail(self, node: TreeNode | None) -> None:
-        detail = self.query_one("#trace-detail", Static)
+        detail = self.query_one("#trace-detail-text", Static)
         data = node.data if node is not None else None
         if not isinstance(data, dict):
             detail.update("")

@@ -243,7 +243,7 @@ async def test_footer_with_trace(structured_record, mgmt, firewall_id):  # noqa:
         await _load(app, pilot, firewall_id)
         dialog = await _open_detail(app, pilot, _matched_network_row(structured_record))
         assert _footer_text(dialog) == (
-            "[dim]Enter expand/collapse · p open in Policy tab · a all / focused · Esc close[/]"
+            "[dim]Enter expand/collapse · p open in Policy tab · a all / focused · Shift+↑↓ detail · Esc close[/]"
         )
 
 

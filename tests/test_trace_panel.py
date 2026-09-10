@@ -16,6 +16,7 @@ from __future__ import annotations
 import time
 
 import pytest
+from textual.containers import VerticalScroll
 from textual.widgets import Static, TabbedContent, Tree
 
 from fw_parser import parse_record
@@ -168,10 +169,28 @@ async def test_preceding_collections_fold_and_flag_the_unknown_one(structured_re
         tree = screen.query_one("#trace-tree", Tree)
         fold = next(n for n in _tree_nodes(tree) if n.label.plain.startswith("3 preceding collections"))
         assert "1 with ?" in fold.label.plain
-        assert not fold.is_expanded  # collapsed by default, but still expandable
-        assert fold.allow_expand and len(fold.children) == 3
+        # A ? keeps its fold open one level: the uncertain collection is on
+        # screen without a keypress, its rules still folded.
+        assert fold.is_expanded and fold.allow_expand and len(fold.children) == 3
         unknown_child = next(c for c in fold.children if c.label.plain.startswith("?"))
         assert unknown_child.label.plain.startswith("? [20] rc-unreadable")
+        assert not any(c.is_expanded for c in fold.children if c.allow_expand)
+
+
+async def test_preceding_collections_without_unknowns_stay_folded(structured_record, mgmt, firewall_id):
+    snap = _focused_group_snapshot()
+    group = snap.policy.rule_collection_groups[0]
+    group.rule_collections = [rc for rc in group.rule_collections if rc.name != "rc-unreadable"]
+    mgmt["snapshot"] = snap
+    app = FirewallLogApp()
+    async with app.run_test(size=(160, 45)) as pilot:
+        await pilot.pause()
+        await _load(app, pilot, firewall_id)
+        screen = await _open_trace(app, pilot, _open_focused_group_row(structured_record))
+        tree = screen.query_one("#trace-tree", Tree)
+        fold = next(n for n in _tree_nodes(tree) if n.label.plain.startswith("2 preceding collections"))
+        assert "all ✗" in fold.label.plain
+        assert not fold.is_expanded and fold.allow_expand and len(fold.children) == 2
 
 
 async def test_not_evaluated_collections_fold_after_the_logged_one(structured_record, mgmt, firewall_id):
@@ -193,7 +212,7 @@ async def test_not_evaluated_collections_fold_after_the_logged_one(structured_re
         await pilot.pause()
         tree.move_cursor(skipped)
         await pilot.pause()
-        detail = str(screen.query_one("#trace-detail", Static).content)
+        detail = str(screen.query_one("#trace-detail-text", Static).content)
         assert "not evaluated" in detail
 
 
@@ -225,7 +244,8 @@ async def test_a_expands_everything_then_returns_to_focused(structured_record, m
         screen = await _open_trace(app, pilot, _open_focused_group_row(structured_record))
         tree = screen.query_one("#trace-tree", Tree)
         fold = next(n for n in _tree_nodes(tree) if n.label.plain.startswith("3 preceding collections"))
-        assert not fold.is_expanded
+        assert fold.is_expanded                                      # open one level: it holds a ?
+        assert not any(c.is_expanded for c in fold.children if c.allow_expand)
         await pilot.press("a")
         await pilot.pause()
         tree = screen.query_one("#trace-tree", Tree)
@@ -235,7 +255,8 @@ async def test_a_expands_everything_then_returns_to_focused(structured_record, m
         await pilot.pause()
         tree = screen.query_one("#trace-tree", Tree)
         fold = next(n for n in _tree_nodes(tree) if n.label.plain.startswith("3 preceding collections"))
-        assert not fold.is_expanded  # back to focused
+        assert fold.is_expanded                                      # back to focused
+        assert not any(c.is_expanded for c in fold.children if c.allow_expand)
 
 
 # ── keys: Enter only toggles, never dismisses or navigates ───────────────────
@@ -298,7 +319,7 @@ async def test_detail_shows_every_check_verbatim_and_header_names_never_values(s
             RuleCollection="rc-app", Rule="insert-headers",
         ))
         screen = await _open_trace(app, pilot, row)
-        detail = str(screen.query_one("#trace-detail", Static).content)
+        detail = str(screen.query_one("#trace-detail-text", Static).content)
         # every Check.detail, verbatim: the logged rule's own checks, taken
         # from the trace rather than retyped here
         logged = [r for p in screen._trace.passes for c in p.collections for r in c.rules if r.logged]
@@ -357,3 +378,32 @@ async def test_threat_intel_row_still_renders_its_two_lines(structured_record, m
         assert len(labels) == 2, labels
         assert labels[0].startswith("  Threat Intelligence   hit — Alert by Threat Intelligence (mode Alert)")
         assert labels[1].startswith("  DNAT, Network and Application rules   not evaluated")
+
+
+# ── keys: Shift+↑↓ scroll the selection detail without leaving the tree ───────
+
+async def test_shift_arrows_scroll_the_selection_detail(structured_record, mgmt, firewall_id):
+    """At 120x30 the detail is capped at five rows and the header rule's
+    detail has more; the tree keeps the focus, the detail scrolls."""
+    mgmt["snapshot"] = _header_snapshot()
+    app = FirewallLogApp()
+    async with app.run_test(size=(120, 30)) as pilot:
+        await pilot.pause()
+        await _load(app, pilot, firewall_id)
+        row = parse_record(structured_record(
+            "AZFWApplicationRule", Protocol="HTTPS", SourceIp="10.3.5.4", SourcePort=1, DestinationPort=443,
+            Fqdn="www.example.com", Action="Allow", Policy="fwp-c", RuleCollectionGroup="rcg-app",
+            RuleCollection="rc-app", Rule="insert-headers",
+        ))
+        screen = await _open_trace(app, pilot, row)
+        detail = screen.query_one("#trace-detail", VerticalScroll)
+        assert detail.max_scroll_y > 0 and detail.scroll_y == 0
+        tree = screen.query_one("#trace-tree", Tree)
+        assert tree.has_focus
+        await pilot.press("shift+down")
+        await pilot.pause()
+        assert detail.scroll_y == 1 and tree.has_focus
+        await pilot.press("shift+down", "shift+up", "shift+up")
+        await pilot.pause()
+        assert detail.scroll_y == 0
+        assert "Shift+↑↓ detail" in str(screen.query_one("#dialog-footer", Static).content)

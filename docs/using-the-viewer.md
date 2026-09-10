@@ -98,7 +98,8 @@ with the IP groups containing source and destination, and the evaluation trace
 beside the fields. The trace is described in
 [Evaluation trace](policy-context.md#evaluation-trace); the keys inside the
 dialog are `Enter` to fold a node, `p` to open the selected rule in the Policy
-tab, `a` to switch between the focused and the full tree.
+tab, `a` to switch between the focused and the full tree, `Shift` + `↑` / `↓`
+to scroll the selection detail under the tree.
 
 On a terminal narrower than 120 columns the fields and the trace become two
 tabs inside the dialog, *Fields* and *Policy trace*, switched with `Tab`; the
@@ -139,6 +140,7 @@ authentication errors stop immediately with a hint rather than retrying.
 | `Ctrl` + `s` | Save an SVG screenshot of the current view                                                 |
 | `Enter`      | Open the row details, with the evaluation trace beside them when policy metadata is loaded |
 | `p`, `a`, `Tab` | In the row details: open the selected rule in the Policy tab, toggle the full trace, switch tabs on a narrow terminal |
+| `Shift` + `↑` / `↓` | In the row details: scroll the selection detail under the trace tree |
 | `Escape`     | Clear all filter inputs (or close the open dialog)                                         |
 | `f`          | Jump focus to the filters                                                                  |
 | `Tab`        | Move between filter inputs                                                                 |

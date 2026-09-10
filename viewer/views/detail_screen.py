@@ -42,7 +42,7 @@ _IDPS_FIELDS = ("Severity", "Signature", "Class", "Description")  # "Class": the
 # Categories whose Source/Destination equal the header's endpoints exactly —
 # repeating them in the fields would say the same thing twice.
 _DUP_HEADER_ENDPOINTS = {"apprule", "networkrule", "natrule", "threatintel", "idps"}
-_FOOTER_WITH_TRACE = "Enter expand/collapse · p open in Policy tab · a all / focused · Esc close"
+_FOOTER_WITH_TRACE = "Enter expand/collapse · p open in Policy tab · a all / focused · Shift+↑↓ detail · Esc close"
 _FOOTER_ALONE = "Esc close"
 # The tabbed layout sits on a terminal under 120 columns, where the full
 # footer would wrap and cost the tree a row; same keys, fewer words.
@@ -534,9 +534,13 @@ class DetailDialog(ModalScreen[str | None]):
             self.query_one(TracePanel).toggle_expand_all()
         elif event.key == "p" and self._trace is not None:
             event.stop()
-            # open_selected_rule lands with the trace-screen focused-tree work
-            # (same contract as toggle_expand_all above); not yet on this branch.
             self.query_one(TracePanel).open_selected_rule()
+        elif event.key in ("shift+down", "shift+up") and self._trace is not None:
+            # The selection detail under the tree is capped in height and
+            # scrolls, but focus stays on the tree; these two keys scroll it
+            # without moving the focus, for readers without a mouse wheel.
+            event.stop()
+            self.query_one(TracePanel).scroll_detail(1 if event.key == "shift+down" else -1)
 
     def _toggle_tab(self) -> None:
         tabs = self.query_one(TabbedContent)

@@ -294,7 +294,25 @@ def test_maintenance_rows_expiration_set_in_the_future_is_appended():
                           start="2020-01-01 22:00", duration="05:00", time_zone="UTC", recur_every="Day",
                           expiration="2099-12-31 23:59")
     rows = _maintenance_rows(_fw(), [w])
-    assert rows[0] == _row("Maintenance", "daily 22:00 for 5 h, UTC until 2099-12-31   [dim]mc[/]")
+    assert rows[0] == _row("Maintenance", "daily 22:00 for 5 h, UTC until 2099-12-31 23:59   [dim]mc[/]")
+
+
+@pytest.mark.parametrize("days_ago, expired", [(2, True), (1, False), (0, False), (-1, False)])
+def test_maintenance_rows_expired_only_after_a_full_day_in_any_zone(days_ago, expired):
+    """The expiration is written in the window's own zone, which the viewer
+    does not resolve; "expired" is claimed only once a full local day has
+    passed, before that the line shows the expiration with its time."""
+    from datetime import date, timedelta
+    exp = date.today() - timedelta(days=days_ago)
+    w = MaintenanceWindow(assignment_name="a", configuration_name="mc", readable=True,
+                          start="2010-01-01 22:00", duration="05:00", time_zone="W. Europe Standard Time",
+                          recur_every="Day", expiration=f"{exp.isoformat()} 23:59")
+    rows = _maintenance_rows(_fw(), [w])
+    if expired:
+        assert rows == [_row("Maintenance", f"[yellow]expired {exp.isoformat()}[/]   [dim]mc[/]")]
+    else:
+        assert "expired" not in rows[0]
+        assert f"until {exp.isoformat()} 23:59" in str(rows[0])
 
 
 def test_maintenance_rows_expired_window_skips_the_note():

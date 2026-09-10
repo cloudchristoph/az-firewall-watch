@@ -312,7 +312,7 @@ async def test_trace_tree_names_inserted_headers_under_the_logged_rule_never_val
         assert not any("HTTP header" in lbl for lbl in labels)  # names/values live in the detail now
         assert not any(TENANT_ID_VALUE in lbl or "x[/]" in lbl for lbl in labels)
         # the logged rule is the cursor node after open; its detail carries the header names
-        detail = str(screen.query_one("#trace-detail", StaticWidget).content)
+        detail = str(screen.query_one("#trace-detail-text", StaticWidget).content)
         assert "inserts 2 HTTP headers: X-Tenant-Id, X-Forwarded-Tenant" in detail
         assert TENANT_ID_VALUE not in detail and "x[/]" not in detail
 
@@ -333,20 +333,28 @@ async def test_revealed_value_with_markup_characters_is_escaped(structured_recor
         assert "[b]x[/]" not in details
 
 
-@pytest.mark.parametrize("sku_tier, terminate_tls, expected", [
-    ("Standard", False, "HTTPS on Standard/Basic: headers are inserted into HTTP only"),
-    ("Premium", False, "HTTPS without TLS inspection on this rule: headers are inserted into HTTP only"),
-    ("Premium", True, "inserted into HTTP and TLS-inspected HTTPS"),
-    ("", False, "policy SKU unknown: whether HTTPS gets the headers cannot be told from here"),
+@pytest.mark.parametrize("sku_tier, terminate_tls, protocols, expected", [
+    # a rule that matches HTTP and HTTPS: the headers land in HTTP at least
+    ("Standard", False, ("Http", "Https"), "HTTPS on Standard/Basic: headers are inserted into HTTP only"),
+    ("Premium", False, ("Http", "Https"), "HTTPS without TLS inspection on this rule: headers are inserted into HTTP only"),
+    ("Premium", True, ("Http", "Https"), "inserted into HTTP and TLS-inspected HTTPS"),
+    # an HTTPS-only rule matches no HTTP, so "HTTP only" would name traffic it never sees
+    ("Standard", False, ("Https",), "HTTPS on Standard/Basic: no traffic this rule matches gets the headers"),
+    ("Premium", False, ("Https",), "HTTPS without TLS inspection on this rule: no traffic this rule matches gets the headers"),
+    ("Premium", True, ("Https",), "inserted into TLS-inspected HTTPS"),
+    ("", False, ("Https",), "policy SKU unknown: whether HTTPS gets the headers cannot be told from here"),
 ])
-async def test_sku_and_tls_scope_line(structured_record, monkeypatch, firewall_id, sku_tier, terminate_tls, expected):
-    _install_snapshot(monkeypatch, _apprule_snapshot(sku_tier=sku_tier, terminate_tls=terminate_tls))
+async def test_sku_and_tls_scope_line(structured_record, monkeypatch, firewall_id, sku_tier, terminate_tls, protocols,
+                                      expected):
+    _install_snapshot(monkeypatch, _apprule_snapshot(sku_tier=sku_tier, terminate_tls=terminate_tls, protocols=protocols))
     app = FirewallLogApp()
     async with app.run_test(size=(160, 45)) as pilot:
         await pilot.pause()
         await _open_policy_tab_on_rule(app, pilot, firewall_id)
         details = str(app.query_one("#policy-details", Static).content)
         assert expected in details
+        if "HTTP only" not in expected and "into HTTP and" not in expected:
+            assert "into HTTP" not in details
 
 
 async def test_terminate_tls_true_shows_tls_inspection_on_line(structured_record, monkeypatch, firewall_id):

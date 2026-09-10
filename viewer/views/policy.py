@@ -349,9 +349,14 @@ class PolicyView(Static):
         return lines
 
     def _header_insertion_scope_line(self, rule: Rule) -> str:
-        """Which traffic actually gets the headers, given the policy SKU and
-        whether this rule terminates TLS (Premium-only TLS inspection)."""
-        has_https = any(p.lower() == "https" for p in rule.protocols)
+        """Which traffic actually gets the headers, given the protocols the
+        rule can match, the policy SKU and whether this rule terminates TLS
+        (Premium-only TLS inspection). Headers go into HTTP and into HTTPS
+        the firewall decrypts; an HTTPS-only rule without inspection inserts
+        nowhere, and saying "HTTP only" there would name traffic it never
+        matches."""
+        protocols = {p.lower() for p in rule.protocols}
+        has_http, has_https = "http" in protocols, "https" in protocols
         if not has_https:
             return "[dim]inserted into HTTP[/]"
         tier = self._policy_sku_tier
@@ -360,10 +365,15 @@ class PolicyView(Static):
             # on it, so say that it is not known rather than assume a tier.
             return "[yellow]policy SKU unknown: whether HTTPS gets the headers cannot be told from here[/]"
         if tier != "Premium":
-            return "[yellow]HTTPS on Standard/Basic: headers are inserted into HTTP only[/]"
-        if not rule.terminate_tls:
-            return "[yellow]HTTPS without TLS inspection on this rule: headers are inserted into HTTP only[/]"
-        return "[dim]inserted into HTTP and TLS-inspected HTTPS[/]"
+            why = "HTTPS on Standard/Basic"
+        elif not rule.terminate_tls:
+            why = "HTTPS without TLS inspection on this rule"
+        else:
+            return ("[dim]inserted into HTTP and TLS-inspected HTTPS[/]" if has_http
+                    else "[dim]inserted into TLS-inspected HTTPS[/]")
+        if has_http:
+            return f"[yellow]{why}: headers are inserted into HTTP only[/]"
+        return f"[yellow]{why}: no traffic this rule matches gets the headers[/]"
 
     @staticmethod
     def _render_group_values(group_ids: list[str], ip_groups: dict[str, IpGroupInfo]) -> str:

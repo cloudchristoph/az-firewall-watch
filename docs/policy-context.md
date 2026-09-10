@@ -146,6 +146,7 @@ checked against real records rather than the documentation.
 | `Enter`        | Fold or unfold the selected node                              |
 | `p`            | Open the selected rule in the Policy tab                      |
 | `a`            | The full tree, including the folded collections, and back     |
+| `Shift` + `↑` / `↓` | Scroll the selection detail under the tree                |
 | `Tab`          | On a terminal under 120 columns: switch between *Fields* and *Policy trace* |
 | `Escape` / `q` | Close the dialog                                              |
 

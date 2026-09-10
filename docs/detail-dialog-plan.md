@@ -115,9 +115,10 @@ this order.
 6. ✓ **Small terminals** (`viewer/views/detail_screen.py`)
    Below 120 columns the two columns become tabs inside the dialog
    (*Fields* / *Policy trace*, `Tab` switches); below 30 rows the tree gets
-   the space and the selection detail collapses to two lines. Every pane
+   the space and the selection detail collapses to its name lines. Every pane
    scrolls on its own; nothing is cut off.
-   Tests: 160×45 side by side, 120×30 tabs, 80×24 tabs with scrolling; the
+   Tests: 160×45 side by side, 120×30 side by side with the selection detail
+   shortened, 80×24 tabs with scrolling; the
    logged rule reachable at all three sizes; without policy context the
    dialog is the fields alone at all three sizes.
 

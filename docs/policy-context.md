@@ -68,7 +68,7 @@ The metadata also feeds back into the **Logs** tab:
 - The row detail dialog lists the IP groups that contain source and destination.
   Whatever the trace beside it already shows (the logged rule and its criteria,
   policy path, priorities, action, SKU) is left out rather than printed twice;
-  the rule's full definition is one `Enter` away in the Policy tab.
+  the rule's full definition is one `p` away in the Policy tab.
 - The status bar shows a short summary: `Policy: Premium · 11 IP groups · fresh`.
 
 ## Evaluation trace
@@ -151,8 +151,10 @@ checked against real records rather than the documentation.
 
 Below 120 columns the fields and the trace are tabs rather than columns, and
 the trace tab opens first. Below 40 rows the selection detail shrinks so the
-tree keeps its rows; below 30 the header's outcome line drops the group and
-collection and keeps the rule name. Nothing is cut off: every pane scrolls.
+tree keeps its rows, below 30 it keeps only its name lines. The header's
+outcome line is measured against the dialog's width: when it would wrap it
+drops the group and collection, then the cache age, and keeps the rule name.
+Nothing is cut off: every pane scrolls.
 
 The trace is built only for rows that are a policy decision: `NetworkRule`,
 `AppRule`, `NATRule` and `ThreatIntel`. For anything else the dialog shows the

@@ -104,7 +104,8 @@ On a terminal narrower than 120 columns the fields and the trace become two
 tabs inside the dialog, *Fields* and *Policy trace*, switched with `Tab`; the
 trace tab opens first so the logged rule is the first thing on screen. Below
 40 rows the selection detail under the tree gives its rows to the tree, below
-30 the header shortens to the rule name. Every pane scrolls on its own.
+30 it keeps only its name lines. A header line that would wrap drops the
+group and collection and keeps the rule name. Every pane scrolls on its own.
 
 Rows that are not a policy decision (`DnsQuery`, `DnsFailure`, `IDPS`, `FlowTrace`,
 `FatFlow`) show their fields alone, with a line underneath that says why, for

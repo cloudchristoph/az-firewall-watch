@@ -11,7 +11,16 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from textual.widgets import Button, ContentSwitcher, Input, Label, ListView, RadioSet, Static
+from textual.widgets import (
+    Button,
+    ContentSwitcher,
+    Input,
+    Label,
+    ListView,
+    LoadingIndicator,
+    RadioSet,
+    Static,
+)
 
 import setup.screens as screens
 from setup.app import WizardApp
@@ -107,6 +116,8 @@ def fake_ops(monkeypatch):
 
     async def scan_firewalls(sub_id, sub_name, log):
         state["calls"].append(("firewalls", sub_id))
+        if isinstance(state["firewalls"], Exception):
+            raise state["firewalls"]
         return state["firewalls"]
 
     async def resolve_sas_conn_str(sub_id, rg, ns, eh, rule_name, log, confirm_create):
@@ -175,6 +186,31 @@ async def test_welcome_quit_exits_without_env(env_file):
         await pilot.pause()
         assert app._exit
     assert not env_file.exists()
+
+
+async def test_welcome_keyboard_walks_past_section_headers(env_file, fake_ops):
+    """The radio set holds two Static headers between its buttons. Textual
+    puts the keyboard cursor on the first child at mount, which here is the
+    "Existing Event Hub" header, so the very first Enter lands on a Static.
+    That must not crash the wizard (what _SafeRadioSet is for), and walking
+    down must reach the last button behind the second header."""
+    app = WizardApp(env_file)
+    async with app.run_test(size=(100, 40)) as pilot:
+        await pilot.pause()
+        radio = app.screen.query_one("#welcome-radio", RadioSet)
+        radio.focus()
+        await pilot.pause()
+        assert radio._selected == 0  # the header, not the pre-selected "Discover"
+        await pilot.press("enter")
+        await pilot.pause()
+        assert radio.pressed_button is not None and radio.pressed_button.id == "opt-discover"
+        await pilot.press("down", "down", "down", "down", "down")  # discover, enter, paste, header, deploy
+        await pilot.press("enter")
+        await pilot.pause()
+        assert radio.pressed_button is not None and radio.pressed_button.id == "opt-deploy"
+        await pilot.click("#btn-next")
+        await pilot.pause()
+        assert isinstance(app.screen, DeployNewScreen)
 
 
 # ── Paste connection string ──────────────────────────────────────────────────
@@ -290,6 +326,29 @@ class TestEnterExistingHub:
         assert "EVENT_HUB_NAMESPACE=lab.servicebus.windows.net" in text
         assert "EVENT_HUB_NAME=firewall-logs" in text
 
+    async def test_policy_context_back_keeps_wizard_open(self, env_file):
+        app = WizardApp(env_file)
+        async with app.run_test(size=(100, 40)) as pilot:
+            await self._open(app, pilot)
+            app.screen.query_one("#inp-ns", Input).value = "lab.servicebus.windows.net"
+            app.screen.query_one("#inp-hub", Input).value = "firewall-logs"
+            await pilot.click("#btn-save")
+            await wait_until(pilot, lambda: isinstance(app.screen, PolicyContextScreen))
+            await pilot.pause()
+            await pilot.press("escape")
+            await pilot.pause()
+            assert isinstance(app.screen, EnterExistingHubScreen)
+            assert not app._exit
+        assert not env_file.exists()
+
+    async def test_back_returns_to_welcome(self, env_file):
+        app = WizardApp(env_file)
+        async with app.run_test(size=(100, 40)) as pilot:
+            await self._open(app, pilot)
+            await pilot.click("#btn-back")
+            await pilot.pause()
+            assert isinstance(app.screen, WelcomeScreen)
+
 
 # ── Auth method modal ────────────────────────────────────────────────────────
 
@@ -333,6 +392,65 @@ class TestAuthMethodScreen:
                     await pilot.press("escape")
 
             assert await self._ask(app, pilot, _back) is None
+
+
+# ── Policy context modal ─────────────────────────────────────────────────────
+
+class TestPolicyContextScreen:
+    async def _ask(self, app, pilot, action: Callable[[], Any]):
+        result: list = []
+        app.push_screen(PolicyContextScreen(), callback=result.append)
+        await wait_until(pilot, lambda: isinstance(app.screen, PolicyContextScreen))
+        await pilot.pause()
+        await action()
+        await wait_until(pilot, lambda: bool(result))
+        return result[0]
+
+    @pytest.mark.parametrize("how", ["button", "escape", "q"])
+    async def test_back_returns_none(self, env_file, how):
+        app = WizardApp(env_file)
+        async with app.run_test(size=(100, 40)) as pilot:
+            await pilot.pause()
+
+            async def _back():
+                if how == "button":
+                    await pilot.click("#btn-back")
+                else:
+                    await pilot.press(how)
+
+            assert await self._ask(app, pilot, _back) is None
+
+    async def test_next_returns_the_choice(self, env_file):
+        app = WizardApp(env_file)
+        async with app.run_test(size=(100, 40)) as pilot:
+            await pilot.pause()
+            assert await self._ask(app, pilot, lambda: pilot.click("#btn-next")) is True
+
+            async def _off():
+                await _pick_radio(pilot, app.screen, "#opt-context-off")
+                await pilot.click("#btn-next")
+
+            assert await self._ask(app, pilot, _off) is False
+
+
+# ── Confirm rule creation modal ──────────────────────────────────────────────
+
+class TestConfirmCreateRuleScreen:
+    @pytest.mark.parametrize("key", ["escape", "q"])
+    async def test_close_keys_decline(self, env_file, key):
+        app = WizardApp(env_file)
+        async with app.run_test(size=(100, 40)) as pilot:
+            await pilot.pause()
+            result: list = []
+            app.push_screen(
+                ConfirmCreateRuleScreen(rule_name="r", namespace="ns", event_hub="h"),
+                callback=result.append,
+            )
+            await wait_until(pilot, lambda: isinstance(app.screen, ConfirmCreateRuleScreen))
+            await pilot.pause()
+            await pilot.press(key)
+            await wait_until(pilot, lambda: bool(result))
+            assert result == [False]
 
 
 # ── Pick existing hub (discover) ─────────────────────────────────────────────
@@ -481,6 +599,44 @@ class TestPickExisting:
             await pilot.click("#btn-back")
             await wait_until(pilot, lambda: isinstance(app.screen, PickExistingScreen))
             assert not app._exit
+
+    async def test_policy_context_back_returns_to_list(self, env_file, fake_ops):
+        app = WizardApp(env_file)
+        async with app.run_test(size=(100, 40)) as pilot:
+            await self._open_and_scan(app, pilot)
+            app.screen.query_one("#hub-list", ListView).index = 0
+            await pilot.click("#btn-select")
+            await wait_until(pilot, lambda: isinstance(app.screen, AuthMethodScreen))
+            await pilot.pause()
+            await pilot.click("#btn-next")
+            await wait_until(pilot, lambda: isinstance(app.screen, PolicyContextScreen))
+            await pilot.pause()
+            await pilot.press("escape")
+            await wait_until(pilot, lambda: isinstance(app.screen, PickExistingScreen))
+            await pilot.pause()
+            assert app.screen.query_one(ContentSwitcher).current == "phase-select"
+            assert not app._exit
+            assert "resolve_sas" not in [c[0] if isinstance(c, tuple) else c for c in fake_ops["calls"]]
+        assert not env_file.exists()
+
+    async def test_back_from_list_returns_to_welcome(self, env_file, fake_ops):
+        app = WizardApp(env_file)
+        async with app.run_test(size=(100, 40)) as pilot:
+            await self._open_and_scan(app, pilot)
+            await pilot.click("#btn-back-select")
+            await pilot.pause()
+            assert isinstance(app.screen, WelcomeScreen)
+
+    async def test_back_from_failed_scan_returns_to_welcome(self, env_file, fake_ops):
+        fake_ops["hubs"] = []
+        app = WizardApp(env_file)
+        async with app.run_test(size=(100, 40)) as pilot:
+            await pilot.pause()
+            await app.push_screen(PickExistingScreen())
+            await wait_until(pilot, lambda: bool(_visible_error(app.screen, "#lbl-scan-error")))
+            await pilot.click("#btn-back-loading")
+            await pilot.pause()
+            assert isinstance(app.screen, WelcomeScreen)
 
 
 # ── Deploy new hub ───────────────────────────────────────────────────────────
@@ -634,4 +790,126 @@ class TestDeployNew:
             await wait_until(pilot, lambda: not app.screen.query_one("#btn-back-progress", Button).disabled)
             assert not app._exit
             assert app.screen.query_one(ContentSwitcher).current == "step-progress"
+        assert not env_file.exists()
+
+    async def test_back_after_failed_deploy_returns_to_summary(self, env_file, fake_ops):
+        fake_ops["deploy_conn"] = RuntimeError("quota exceeded")
+        app = WizardApp(env_file)
+        async with app.run_test(size=(100, 50)) as pilot:
+            await self._through_summary(app, pilot, "sas")
+            await pilot.click("#btn-deploy")
+            await wait_until(pilot, lambda: not app.screen.query_one("#btn-back-progress", Button).disabled)
+            assert not app.screen.query_one("#progress-spinner", LoadingIndicator).display
+            await pilot.click("#btn-back-progress")
+            await pilot.pause()
+            assert app.screen.query_one(ContentSwitcher).current == "step-summary"
+            assert "Sub One" in str(app.screen.query_one("#summary-text", Static).content)
+
+    async def test_login_failure_shows_error(self, env_file, fake_ops):
+        fake_ops["user"] = RuntimeError("Azure CLI not found.\n  macOS: brew install azure-cli")
+        app = WizardApp(env_file)
+        async with app.run_test(size=(100, 50)) as pilot:
+            await pilot.pause()
+            await app.push_screen(DeployNewScreen())
+            await wait_until(pilot, lambda: bool(_visible_error(app.screen, "#lbl-deploy-error")))
+            assert "Azure CLI not found" in _visible_error(app.screen, "#lbl-deploy-error")
+            assert not app.screen.query_one("#deploy-spinner", LoadingIndicator).display
+            assert app.screen.query_one(ContentSwitcher).current == "step-loading"
+            assert "subs" not in fake_ops["calls"]
+            await pilot.click("#btn-back-loading")
+            await pilot.pause()
+            assert isinstance(app.screen, WelcomeScreen)
+
+    async def test_firewall_scan_failure_shows_error(self, env_file, fake_ops):
+        fake_ops["firewalls"] = RuntimeError("AuthorizationFailed on Sub One")
+        app = WizardApp(env_file)
+        async with app.run_test(size=(100, 50)) as pilot:
+            await pilot.pause()
+            await app.push_screen(DeployNewScreen())
+            await wait_until(pilot, lambda: app.screen.query_one(ContentSwitcher).current == "step-subscription")
+            await pilot.pause()
+            app.screen.query_one("#sub-list", ListView).index = 0
+            await pilot.click("#btn-next-sub")
+            await wait_until(pilot, lambda: bool(_visible_error(app.screen, "#lbl-fw-error")))
+            assert "AuthorizationFailed" in _visible_error(app.screen, "#lbl-fw-error")
+            assert not app.screen.query_one("#fw-spinner", LoadingIndicator).display
+            assert not app.screen.query_one("#fw-list", ListView).display
+
+    async def test_next_without_subscription_selection_stays(self, env_file, fake_ops):
+        app = WizardApp(env_file)
+        async with app.run_test(size=(100, 50)) as pilot:
+            await pilot.pause()
+            await app.push_screen(DeployNewScreen())
+            await wait_until(pilot, lambda: app.screen.query_one(ContentSwitcher).current == "step-subscription")
+            await pilot.pause()
+            app.screen.query_one("#sub-list", ListView).index = None
+            await pilot.click("#btn-next-sub")
+            await pilot.pause()
+            assert app.screen.query_one(ContentSwitcher).current == "step-subscription"
+            assert not any(isinstance(c, tuple) and c[0] == "firewalls" for c in fake_ops["calls"])
+
+    async def test_next_without_firewall_selection_stays(self, env_file, fake_ops):
+        app = WizardApp(env_file)
+        async with app.run_test(size=(100, 50)) as pilot:
+            await pilot.pause()
+            await app.push_screen(DeployNewScreen())
+            sw = lambda: app.screen.query_one(ContentSwitcher).current  # noqa: E731
+            await wait_until(pilot, lambda: sw() == "step-subscription")
+            await pilot.pause()
+            app.screen.query_one("#sub-list", ListView).index = 0
+            await pilot.click("#btn-next-sub")
+            await wait_until(pilot, lambda: app.screen.query_one("#fw-list", ListView).display)
+            await pilot.pause()
+            app.screen.query_one("#fw-list", ListView).index = None
+            await pilot.click("#btn-next-fw")
+            await pilot.pause()
+            assert sw() == "step-firewall"
+            assert app.screen.query_one("#inp-rg", Input).value == ""  # naming defaults not derived
+
+    async def test_back_buttons_walk_the_steps_to_welcome(self, env_file, fake_ops):
+        app = WizardApp(env_file)
+        async with app.run_test(size=(100, 50)) as pilot:
+            await self._to_naming(app, pilot)
+            sw = lambda: app.screen.query_one(ContentSwitcher).current  # noqa: E731
+            for button, step in (
+                ("#btn-back-naming", "step-firewall"),
+                ("#btn-back-fw", "step-subscription"),
+                ("#btn-back-sub", "step-loading"),
+            ):
+                await pilot.click(button)
+                await pilot.pause()
+                assert sw() == step
+            await pilot.click("#btn-back-loading")
+            await pilot.pause()
+            assert isinstance(app.screen, WelcomeScreen)
+            assert not app._exit
+        assert not env_file.exists()
+
+    async def test_back_from_summary_returns_to_naming(self, env_file, fake_ops):
+        app = WizardApp(env_file)
+        async with app.run_test(size=(100, 50)) as pilot:
+            await self._through_summary(app, pilot, "sas")
+            await pilot.click("#btn-back-summary")
+            await pilot.pause()
+            assert app.screen.query_one(ContentSwitcher).current == "step-naming"
+            assert app.screen.query_one("#inp-ns-deploy", Input).value == "ehns-fwlogs-gwc-001"
+
+    @pytest.mark.parametrize("dialog", [AuthMethodScreen, PolicyContextScreen])
+    async def test_dialog_back_returns_to_naming(self, env_file, fake_ops, dialog):
+        app = WizardApp(env_file)
+        async with app.run_test(size=(100, 50)) as pilot:
+            await self._to_naming(app, pilot)
+            await pilot.click("#btn-next-naming")
+            await wait_until(pilot, lambda: isinstance(app.screen, AuthMethodScreen))
+            await pilot.pause()
+            if dialog is PolicyContextScreen:
+                await pilot.click("#btn-next")
+                await wait_until(pilot, lambda: isinstance(app.screen, PolicyContextScreen))
+                await pilot.pause()
+            await pilot.click("#btn-back")
+            await wait_until(pilot, lambda: isinstance(app.screen, DeployNewScreen))
+            await pilot.pause()
+            assert app.screen.query_one(ContentSwitcher).current == "step-naming"
+            assert not app._exit
+            assert not any(isinstance(c, tuple) and c[0] == "deploy" for c in fake_ops["calls"])
         assert not env_file.exists()

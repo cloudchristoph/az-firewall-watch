@@ -1,11 +1,13 @@
 """setup/services.py, setup/utils.py and the run_wizard() entry decision."""
 from __future__ import annotations
 
+import subprocess
 from pathlib import Path
 
 import pytest
 
 import setup.app as wizard_app
+import setup.utils as utils
 from setup.services import get_existing_conn_str, has_entra_config, write_env, write_env_entra
 from setup.utils import find_az, location_short
 
@@ -95,6 +97,26 @@ def test_find_az_uses_which(monkeypatch):
 def test_find_az_falls_back_to_windows_shim(monkeypatch):
     monkeypatch.setattr("shutil.which", lambda name: r"C:\az.cmd" if name == "az.cmd" else None)
     assert find_az() == r"C:\az.cmd"
+
+
+def test_run_az_without_cli_raises(monkeypatch):
+    monkeypatch.setattr(utils, "find_az", lambda: None)
+    with pytest.raises(FileNotFoundError):
+        utils.run_az("account", "show")
+
+
+async def test_az_async_runs_the_cli_off_the_event_loop(monkeypatch):
+    seen: list[tuple] = []
+
+    def _run(cmd, capture_output, text, check):
+        seen.append((tuple(cmd), capture_output, text, check))
+        return subprocess.CompletedProcess(cmd, 0, stdout="ok\n", stderr="")
+
+    monkeypatch.setattr(utils, "find_az", lambda: "/usr/bin/az")
+    monkeypatch.setattr(utils.subprocess, "run", _run)
+    result = await utils.az_async("account", "show", check=True)
+    assert result.stdout == "ok\n"
+    assert seen == [(("/usr/bin/az", "account", "show"), True, True, True)]
 
 
 def test_find_az_missing(monkeypatch):

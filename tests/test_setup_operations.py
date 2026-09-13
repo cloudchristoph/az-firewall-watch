@@ -123,6 +123,17 @@ async def test_ensure_login_without_cli_raises(monkeypatch, log):
         await ops.cli_ensure_login(_logger(log), lambda: None)
 
 
+async def test_ensure_login_tolerates_failed_version_and_object_id_lookups(az, log):
+    """Neither lookup is essential: the version is cosmetic, and without the
+    object id the deploy step falls back to a manual role assignment."""
+    az.on("version", rc=1, result="")
+    az.on("account", "show", result="me@example.com\n")
+    az.on("ad", "signed-in-user", "show", rc=1, result="")
+    user, oid = await ops.cli_ensure_login(_logger(log), lambda: None)
+    assert (user, oid) == ("me@example.com", "")
+    assert any("Azure CLI unknown" in line for line in log)
+
+
 # ── discovery ────────────────────────────────────────────────────────────────
 
 async def test_list_subscriptions(az, log):
@@ -149,10 +160,25 @@ async def test_scan_event_hubs_across_subscriptions(az, log):
     ]
 
 
+async def test_scan_event_hubs_skips_namespace_whose_hubs_cannot_be_listed(az, log):
+    az.on("eventhubs", "namespace", "list", result=[
+        {"name": "ns-locked", "rg": "rg-a"}, {"name": "ns-open", "rg": "rg-a"},
+    ])
+    az.on("eventhubs", "eventhub", "list", "--namespace-name", "ns-locked", rc=1)
+    az.on("eventhubs", "eventhub", "list", "--namespace-name", "ns-open", result=["firewall-logs"])
+    items = await ops.scan_event_hubs([{"id": "s1", "name": "Sub One"}], _logger(log))
+    assert items == [("s1", "Sub One", "rg-a", "ns-open", "firewall-logs")]
+
+
 async def test_scan_firewalls(az, log):
     az.on("network", "firewall", "list", result=[FW])
     fws = await ops.scan_firewalls("s1", "Sub One", _logger(log))
     assert fws == [FW]
+
+
+async def test_scan_firewalls_on_error_is_empty(az, log):
+    az.on("network", "firewall", "list", rc=1)
+    assert await ops.scan_firewalls("s1", "Sub One", _logger(log)) == []
 
 
 # ── SAS resolution ───────────────────────────────────────────────────────────
@@ -209,6 +235,45 @@ async def test_resolve_sas_falls_back_to_namespace_rule_but_not_root(az, log):
     assert "SharedAccessKeyName=ns-listen" in conn
     assert conn.endswith(";EntityPath=h")
     assert "ns-listen" in az.called("eventhubs", "namespace", "authorization-rule", "keys", "list")[0]
+
+
+async def test_resolve_sas_entity_keys_failure_falls_through_to_namespace(az, log):
+    """A usable entity rule whose keys cannot be read is not the end: the
+    namespace level is tried next, and no rule is created."""
+    az.on("eventhubs", "eventhub", "authorization-rule", "list", result=[
+        {"name": "reader", "rights": ["Listen"]},
+    ])
+    az.on("eventhubs", "eventhub", "authorization-rule", "keys", "list", rc=1, result="")
+    az.on("eventhubs", "namespace", "authorization-rule", "list", result=[
+        {"name": "ns-listen", "rights": ["Listen"]},
+    ])
+    az.on("eventhubs", "namespace", "authorization-rule", "keys", "list", result="Endpoint=sb://ns/;SharedAccessKeyName=ns-listen;SharedAccessKey=K")
+    conn = await ops.resolve_sas_conn_str("s1", "rg", "ns", "h", "wanted", _logger(log), _no_confirm)
+    assert "SharedAccessKeyName=ns-listen" in conn
+    assert conn.endswith(";EntityPath=h")
+    assert az.called("eventhubs", "eventhub", "authorization-rule", "create") == []
+    assert any("Using existing Event Hub rule 'reader'" in line for line in log)
+
+
+async def test_resolve_sas_namespace_keys_failure_leads_to_creation(az, log):
+    """Same at the namespace level: a rule whose keys come back empty counts
+    as unusable, so the wizard asks to create one."""
+    az.on("eventhubs", "eventhub", "authorization-rule", "list", result=[])
+    az.on("eventhubs", "namespace", "authorization-rule", "list", result=[
+        {"name": "ns-listen", "rights": ["Listen"]},
+    ])
+    az.on("eventhubs", "namespace", "authorization-rule", "keys", "list", result="\n")
+    az.on("eventhubs", "eventhub", "authorization-rule", "keys", "list", result="Endpoint=sb://ns/;SharedAccessKeyName=new;SharedAccessKey=K")
+    asked: list[bool] = []
+
+    async def _confirm() -> bool:
+        asked.append(True)
+        return True
+
+    conn = await ops.resolve_sas_conn_str("s1", "rg", "ns", "h", "new", _logger(log), _confirm)
+    assert asked == [True]
+    assert len(az.called("eventhubs", "eventhub", "authorization-rule", "create")) == 1
+    assert "SharedAccessKeyName=new" in conn
 
 
 async def test_resolve_sas_creates_rule_after_confirmation(az, log):
@@ -357,6 +422,18 @@ async def test_deploy_diagnostics_fallback_categories_when_lookup_fails(az, log,
     assert cats == list(ops.VIEWER_CATEGORIES)
     assert "AZFWDnsProxy" not in cats  # not a real category
     assert not any("Aggregation" in c for c in cats)
+
+
+async def test_deploy_only_known_categories_stays_quiet(az, log, no_sleep):
+    _deploy_rules(az).rules.insert(0, (
+        ("monitor", "diagnostic-settings", "categories", "list"),
+        (0, ["AZFWNetworkRule", "AZFWApplicationRule"]),
+    ))
+    await ops.deploy_new_hub(log=_logger(log), **_deploy_kwargs())
+    diag = [c for c in az.calls if c[:3] == ("monitor", "diagnostic-settings", "create")][0]
+    cats = [e["category"] for e in json.loads(diag[diag.index("--logs") + 1])]
+    assert cats == ["AZFWNetworkRule", "AZFWApplicationRule"]
+    assert not any("Not enabling" in line for line in log)
 
 
 async def test_deploy_diagnostics_failure_logs_manual_instructions(az, log, no_sleep):

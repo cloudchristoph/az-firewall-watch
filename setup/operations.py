@@ -338,13 +338,17 @@ async def deploy_new_hub(
     )
     log("[green]✓[/] Namespace ready")
 
-    # Event Hub
+    # Event Hub. The retention is spelled out because the CLI's default (seven
+    # days since 2.6x) is above what the Basic tier accepts, and the create
+    # then fails with MessagingGatewayBadRequest; one day is the tier's maximum
+    # and plenty for a live viewer.
     log(f"[cyan]i[/] Creating Event Hub '{eh_name}'…")
     await az_async(
         "eventhubs", "eventhub", "create",
         "--subscription", sub_id,
         "--name", eh_name, "--namespace-name", ns,
         "--resource-group", rg, "--partition-count", "1",
+        "--cleanup-policy", "Delete", "--retention-time-in-hours", "24",
         "--output", "none",
         check=True,
     )

@@ -506,7 +506,7 @@ async def test_entra_connect_uses_credential_and_verifies_access(monkeypatch, fa
     monkeypatch.setenv("EVENT_HUB_NAME", "firewall-logs")
     verified: list[str] = []
 
-    async def _verify(credential, ns):
+    async def _verify(credential, ns, hub):
         verified.append(ns)
 
     monkeypatch.setattr(streaming, "_verify_data_plane_access", _verify)
@@ -526,7 +526,7 @@ async def test_entra_is_preferred_over_connection_string(monkeypatch, fake_clien
     monkeypatch.setenv("EVENT_HUB_NAMESPACE", "lab-ns.servicebus.windows.net")
     monkeypatch.setenv("EVENT_HUB_NAME", "firewall-logs")
 
-    async def _verify(credential, ns):
+    async def _verify(credential, ns, hub):
         return None
 
     monkeypatch.setattr(streaming, "_verify_data_plane_access", _verify)
@@ -542,7 +542,7 @@ async def test_entra_missing_role_shows_role_hint_without_retry(monkeypatch, fak
     monkeypatch.setenv("EVENT_HUB_NAMESPACE", "lab-ns.servicebus.windows.net")
     monkeypatch.setenv("EVENT_HUB_NAME", "firewall-logs")
 
-    async def _verify(credential, ns):
+    async def _verify(credential, ns, hub):
         raise PermissionError("Missing 'Azure Event Hubs Data Receiver' role on namespace 'lab-ns'.")
 
     monkeypatch.setattr(streaming, "_verify_data_plane_access", _verify)
@@ -561,7 +561,7 @@ async def test_entra_arm_check_failure_is_ignored(monkeypatch, fake_client, fake
     monkeypatch.setenv("EVENT_HUB_NAMESPACE", "lab-ns.servicebus.windows.net")
     monkeypatch.setenv("EVENT_HUB_NAME", "firewall-logs")
 
-    async def _verify(credential, ns):
+    async def _verify(credential, ns, hub):
         raise RuntimeError("ARM unreachable")
 
     monkeypatch.setattr(streaming, "_verify_data_plane_access", _verify)
@@ -645,7 +645,9 @@ def _arm_urlopen(rg_payload: Any, perm_payload: Any):
             assert "microsoft.eventhub/namespaces" in body["query"]
             assert "'lab-ns'" in body["query"]
             return _Resp(json.dumps(rg_payload).encode())
-        assert "/providers/Microsoft.Authorization/permissions" in req.full_url
+        # The permissions are read at the hub's scope, where a hub-only assignment is visible too.
+        assert req.full_url.endswith(f"{NS_ID}/eventhubs/firewall-logs/providers/Microsoft.Authorization/permissions"
+                                     "?api-version=2022-04-01"), req.full_url
         return _Resp(json.dumps(perm_payload).encode())
 
     _urlopen.calls = calls  # type: ignore[attr-defined]
@@ -668,14 +670,14 @@ NS_ID = "/subscriptions/s/resourceGroups/rg/providers/Microsoft.EventHub/namespa
 async def test_verify_access_passes_with_receive_permission(monkeypatch, data_actions):
     fake = _arm_urlopen({"data": [{"id": NS_ID}]}, {"value": [{"dataActions": data_actions}]})
     monkeypatch.setattr("urllib.request.urlopen", fake)
-    await streaming._verify_data_plane_access(FakeCredential(), "lab-ns.servicebus.windows.net")
+    await streaming._verify_data_plane_access(FakeCredential(), "lab-ns.servicebus.windows.net", "firewall-logs")
     assert any(NS_ID in url for url in fake.calls)
 
 
 async def test_verify_access_accepts_row_array_resource_graph_format(monkeypatch):
     fake = _arm_urlopen({"data": [[NS_ID]]}, {"value": [{"dataActions": ["*"]}]})
     monkeypatch.setattr("urllib.request.urlopen", fake)
-    await streaming._verify_data_plane_access(FakeCredential(), "lab-ns.servicebus.windows.net")
+    await streaming._verify_data_plane_access(FakeCredential(), "lab-ns.servicebus.windows.net", "firewall-logs")
     assert any(NS_ID in url for url in fake.calls)
 
 
@@ -691,11 +693,11 @@ async def test_verify_access_raises_without_receive_permission(monkeypatch, data
     fake = _arm_urlopen({"data": [{"id": NS_ID}]}, {"value": [{"dataActions": data_actions}]})
     monkeypatch.setattr("urllib.request.urlopen", fake)
     with pytest.raises(PermissionError, match="Data Receiver"):
-        await streaming._verify_data_plane_access(FakeCredential(), "lab-ns.servicebus.windows.net")
+        await streaming._verify_data_plane_access(FakeCredential(), "lab-ns.servicebus.windows.net", "firewall-logs")
 
 
 async def test_verify_access_skips_when_namespace_not_resolvable(monkeypatch):
     fake = _arm_urlopen({"data": []}, {"value": []})
     monkeypatch.setattr("urllib.request.urlopen", fake)
-    await streaming._verify_data_plane_access(FakeCredential(), "lab-ns.servicebus.windows.net")
+    await streaming._verify_data_plane_access(FakeCredential(), "lab-ns.servicebus.windows.net", "firewall-logs")
     assert len(fake.calls) == 1  # permissions endpoint never called

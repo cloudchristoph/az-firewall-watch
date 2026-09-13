@@ -37,8 +37,14 @@ _MAX_ATTEMPTS = 3
 _RECONNECT_BACKOFF = [2, 5, 10, 30, 60]
 
 
-async def _verify_data_plane_access(credential, eh_namespace: str) -> None:
-    """Probe ARM Permissions API to check the identity can receive from this namespace.
+async def _verify_data_plane_access(credential, eh_namespace: str, eh_name: str) -> None:
+    """Probe ARM Permissions API to check the identity can receive from this hub.
+
+    The check runs at the hub's own scope, not the namespace's: permissions
+    granted higher up (namespace, resource group, subscription) are inherited
+    and show up there too, while a role assigned on the hub alone, which is
+    what the setup wizard does and what least privilege asks for, is invisible
+    one level up and used to be reported as missing.
 
     Raises :class:`PermissionError` when the role is missing.  Silently
     returns when the ARM check itself fails (best-effort).
@@ -82,9 +88,9 @@ async def _verify_data_plane_access(credential, eh_namespace: str) -> None:
         _rg_rows[0]["id"] if isinstance(_rg_rows[0], dict) else _rg_rows[0][0]
     )
 
-    # 2. Check effective data-plane permissions.
+    # 2. Check effective data-plane permissions at the hub's scope.
     _perm_req = _urllib_req.Request(
-        f"https://management.azure.com{_ns_id}"
+        f"https://management.azure.com{_ns_id}/eventhubs/{eh_name}"
         "/providers/Microsoft.Authorization/permissions"
         "?api-version=2022-04-01",
         headers=_arm_auth,
@@ -107,7 +113,7 @@ async def _verify_data_plane_access(credential, eh_namespace: str) -> None:
     ):
         raise PermissionError(
             f"Missing 'Azure Event Hubs Data Receiver' "
-            f"(or 'Data Owner') role on namespace '{_ns_short}'."
+            f"(or 'Data Owner') role on hub '{eh_name}' or namespace '{_ns_short}'."
         )
 
 
@@ -303,7 +309,7 @@ async def run_stream(app: FirewallLogApp) -> None:
                         status.eh_state = "verifying"
                         try:
                             assert _credential is not None
-                            await _verify_data_plane_access(_credential, eh_namespace)
+                            await _verify_data_plane_access(_credential, eh_namespace, eh_name)
                         except PermissionError:
                             raise
                         except Exception:

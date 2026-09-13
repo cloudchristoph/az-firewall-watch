@@ -113,6 +113,36 @@ reader; without it the tests use `$Default`.
 Your identity needs **Reader** on the firewall, its policy and IP groups, and the
 **Azure Event Hubs Data Receiver** role on the hub.
 
+### Live wizard runs
+
+`tests/live/test_live_wizard.py` drives every path of the setup wizard through
+the real screens with the real Azure CLI behind them, and after each path starts
+the viewer headless on the `.env` the wizard wrote until it reports the hub as
+connected. The paste, enter and discover paths only read; they need the two
+`AZFW_LIVE_EVENTHUB_*` variables above and, for discovery, the name of the
+subscription the hub lives in:
+
+```bash
+AZFW_LIVE_EVENTHUB_NAMESPACE=<ns>.servicebus.windows.net \
+AZFW_LIVE_EVENTHUB_NAME=firewall-logs \
+AZFW_LIVE_WIZARD_SUBSCRIPTION="<subscription name>" \
+pytest tests/live/test_live_wizard.py -m live
+```
+
+The deploy path is opted into separately, because it creates things: a resource
+group `rg-azfw-watch-e2e`, a Basic namespace with a fresh name, a hub, the auth
+rules, a diagnostic setting named `azfw-e2e-diag` on the firewall and, for the
+Entra ID variant, a role assignment. It waits for the first record to reach the
+new hub, then runs discovery with SAS against it so the *create a Listen rule*
+prompt is exercised for real, and removes everything again in a `finally`. Add
+`AZFW_LIVE_WIZARD_DEPLOY=1` and `AZFW_LIVE_WIZARD_FIREWALL=<firewall name>`;
+the firewall needs a free diagnostic-setting slot (Azure allows five) and your
+identity needs to be able to create these resources and assign roles. The
+firewall must be carrying traffic, or no record can arrive. Budget about ten
+minutes for the SAS variant and up to forty for the Entra ID one: a new
+diagnostic setting delivers its first batch anywhere between five and twenty
+minutes after it was created, and the test waits for that.
+
 ## Releasing
 
 Version lives in `version.txt`, and every release needs a matching

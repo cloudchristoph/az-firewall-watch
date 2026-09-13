@@ -28,7 +28,7 @@ from .operations import (
     scan_firewalls,
 )
 from .services import write_env, write_env_entra
-from .utils import location_short
+from .utils import cli_error_text, location_short
 
 if TYPE_CHECKING:
     from .app import WizardApp
@@ -473,7 +473,7 @@ class PickExistingScreen(_WizardScreen):
             log.write("[green]✓[/] Done!")
             self.app.exit()
         except Exception as exc:
-            self._show_error(f"Failed to configure auth rule: {exc}")
+            self._show_error(f"Failed to configure auth rule: {cli_error_text(exc)}")
 
 
 class DeployNewScreen(_WizardScreen):
@@ -771,6 +771,6 @@ class DeployNewScreen(_WizardScreen):
             log.write("[green]✓[/] .env written — setup complete!")
             self.app.exit()
         except Exception as exc:
-            log.write(f"[red]✗[/] Deployment failed: {exc}")
+            log.write(f"[red]✗[/] Deployment failed: {cli_error_text(exc)}")
             self.query_one("#progress-spinner", LoadingIndicator).display = False
             self.query_one("#btn-back-progress", Button).disabled = False

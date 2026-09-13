@@ -85,7 +85,7 @@ E2E_SEND = "az-firewall-watch-send"
 SCAN_TIMEOUT = 600.0     # discovery walks every subscription the login can see
 DEPLOY_TIMEOUT = 900.0   # namespace creation plus the wizard's 30 s propagation wait
 RBAC_TIMEOUT = 600.0     # a fresh role assignment can take minutes to reach the data plane
-FIRST_RECORD_TIMEOUT = 900.0  # a fresh diagnostic setting delivers its first batch after a few minutes
+FIRST_RECORD_TIMEOUT = 1800.0  # a fresh diagnostic setting delivers its first batch after 5 to 20+ minutes
 
 _ENV_KEYS = (
     "EVENT_HUB_CONNECTION_STRING", "EVENT_HUB_NAMESPACE", "EVENT_HUB_NAME",
@@ -162,11 +162,13 @@ async def viewer_connects(env_file: Path, timeout: float = 120.0) -> tuple[str, 
 
 async def viewer_connects_eventually(env_file: Path, timeout: float) -> None:
     """Like viewer_connects, but tolerant of a role assignment that is still propagating."""
-    deadline = time.time() + timeout
+    started = time.time()
+    deadline = started + timeout
     last = ("", "")
     while time.time() < deadline:
         last = await viewer_connects(env_file, timeout=90)
         if last[0] == "connected":
+            print(f"\n    viewer connected after {time.time() - started:.0f} s")
             return
         await asyncio.sleep(15)
     raise AssertionError(f"viewer never connected: {last}")
@@ -181,7 +183,9 @@ async def first_record_arrives(namespace: str, hub: str, timeout: float) -> dict
     from viewer.streaming import resolve_start_position
 
     seen: list[dict] = []
-    deadline = time.time() + timeout
+    started = time.time()
+    deadline = started + timeout
+    last_error = "no receive attempt failed; the hub was reachable but empty"
     credential = DefaultAzureCredential(transport=AsyncioRequestsTransport())
     try:
         while time.time() < deadline and not seen:
@@ -207,11 +211,13 @@ async def first_record_arrives(namespace: str, hub: str, timeout: float) -> dict
                         await task
                     except (asyncio.CancelledError, Exception):
                         pass
-            except Exception:
-                await asyncio.sleep(15)  # RBAC still propagating, or the hub not ready yet
+            except Exception as exc:  # RBAC still propagating, or the hub not ready yet
+                last_error = f"{type(exc).__name__}: {exc}"
+                await asyncio.sleep(15)
     finally:
         await credential.close()
-    assert seen, f"no record reached {namespace}/{hub} within {timeout:.0f} s"
+    assert seen, f"no record reached {namespace}/{hub} within {timeout:.0f} s; last receive error: {last_error}"
+    print(f"\n    first record after {time.time() - started:.0f} s, category {seen[0].get('category')}")
     return seen[0]
 
 

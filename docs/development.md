@@ -137,8 +137,11 @@ new hub, then runs discovery with SAS against it so the *create a Listen rule*
 prompt is exercised for real, and removes everything again in a `finally`. Add
 `AZFW_LIVE_WIZARD_DEPLOY=1` and `AZFW_LIVE_WIZARD_FIREWALL=<firewall name>`;
 the firewall needs a free diagnostic-setting slot (Azure allows five) and your
-identity needs to be able to create these resources and assign roles. Budget
-about fifteen minutes per deploy variant, most of it waiting for Azure.
+identity needs to be able to create these resources and assign roles. The
+firewall must be carrying traffic, or no record can arrive. Budget about ten
+minutes for the SAS variant and up to forty for the Entra ID one: a new
+diagnostic setting delivers its first batch anywhere between five and twenty
+minutes after it was created, and the test waits for that.
 
 ## Releasing
 

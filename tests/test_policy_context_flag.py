@@ -13,6 +13,7 @@ from setup.services import set_env_value, write_env, write_env_entra
 from viewer.app import FirewallLogApp
 from viewer.config import policy_context_setting
 
+from .conftest import toasts
 from .test_views import no_update_check, wait_until  # noqa: F401
 
 pytestmark = pytest.mark.usefixtures("no_eventhub_env", "no_update_check")
@@ -122,11 +123,12 @@ async def test_off_means_logs_only_and_no_arm(arm_calls):
         await pilot.pause()
         assert arm_calls == []
         status = app.query_one("#status", StatusBar)
-        assert status.meta == ""
+        assert status.ctx_state == "off"
         await pilot.press("t")  # no longer bound; must do nothing
-        assert status.meta == ""
+        assert status.ctx_state == "off"
         await pilot.press("ctrl+r")
-        assert "policy context off" in status.meta
+        assert status.ctx_state == "off"
+        assert any("Policy context is off" in t for t in toasts(app))
         assert app._is_logs_tab_active()  # filters keep working without tabs
         # keys that normally switch back to the Logs tab must not crash without tabs
         for key in ("c", "escape", "f"):
@@ -262,7 +264,7 @@ async def test_notice_disable_removes_tabs_and_persists_off(tmp_path: Path, arm_
         await pilot.pause()
         tabs = app.query_one(TabbedContent)
         assert [p.id for p in tabs.query("TabPane")] == ["tab-logs"]
-        assert app.query_one("#status", StatusBar).meta == "policy context off"
+        assert app.query_one("#status", StatusBar).ctx_state == "off"
         app.request_mgmt_load("/subscriptions/s/resourceGroups/rg/providers/Microsoft.Network/azureFirewalls/fw")
         await pilot.pause()
         await pilot.pause()

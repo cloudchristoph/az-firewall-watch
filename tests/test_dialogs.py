@@ -5,12 +5,15 @@ Includes the regression for Escape being swallowed by the app-level
 """
 from __future__ import annotations
 
+import time
+
 import pytest
 from textual.widgets import DataTable, Input, Static, Switch
 
 import viewer.app as app_module
-from dialogs import StatusBar
+from dialogs import StatusBar, _ago
 from fw_parser import parse_record
+from helpers import _to_local
 from viewer.app import FirewallLogApp
 from viewer.views.detail_screen import DetailDialog
 
@@ -56,8 +59,10 @@ async def test_enter_opens_detail_dialog_with_all_fields(structured_record):
         await pilot.pause()
         dialog = await _open_detail(app, pilot, _network_row(structured_record))
         text = _dialog_text(dialog)
-        assert "Log Entry — NetworkRule" in text
-        assert "2026-09-05T08:00:00Z" in text
+        assert "NetworkRule" in text  # category now sits in the header, not a "Log Entry —" title
+        # Local time depends on the machine's zone (CI runs in UTC), so ask the
+        # same helper; the UTC clock beside it is fixed.
+        assert _to_local("2026-09-05T08:00:00Z") in text and "08:00:00Z UTC" in text
         assert "10.0.1.4" in text and "51000 → 443" in text  # ports on their own line
         assert "10.0.2.5" in text
         assert "Deny" in text
@@ -101,11 +106,14 @@ async def test_threat_intel_entry_labels_and_long_values(structured_record):
         dialog = await _open_detail(app, pilot, row)
         contents = [str(s.content) for s in dialog.query(Static)]
         text = "\n".join(contents)
-        assert "2026-09-07T16:14:09Z" in text and ".903912" not in text      # UTC trimmed to seconds
+        assert "16:14:09Z" in text and ".903912" not in text      # UTC trimmed to seconds, date only when it differs
         assert "Threat" in text and "More Info" not in text                   # category-specific label
-        assert any(c.startswith("[dim]Destination[/]\n  " + fqdn) for c in contents)  # long value on its own line
-        assert any(c.startswith("[dim]Protocol     [/]  HTTP") for c in contents)     # short values stay inline
-        assert dialog.query_one("#btn-close").region.width < dialog.query_one("#detail-pane").region.width
+        # The destination and protocol are the header's job now (ThreatIntel's
+        # Source/Destination equal it exactly); no separate field repeats them.
+        assert fqdn in text and "HTTP" in text
+        assert not any(c.startswith("[dim]Destination  [/]") for c in contents)
+        assert not any(c.startswith("[dim]Protocol     [/]") for c in contents)
+        assert dialog.query("#btn-close")  # the footer's mouse target, see test_detail_dialog
 
 
 async def test_flowtrace_dialog_shows_connection_and_packet_direction(structured_record):
@@ -188,8 +196,9 @@ async def test_dnat_dialog_shows_public_destination_and_translation(structured_r
     assert "Translated" in text and "10.3.6.4:80" in text
 
 
-@pytest.mark.parametrize("key", ["escape", "q"])
+@pytest.mark.parametrize("key", ["escape", "q", "enter"])
 async def test_detail_dialog_closes_on_key(structured_record, key):
+    """Enter opened the row, so without a trace Enter closes the dialog too."""
     app = FirewallLogApp()
     async with app.run_test(size=(140, 40)) as pilot:
         await pilot.pause()
@@ -211,16 +220,6 @@ async def test_q_in_detail_dialog_does_not_quit_the_app(structured_record):
         assert app.is_running
         assert app.return_value is None
         assert not app._exit
-
-
-async def test_detail_dialog_closes_on_button(structured_record):
-    app = FirewallLogApp()
-    async with app.run_test(size=(140, 40)) as pilot:
-        await pilot.pause()
-        await _open_detail(app, pilot, _network_row(structured_record))
-        await pilot.click("#btn-close")
-        await pilot.pause(0.2)
-        assert not isinstance(app.screen, DetailDialog)
 
 
 async def test_escape_in_dialog_does_not_clear_main_screen_filters(structured_record):
@@ -266,17 +265,86 @@ async def test_status_bar_click_toggles_pause():
 
 def test_status_bar_render_variants():
     bar = StatusBar()
-    bar.status = "Connected"
+    bar.eh_state = "connected"
     bar.total = 12
-    assert "▶ LIVE" in bar.render()
-    assert "Events: 12" in bar.render()
-    assert "Skipped" not in bar.render()
+    line = str(bar.render())
+    assert line.startswith(" ▶ LIVE │ ● EH connected │ ◐ Events waiting · 12 │ ○ Context off ")
+    assert "skipped" not in line
 
     bar.skipped = 3
-    assert "Skipped: 3" in bar.render()
+    assert "◐ Events waiting · 12 · 3 skipped" in str(bar.render())
 
     bar.visible_count = 4
-    assert "Events (filtered): 4/12" in bar.render()
+    bar.last_event_at = time.monotonic()
+    assert "● Events receiving · 4/12 shown · last 0s ago · 3 skipped" in str(bar.render())
+
+    bar.last_event_at = time.monotonic() - 5 * 60
+    assert "○ Events idle · 4/12 shown · last 5m ago · 3 skipped" in str(bar.render())
 
     bar.paused = True
-    assert "⏸ PAUSED" in bar.render()
+    line = str(bar.render())
+    assert line.startswith(" ⏸ PAUSED │ ")
+    assert "○ Events paused · 4/12 shown · 3 skipped" in line
+
+
+def test_status_bar_event_hub_segment_variants():
+    bar = StatusBar()
+    bar.total = 7
+    bar.last_event_at = time.monotonic()
+    assert "◐ EH connecting │ ○ Events 7 │" in str(bar.render())  # not connected: counts only, no state word
+    bar.eh_state = "verifying"
+    assert "◐ EH verifying access" in str(bar.render())
+    bar.eh_state, bar.eh_detail = "retrying", "attempt 2/3 in 4s"
+    assert "◐ EH retrying · attempt 2/3 in 4s" in str(bar.render())
+    bar.eh_state, bar.eh_detail = "reconnecting", "attempt 1 in 9s"
+    assert "◐ EH reconnecting · attempt 1 in 9s" in str(bar.render())
+    bar.eh_state, bar.eh_detail = "failed", "after 3 attempts, see dialog"
+    assert "✖ EH failed · after 3 attempts, see dialog" in str(bar.render())
+    bar.eh_state, bar.eh_detail = "stopped", ""
+    assert "○ EH stopped │" in str(bar.render())
+    bar.eh_state, bar.eh_detail = "unconfigured", "no credentials in .env"
+    assert "✖ EH not configured · no credentials in .env" in str(bar.render())
+    bar.eh_error = "boom"
+    assert bar.tooltip == "boom"
+    bar.eh_error = ""
+    assert bar.tooltip is None
+
+
+def test_status_bar_context_segment_variants():
+    bar = StatusBar()
+    for state in ("off", "pending"):
+        bar.ctx_state = state
+        assert f"○ Context {state} " in str(bar.render())
+    bar.ctx_state = "loading"
+    assert "◐ Context loading " in str(bar.render())
+    bar.ctx_state, bar.ctx_detail = "refreshing", "new rule allow-web"
+    assert "◐ Context refreshing · new rule allow-web" in str(bar.render())
+    bar.ctx_state, bar.ctx_detail = "unavailable", ""
+    assert "○ Context unavailable · no ARM access" in str(bar.render())
+    bar.ctx_state, bar.ctx_fetched_at = "loaded", time.time()
+    assert "● Context loaded just now " in str(bar.render())
+    bar.ctx_fetched_at = time.time() - 35 * 60
+    assert "● Context loaded 35m ago " in str(bar.render())
+    bar.ctx_fetched_at = time.time() - 3 * 3600
+    assert "● Context loaded 3h ago " in str(bar.render())
+    bar.ctx_detail = "refresh failed"
+    assert "● Context loaded 3h ago · refresh failed" in str(bar.render())
+
+
+def test_status_bar_degrades_details_then_labels_when_narrow():
+    bar = StatusBar()
+    bar.eh_state, bar.total, bar.visible_count, bar.skipped = "connected", 12, 4, 3
+    bar.last_event_at = time.monotonic()
+    bar.ctx_state, bar.ctx_fetched_at, bar.ctx_detail = "loaded", time.time(), "refresh failed"
+    full = str(bar._compose_line(0))
+    assert "last 0s ago" in full and "3 skipped" in full and "refresh failed" in full
+    no_details = str(bar._compose_line(1))
+    assert no_details == " ▶ LIVE │ ● EH connected │ ● Events receiving · 4/12 shown │ ● Context loaded just now "
+    no_labels = str(bar._compose_line(2))
+    assert no_labels == " ▶ LIVE │ ● connected │ ● receiving · 4/12 shown │ ● loaded just now "
+    assert bar._compose_line(0).cell_len > bar._compose_line(1).cell_len > bar._compose_line(2).cell_len
+
+
+def test_ago_formats_compactly():
+    assert [_ago(s) for s in (0, 4, 59, 60, 3599, 3600, 3 * 3600 + 5)] == \
+        ["0s ago", "4s ago", "59s ago", "1m ago", "59m ago", "1h ago", "3h ago"]

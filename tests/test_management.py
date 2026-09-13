@@ -8,7 +8,7 @@ import pytest
 
 import viewer.management as mgmt
 from viewer.arm import ArmError
-from viewer.azure_resources import FirewallInfo, FirewallPolicyInfo, IpGroupInfo
+from viewer.azure_resources import FirewallInfo, FirewallPolicyInfo, IpGroupInfo, SubnetInfo
 from viewer.cache import CachedSnapshot
 
 FW_ID = "/subscriptions/s/resourceGroups/rg/providers/Microsoft.Network/azureFirewalls/fw"
@@ -76,9 +76,20 @@ def world(monkeypatch):
             raise state["groups"]
         return state["groups"]
 
-    async def fetch_all_subnet_cidrs(arm, ids):
+    async def fetch_subnets(arm, ids):
         state["calls"].append(("cidrs", ids))
-        return state["cidrs"]
+        return [SubnetInfo(id=sid, name=sid.rsplit("/", 1)[-1], cidrs=list(state["cidrs"]))
+                for sid in ids[:1]] if state["cidrs"] else []
+
+    async def fetch_nat_gateways(arm, subnets):
+        state["calls"].append(("natgw", [s.id for s in subnets]))
+        return state.get("nat_gateways") or []
+
+    async def fetch_maintenance(arm, fw_id):
+        state["calls"].append(("maint", fw_id))
+        if isinstance(state.get("maintenance"), Exception):
+            raise state["maintenance"]
+        return state.get("maintenance", [])  # None passes through: "list not readable"
 
     async def fetch_public_ips(arm, ids):
         state["calls"].append(("pips", ids))
@@ -94,7 +105,8 @@ def world(monkeypatch):
 
     for name, fn in (("load", load), ("save", save), ("invalidate", invalidate),
                      ("fetch_firewall", fetch_firewall), ("fetch_policy", fetch_policy),
-                     ("fetch_ip_groups", fetch_ip_groups), ("fetch_all_subnet_cidrs", fetch_all_subnet_cidrs),
+                     ("fetch_ip_groups", fetch_ip_groups), ("fetch_subnets", fetch_subnets),
+                     ("fetch_nat_gateways", fetch_nat_gateways), ("fetch_maintenance", fetch_maintenance),
                      ("fetch_public_ips", fetch_public_ips), ("fetch_diagnostic_settings", fetch_diagnostic_settings)):
         monkeypatch.setattr(mgmt, name, fn)
     monkeypatch.setattr(mgmt, "collect_ip_group_ids", lambda policy: ["/g"])
@@ -121,10 +133,19 @@ async def test_stale_cache_triggers_full_fetch_and_save(world):
     assert time.time() - snap.fetched_at < 5
     names = [c[0] for c in world["calls"]]
     assert names[:2] == ["load", "firewall"] and names[-1] == "groups"
-    assert sorted(names[2:-1]) == ["cidrs", "diag", "pips", "policy"]   # the extras run alongside the policy fetch
+    # the extras run alongside the policy fetch; the NAT gateway lookup follows the subnets
+    assert sorted(names[2:-1]) == ["cidrs", "diag", "maint", "natgw", "pips", "policy"]
     assert world["saved"][0][0] == FW_ID
     assert world["invalidated"] == []
     assert FakeCredential.instances[0].closed
+
+
+async def test_unreadable_maintenance_list_is_flagged_on_the_snapshot(world):
+    world["cached"] = None
+    world["maintenance"] = None  # fetch_maintenance could not read the assignment list
+    snap = await mgmt.load_management_data(FW_ID)
+    assert snap is not None
+    assert snap.maintenance == [] and snap.maintenance_readable is False
 
 
 async def test_force_invalidates_and_skips_cache_read(world):

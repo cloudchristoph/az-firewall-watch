@@ -14,11 +14,14 @@ import aiohttp
 from .arm import ArmClient, ArmError
 from .azure_resources import (
     collect_ip_group_ids,
-    fetch_all_subnet_cidrs,
     fetch_diagnostic_settings,
     fetch_firewall,
     fetch_ip_groups,
+    fetch_maintenance,
+    fetch_nat_gateways,
     fetch_public_ips,
+    fetch_subnets,
+    subnet_cidrs,
 )
 from .azure_resources import (
     fetch_policy_chain as fetch_policy,  # policy plus inherited parent chain
@@ -58,14 +61,13 @@ async def load_management_data(firewall_id: str, *, force: bool = False) -> Cach
             except ArmError:
                 return None
 
-            subnet_task = asyncio.create_task(
-                fetch_all_subnet_cidrs(arm, firewall.subnet_ids)
-            )
+            subnet_task = asyncio.create_task(fetch_subnets(arm, firewall.subnet_ids))
             pip_ids = [c.public_ip_id for c in firewall.ip_configs if c.public_ip_id]
             if firewall.management_ip and firewall.management_ip.public_ip_id:
                 pip_ids.append(firewall.management_ip.public_ip_id)
             pip_task = asyncio.create_task(fetch_public_ips(arm, pip_ids))
             diag_task = asyncio.create_task(fetch_diagnostic_settings(arm, firewall_id))
+            maint_task = asyncio.create_task(fetch_maintenance(arm, firewall_id))
             policy = None
             if firewall.policy_id:
                 try:
@@ -73,17 +75,44 @@ async def load_management_data(firewall_id: str, *, force: bool = False) -> Cach
                 except ArmError:
                     policy = None
 
-            subnet_cidrs = await subnet_task
+            subnets = await subnet_task
+            # A NAT gateway on a firewall subnet changes which public address
+            # outbound traffic leaves with; its public IPs are resolved like
+            # the firewall's own (one optional GET each).
+            nat_gateways = await fetch_nat_gateways(arm, subnets)
+            # Distinct ids only, and none the firewall lookup already covers:
+            # every one of these is an optional GET.
+            nat_pip_ids = list(dict.fromkeys(
+                pid for gw in nat_gateways for pid in gw.public_ip_ids if pid and pid not in pip_ids))
             try:
                 addresses = await pip_task
             except ArmError:
                 addresses = {}
+            if nat_pip_ids:
+                # Separate from the firewall's own lookup: a failure here must
+                # not blank the firewall's addresses that were already read.
+                try:
+                    addresses.update(await fetch_public_ips(arm, nat_pip_ids))
+                except ArmError:
+                    pass
             for cfg in firewall.ip_configs + ([firewall.management_ip] if firewall.management_ip else []):
                 cfg.public_ip_address = addresses.get(cfg.public_ip_id, "")
+            for gw in nat_gateways:
+                # One entry per public IP, in id order; an unreadable one stays ""
+                # so the view can name it as unresolved instead of the list
+                # silently looking complete with the readable ones only.
+                gw.public_ip_addresses = [addresses.get(pid, "") for pid in gw.public_ip_ids]
             try:
                 diagnostics = await diag_task
             except ArmError:
                 diagnostics = []
+            try:
+                maintenance = await maint_task
+            except ArmError:
+                maintenance = None
+            # None: the assignment list could not be read, which the tab must
+            # report as unknown rather than as "no window".
+            maintenance_readable = maintenance is not None
 
             ip_groups: dict = {}
             if policy is not None:
@@ -97,9 +126,13 @@ async def load_management_data(firewall_id: str, *, force: bool = False) -> Cach
                 firewall=firewall,
                 policy=policy,
                 ip_groups=ip_groups,
-                subnet_cidrs=subnet_cidrs,
+                subnet_cidrs=subnet_cidrs(subnets),
                 fetched_at=time.time(),
                 diagnostics=diagnostics,
+                subnets=subnets,
+                nat_gateways=nat_gateways,
+                maintenance=maintenance or [],
+                maintenance_readable=maintenance_readable,
             )
             try:
                 save(firewall_id, snap)

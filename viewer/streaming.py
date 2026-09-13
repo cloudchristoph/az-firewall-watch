@@ -228,11 +228,13 @@ async def run_stream(app: FirewallLogApp) -> None:
     status = app.query_one("#status", StatusBar)
 
     if not conn_str and not use_entra:
-        status.status = (
-            "ERROR: No Event Hub credentials configured — set either "
+        msg = (
+            "No Event Hub credentials configured. Set either "
             "EVENT_HUB_NAMESPACE + EVENT_HUB_NAME (for Entra ID) or "
             "EVENT_HUB_CONNECTION_STRING (for SAS key) in .env"
         )
+        status.eh_state, status.eh_detail, status.eh_error = "unconfigured", "no credentials in .env", msg
+        app.notify(msg, title="Event Hub", severity="error", timeout=30)
         return
 
     # Resolve display values for the connecting dialog.
@@ -254,7 +256,8 @@ async def run_stream(app: FirewallLogApp) -> None:
 
     while connected_once or attempt < _MAX_ATTEMPTS:
         app.sub_title = "Live Log Monitor  |  " + ("reconnecting..." if connected_once else "connecting...")
-        status.status = "Reconnecting to Event Hub…" if connected_once else "Connecting to Event Hub…"
+        status.eh_state = "reconnecting" if connected_once else "connecting"
+        status.eh_detail = ""
 
         try:
             # Build the client — prefer Entra ID when namespace+hub are set.
@@ -297,7 +300,7 @@ async def run_stream(app: FirewallLogApp) -> None:
                     # not link attach), so an SDK probe cannot detect a missing
                     # Data Receiver role.  Use ARM Permissions API instead.
                     if use_entra:
-                        status.status = "Verifying data-plane access…"
+                        status.eh_state = "verifying"
                         try:
                             assert _credential is not None
                             await _verify_data_plane_access(_credential, eh_namespace)
@@ -310,7 +313,7 @@ async def run_stream(app: FirewallLogApp) -> None:
                     connected_once = True
                     if _splash_shown:
                         _dialog.show_waiting()
-                    status.status = "Connected"
+                    status.eh_state, status.eh_detail, status.eh_error = "connected", "", ""
                     app.sub_title = "Live Log Monitor  |  connected"
 
                     async def on_event(_partition_ctx, event) -> None:
@@ -354,12 +357,16 @@ async def run_stream(app: FirewallLogApp) -> None:
             if _splash_shown:
                 _splash_shown = False
                 await _remove_splash(app)
-            status.status = "Streaming stopped"
+            status.eh_state, status.eh_detail = "stopped", ""
             return
 
         except Exception as exc:
             last_exc = exc
             app._fw_name_set = False  # allow subtitle refresh on next connect
+            # The error text is too long for the bar: tooltip plus a toast,
+            # the bar itself only carries the state and the countdown. Set
+            # before the short-circuit below, so a terminal error shows too.
+            status.eh_error = str(exc)
 
             # Auth / configuration errors will not fix themselves — skip retries.
             if isinstance(exc, PermissionError) or any(
@@ -373,12 +380,11 @@ async def run_stream(app: FirewallLogApp) -> None:
                 # Lost an established connection: keep trying, capped backoff.
                 delay = _RECONNECT_BACKOFF[min(attempt, len(_RECONNECT_BACKOFF)) - 1]
                 app.sub_title = "Live Log Monitor  |  connection lost"
+                status.eh_state = "reconnecting"
+                if attempt == 1:
+                    app.notify(f"Connection lost: {exc}", title="Event Hub", severity="warning")
                 for remaining in range(delay, 0, -1):
-                    status.status = (
-                        f"Connection lost: {exc}"
-                        f"  — reconnect attempt {attempt}"
-                        f" in {remaining}s…"
-                    )
+                    status.eh_detail = f"attempt {attempt} in {remaining}s"
                     await asyncio.sleep(1)
                 continue
 
@@ -386,12 +392,10 @@ async def run_stream(app: FirewallLogApp) -> None:
                 break
 
             delay = _BACKOFF[attempt - 1]
+            status.eh_state = "retrying"
+            app.notify(f"Connection error: {exc}", title="Event Hub", severity="warning")
             for remaining in range(delay, 0, -1):
-                status.status = (
-                    f"Connection error: {exc}"
-                    f"  — attempt {attempt}/{_MAX_ATTEMPTS},"
-                    f" retrying in {remaining}s…"
-                )
+                status.eh_detail = f"attempt {attempt}/{_MAX_ATTEMPTS} in {remaining}s"
                 await asyncio.sleep(1)
 
     # ── all attempts exhausted ────────────────────────────────────────────
@@ -408,7 +412,10 @@ async def run_stream(app: FirewallLogApp) -> None:
                 "Check your network connection and the connection string,\n"
                 "then restart the app (optionally with  --reconfigure)."
             )
-        status.status = f"Failed after {_MAX_ATTEMPTS} attempts — see dialog"
+        # A configuration error stops after the first try; only network
+        # trouble actually went through the retries.
+        status.eh_state = "failed"
+        status.eh_detail = "configuration error, see dialog" if is_cfg_error else f"after {_MAX_ATTEMPTS} attempts, see dialog"
         if _splash_shown:
             _splash_shown = False
             await _remove_splash(app)

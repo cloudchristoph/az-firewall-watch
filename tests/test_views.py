@@ -23,7 +23,11 @@ from viewer.azure_resources import (
 from viewer.cache import CachedSnapshot
 from viewer.views import FirewallView, IpGroupsView, PolicyView
 from viewer.views.detail_screen import DetailDialog, _ports_join
+from viewer.views.firewall import VIEWER_CATEGORIES, _row
 from viewer.views.ip_groups import IpGroupDetailDialog
+from viewer.views.trace_screen import TracePanel
+
+from .conftest import toasts
 
 pytestmark = pytest.mark.usefixtures("no_eventhub_env", "no_update_check")
 
@@ -113,12 +117,13 @@ async def test_metadata_load_fills_status_segment_and_title(structured_record, m
     async with app.run_test(size=(160, 45)) as pilot:
         await pilot.pause()
         status = app.query_one("#status", StatusBar)
-        before = status.status
+        before = status.eh_state
+        assert status.ctx_state == "pending"  # context on, no firewall seen yet
         await _load(app, pilot, firewall_id)
         assert mgmt["calls"] == [(firewall_id, False)]
-        assert status.status == before  # connection status untouched
-        assert status.meta == "Policy: Premium · 2 IP groups · fresh"
-        assert "Policy: Premium" in status.render()
+        assert status.eh_state == before  # connection status untouched
+        assert (status.ctx_state, status.ctx_detail) == ("loaded", "")
+        assert "● Context loaded just now" in str(status.render())
         assert app.sub_title == "fw-hub-gwc"  # real name from ARM
 
 
@@ -158,7 +163,7 @@ async def test_expired_cache_is_refetched_by_the_minute_check(structured_record,
     async with app.run_test(size=(160, 45)) as pilot:
         await pilot.pause()
         await _load(app, pilot, firewall_id)
-        assert app.query_one("#status", StatusBar).meta.endswith("cache 61m")
+        assert "Context loaded 1h ago" in str(app.query_one("#status", StatusBar).render())
         app._check_cache_age()
         await wait_until(pilot, lambda: (firewall_id, True) in mgmt["calls"])
         app._check_cache_age()                                            # within the interval: no second fetch
@@ -166,24 +171,21 @@ async def test_expired_cache_is_refetched_by_the_minute_check(structured_record,
         assert mgmt["calls"].count((firewall_id, True)) == 1
 
 
-async def test_minute_check_updates_the_cache_age(structured_record, mgmt, firewall_id):
+async def test_status_bar_ages_the_context_on_its_own(structured_record, mgmt, firewall_id):
+    """The bar keeps the snapshot's timestamp and renders the age at draw time; no timer rewrites it."""
     mgmt["snapshot"] = make_snapshot(fetched_at=time.time() - 7 * 60)
     app = FirewallLogApp()
     async with app.run_test(size=(160, 45)) as pilot:
         await pilot.pause()
         await _load(app, pilot, firewall_id)
-        app._snapshot.fetched_at -= 5 * 60                                # five minutes pass
-        app._check_cache_age()
-        assert app.query_one("#status", StatusBar).meta.endswith("cache 12m")
-
-
-async def test_metadata_cache_age_is_shown(structured_record, mgmt, firewall_id):
-    mgmt["snapshot"] = make_snapshot(fetched_at=time.time() - 7 * 60)
-    app = FirewallLogApp()
-    async with app.run_test(size=(160, 45)) as pilot:
-        await pilot.pause()
-        await _load(app, pilot, firewall_id)
-        assert app.query_one("#status", StatusBar).meta.endswith("cache 7m")
+        status = app.query_one("#status", StatusBar)
+        assert status.ctx_fetched_at == app._snapshot.fetched_at
+        assert "Context loaded 7m ago" in str(status.render())
+        status.ctx_fetched_at -= 5 * 60                                   # five minutes pass
+        assert "Context loaded 12m ago" in str(status.render())
+        # A stale hint no longer sticks: the trace toast leaves the segment alone.
+        app.notify("anything")
+        assert "Context loaded 12m ago" in str(status.render())
 
 
 async def test_metadata_unavailable_is_reported_without_touching_status(firewall_id, monkeypatch):
@@ -195,11 +197,13 @@ async def test_metadata_unavailable_is_reported_without_touching_status(firewall
     async with app.run_test(size=(160, 45)) as pilot:
         await pilot.pause()
         status = app.query_one("#status", StatusBar)
-        before = status.status
+        before = status.eh_state
         app.request_mgmt_load(firewall_id)
-        await wait_until(pilot, lambda: bool(status.meta))
-        assert status.meta == "metadata unavailable (no ARM access)"
-        assert status.status == before
+        await wait_until(pilot, lambda: status.ctx_state == "unavailable")
+        assert status.ctx_detail == "no ARM access"
+        assert "○ Context unavailable · no ARM access" in str(status.render())
+        assert status.eh_state == before
+        assert not any(t.startswith("Refresh failed") for t in toasts(app))  # missing optional data is a state, not an alert
         assert not app._mgmt_loaded
 
 
@@ -211,8 +215,10 @@ async def test_failed_refresh_keeps_previous_metadata(structured_record, mgmt, f
         mgmt["snapshot"] = None  # ARM now unreachable
         await pilot.press("ctrl+r")
         status = app.query_one("#status", StatusBar)
-        await wait_until(pilot, lambda: status.meta.startswith("refresh failed"))
-        assert status.meta == "refresh failed · showing previous metadata"
+        await wait_until(pilot, lambda: status.ctx_detail == "refresh failed")
+        assert status.ctx_state == "loaded"  # still the previous snapshot
+        assert "● Context loaded just now · refresh failed" in str(status.render())
+        assert any(t.startswith("Refresh failed") for t in toasts(app))
         assert app._mgmt_loaded and app._policy_info is not None
         assert app._format_ip("10.2.0.6") == "AzFw.6"  # enrichment still works
 
@@ -234,7 +240,9 @@ async def test_ctrl_r_forces_refresh(mgmt, firewall_id):
         await pilot.pause()
         await pilot.press("ctrl+r")
         await pilot.pause()
-        assert app.query_one("#status", StatusBar).meta == "refresh skipped: no firewall seen yet"
+        status = app.query_one("#status", StatusBar)
+        assert status.ctx_state == "pending"
+        assert "Nothing to refresh yet: no firewall seen in the logs." in toasts(app)
         await _load(app, pilot, firewall_id)
         await pilot.press("ctrl+r")
         await wait_until(pilot, lambda: len(mgmt["calls"]) == 2)
@@ -274,16 +282,16 @@ async def test_detail_dialog_shows_enrichment(structured_record, mgmt, firewall_
         await wait_until(pilot, lambda: isinstance(app.screen, DetailDialog))
         await pilot.pause(0.2)
         text = _text(app.screen)
-        assert "Src IP Groups" in text and "ipgroup-all-spokes" in text
-        assert "Rule Def." in text and "TCP  443  from ipgroup-all-spokes  to *" in text
-        assert "Dst IP Groups" not in text  # 1.1.1.1 is in no group
+        assert "Src IP groups" in text and "ipgroup-all-spokes" in text
+        assert "Rule Def." not in text and "TCP  443  from ipgroup-all-spokes  to *" not in text   # the trace shows the criteria
+        assert "Dst IP groups" not in text  # 1.1.1.1 is in no group
         # priorities, action and policy path are shown once — in the trace, not the fields
         assert "Rule Priority" not in text
         labels = "\n".join(_tree_labels(app.screen.query_one("#trace-tree", Tree)))
         assert "[2000] rcg-net" in labels and "[100] rc-web  allow" in labels
 
 
-async def test_detail_dialog_shows_logged_rule_definition(structured_record, mgmt, firewall_id):
+async def test_detail_dialog_enrichment_names_priority_and_action_but_no_definition(structured_record, mgmt, firewall_id):
     app = FirewallLogApp()
     async with app.run_test(size=(160, 45)) as pilot:
         await pilot.pause()
@@ -292,13 +300,13 @@ async def test_detail_dialog_shows_logged_rule_definition(structured_record, mgm
         enr = app._compute_enrichment(row)
         assert enr["rule_priority"] == "RCG:2000 » RC:100"
         assert enr["rule_action"] == "Allow"
-        assert enr["rule_definition"] == "TCP  443  from ipgroup-all-spokes  to *"
+        assert "rule_definition" not in enr  # the trace shows the criteria, the Policy tab the definition
         assert "trace_hint" not in enr  # the trace sits in the dialog itself now
         renamed = parse_record(structured_record(
             "AZFWNetworkRule", SourceIp="10.3.5.4", DestinationIp="1.1.1.1", Action="Allow",
             Policy="fwp-hub-premium-gwc", RuleCollectionGroup="rcg-net", RuleCollection="rc-web", Rule="gone",
         ))
-        assert "not in loaded policy" in app._compute_enrichment(renamed)["rule_definition"]
+        assert "rule_definition" not in app._compute_enrichment(renamed)  # the trace warns about a missing rule
 
 
 # ── evaluation trace ─────────────────────────────────────────────────────────
@@ -351,10 +359,18 @@ async def test_flow_trace_rows_get_no_evaluation_tree(structured_record, mgmt, f
         tbl.focus()
         tbl.move_cursor(row=0, animate=False)
         await pilot.pause()
+        status = app.query_one("#status", StatusBar)
+        assert status.ctx_state == "loaded"
         await pilot.press("enter")
         await wait_until(pilot, lambda: isinstance(app.screen, DetailDialog))
         assert not app.screen.has_trace
-        assert app.query_one("#status", StatusBar).meta == "no policy evaluation for FlowTrace rows"
+        # The reason sits in the dialog, as a property of this row; the status
+        # bar keeps the Context segment it had before, and no toast is raised.
+        note = str(app.screen.query_one("#trace-note", Static).content)
+        assert "No rule decision in this log" in note
+        assert "FlowTrace records the handshake and flags of a connection, not a rule decision." in note
+        assert (status.ctx_state, status.ctx_detail) == ("loaded", "")
+        assert not any("trace" in t.lower() for t in toasts(app))  # the note is not a toast
 
 
 async def test_detail_without_policy_metadata_has_no_trace(structured_record, mgmt, firewall_id):
@@ -370,13 +386,33 @@ async def test_detail_without_policy_metadata_has_no_trace(structured_record, mg
         tbl.focus()
         tbl.move_cursor(row=0, animate=False)
         await pilot.pause()
+        assert status.ctx_state == "pending"
         await pilot.press("enter")
         await pilot.pause()
-        assert status.meta == "trace needs policy metadata (not loaded)"
         # the plain detail dialog still opens — just without the trace column
         await wait_until(pilot, lambda: isinstance(app.screen, DetailDialog))
         assert not app.screen.has_trace
         assert not app.screen.query("#trace-tree")
+        note = str(app.screen.query_one("#trace-note", Static).content)
+        assert "Policy trace not available" in note and "not loaded yet" in note
+        assert "It needs the policy context" in note and "metadata" not in note
+        assert status.ctx_state == "pending"  # the note is the dialog's, the bar is untouched
+
+
+def test_trace_note_tells_not_loaded_from_no_policy(structured_record):
+    """Loaded metadata without a policy is not a state that waiting resolves,
+    so the note must not say "not loaded yet" there."""
+    from fw_parser import parse_record
+    app = FirewallLogApp()
+    row = parse_record(structured_record("AZFWNetworkRule", Protocol="TCP", SourceIp="10.0.0.1",
+                                         DestinationIp="10.0.0.2", DestinationPort=443, Action="Deny"))
+    assert "not loaded yet" in app._trace_note(row)
+    app._mgmt_loaded = True
+    app._policy_info = None
+    note = app._trace_note(row)
+    assert "Policy trace not available" in note and "not loaded yet" not in note
+    assert "carries no policy" in note and "classic rules" in note
+    assert "metadata" not in note  # the UI word for the ARM data is "policy context"
 
 
 async def test_trace_screen_shows_logged_match_and_closes(structured_record, mgmt, firewall_id):
@@ -392,30 +428,38 @@ async def test_trace_screen_shows_logged_match_and_closes(structured_record, mgm
         assert "DNAT rules   no collections" in joined
         assert "Network rules   ✓ matched" in joined
         assert "[2000] rcg-net" in joined and "✓ [100] rc-web  allow" in joined  # group once, collection below it
-        assert "allow-web" in joined and "← logged" in joined
+        assert "allow-web" in joined and "LOGGED" in joined
         assert "Application rules   not evaluated" in joined
         assert "evaluation stopped at the logged rule" in joined
-        header = _text(screen)
-        assert "10.3.5.4 → 1.1.1.1:443 TCP" in header and "Allow by rcg-net » rc-web » allow-web" in header
-        assert "Enter: expand · Enter on an open rule: show in Policy tab" in header
+        # the flow/outcome header and its key hints now live in the dialog itself
+        # (owned and tested by the detail_screen work package); no "nearest miss" /
+        # "rules ·" suffix survives on any tree line.
+        assert "nearest miss" not in joined and "rules ·" not in joined
         # top-level leaves are padded so their text lines up with expandable siblings
         assert any(line.startswith("  Threat Intelligence") for line in labels)
         assert any(line.startswith("  DNAT rules") for line in labels)
-        # path view: the missed collection before the match is one collapsed line with the reason
-        deny = next(n for n in _tree_nodes(tree) if n.label.plain.startswith("✗ [50] rc-deny"))
-        assert "1 rule · nearest miss: destination" in deny.label.plain
+        # focused view: the missed collection before the match folds into one line
+        fold = next(n for n in _tree_nodes(tree) if n.label.plain.startswith("1 preceding collections"))
+        assert "all ✗" in fold.label.plain
+        assert not fold.is_expanded and len(fold.children) == 1
+        deny = fold.children[0]
+        assert deny.label.plain == "✗ [50] rc-deny  deny"
         assert not deny.is_expanded and len(deny.children) == 1
-        assert deny.children[0].label.plain == "✗ deny-bad   destination: 1.1.1.1"
+        assert deny.children[0].label.plain == "✗ deny-bad"
         await pilot.press("a")  # expand all
         await pilot.pause()
         deny = next(n for n in _tree_nodes(screen.query_one("#trace-tree", Tree)) if n.label.plain.startswith("✗ [50] rc-deny"))
-        assert deny.is_expanded and deny.children[0].is_expanded
+        assert deny.is_expanded  # "a" opens even the folded-away collections
         await pilot.press("escape")
         await pilot.press("escape")
         await wait_until(pilot, lambda: not isinstance(app.screen, DetailDialog))
 
 
 async def test_trace_screen_enter_jumps_to_policy_rule(structured_record, mgmt, firewall_id):
+    """Enter no longer opens the rule (it only toggles a node); the Policy tab is
+    reached through TracePanel.open_selected_rule(), which the dialog calls on
+    ``p`` — tested here through the method itself since that key binding lives
+    in detail_screen.py, owned by the parallel work package."""
     app = FirewallLogApp()
     async with app.run_test(size=(160, 45)) as pilot:
         await pilot.pause()
@@ -423,7 +467,7 @@ async def test_trace_screen_enter_jumps_to_policy_rule(structured_record, mgmt, 
         screen = await _open_trace(app, pilot, _net(structured_record, "10.3.5.4", "1.1.1.1"))
         tree = screen.query_one("#trace-tree", Tree)
         assert tree.cursor_node is not None and "allow-web" in tree.cursor_node.label.plain  # pre-selected
-        await pilot.press("enter")
+        screen.query_one(TracePanel).open_selected_rule()
         await wait_until(pilot, lambda: not isinstance(app.screen, DetailDialog))
         await pilot.pause()
         assert app.query_one("#main-tabs", TabbedContent).active == "tab-policy"
@@ -447,36 +491,10 @@ async def test_threat_intel_trace_is_two_lines(structured_record, mgmt, firewall
         assert len(labels) == 2, labels
         assert labels[0].startswith("  Threat Intelligence   hit — Alert by Threat Intelligence (mode Alert)")
         assert labels[1].startswith("  DNAT, Network and Application rules   not evaluated")
-        title = str(screen.query_one("#trace-title", Static).content)
-        assert "Alert by Threat Intelligence" in title  # the verdict lives in the header only
-
-
-async def test_enter_on_collapsed_rule_expands_before_it_opens(structured_record, mgmt, firewall_id):
-    app = FirewallLogApp()
-    async with app.run_test(size=(160, 45)) as pilot:
-        await pilot.pause()
-        await _load(app, pilot, firewall_id)
-        row = parse_record(structured_record(
-            "AZFWNetworkRule", Protocol="TCP", SourceIp="10.3.5.4", SourcePort=1, DestinationIp="1.1.1.1",
-            DestinationPort=8443, Action="Deny", ActionReason="No rule matched. Proceeding with default action.",
-        ))
-        screen = await _open_trace(app, pilot, row)
-        tree = screen.query_one("#trace-tree", Tree)
-        rule = next(n for n in _tree_nodes(tree) if n.label.plain.startswith("✗ allow-web"))
-        assert not rule.is_expanded
-        tree.move_cursor(rule)
-        await pilot.pause()
-        await pilot.press("enter")
-        await pilot.pause()
-        assert rule.is_expanded and app.screen is screen  # first Enter only unfolds the checks
-        await pilot.press("space")
-        await pilot.pause()
-        assert not rule.is_expanded  # Space folds again
-        await pilot.press("enter")
-        await pilot.pause()
-        await pilot.press("enter")
-        await wait_until(pilot, lambda: not isinstance(app.screen, DetailDialog))
-        assert app.query_one("#main-tabs", TabbedContent).active == "tab-policy"
+        # the flow/outcome header (including this verdict) is the dialog's now,
+        # tested by the parallel detail_screen work package — not #trace-title
+        # here any more.
+        assert not screen.query("#trace-title")
 
 
 async def test_trace_for_no_rule_matched_row_shows_near_miss(structured_record, mgmt, firewall_id):
@@ -492,28 +510,14 @@ async def test_trace_for_no_rule_matched_row_shows_near_miss(structured_record, 
         tree = screen.query_one("#trace-tree", Tree)
         joined = "\n".join(_tree_labels(tree))
         assert "Network rules   ✗ no match" in joined
-        assert "✗ [100] rc-web  allow   2 rules · nearest miss: port" in joined
-        assert "✗ allow-web   port: 8443 not in 443 ★ nearest" in joined   # first problem inline, ranked
+        assert "✗ [100] rc-web  allow" in joined
+        assert "nearest miss" not in joined and "rules ·" not in joined  # that detail moved to the selection panel
+        assert "✗ allow-web   ★ nearest" in joined   # nearest-miss candidate, still flagged
         assert "skipped — protocol TCP is not HTTP, HTTPS or MSSQL" in joined
         assert "default action: Deny" in joined
-        # the collection holding the nearest misses is expanded in path view
+        # the collection holding the nearest misses is expanded in focused view
         rc_node = next(n for n in _tree_nodes(tree) if n.label.plain.startswith("✗ [100] rc-web"))
         assert rc_node.is_expanded
-
-
-async def test_trace_header_omits_missing_port(structured_record, mgmt, firewall_id):
-    """Copilot review: ICMP rows have no port; the header must not read '1.1.1.1:-'."""
-    app = FirewallLogApp()
-    async with app.run_test(size=(160, 45)) as pilot:
-        await pilot.pause()
-        await _load(app, pilot, firewall_id)
-        row = parse_record(structured_record(
-            "AZFWNetworkRule", Protocol="ICMP", SourceIp="10.3.5.4", DestinationIp="1.1.1.1", Action="Deny",
-            ActionReason="No rule matched. Proceeding with default action.",
-        ))
-        screen = await _open_trace(app, pilot, row)
-        header = _text(screen)
-        assert "10.3.5.4 → 1.1.1.1 ICMP" in header and ":-" not in header
 
 
 async def test_enter_opens_entry_and_trace_side_by_side(structured_record, mgmt, firewall_id):
@@ -531,15 +535,21 @@ async def test_enter_opens_entry_and_trace_side_by_side(structured_record, mgmt,
         screen = app.screen
         assert screen.has_trace and screen.has_class("-with-trace")
         left = "\n".join(str(s.content) for s in screen.query("#detail-pane Static"))
-        assert "Log Entry — NetworkRule" in left and "Rule Def." in left
+        assert "Rule Def." not in left
+        # the category now lives in the dialog header, not repeated inside the pane
+        assert "NetworkRule" not in left
+        header = str(screen.query_one("#dialog-header", Static).content)
+        assert "NetworkRule" in header
         # nothing twice: the policy path, priorities, action and SKU live in the trace
         for dup in ("Policy       ", "RCG          ", "Rule Coll.", "Rule         ", "Rule Priority", "Rule Action", "Policy SKU"):
             assert dup not in left, dup
-        title = str(screen.query_one("#trace-title", Static).content)
-        assert title.startswith("[b]▸ 10.3.5.4 → 1.1.1.1:443 TCP[/b]\n[green]✓[/] Allow by rcg-net » rc-web » allow-web")
+        # the flow/outcome header (previously #trace-title, rendered as Rich Text so
+        # ✓ / ? / ✗ take the same theme colours as the tree) is the dialog's now,
+        # tested by the parallel detail_screen work package.
+        assert not screen.query("#trace-title")
         assert not screen.query("#trace-meta")  # the status bar already shows the metadata line
         tree = screen.query_one("#trace-tree", Tree)
-        assert tree.has_focus  # Enter on the tree opens the rule right away
+        assert tree.has_focus  # the logged rule is pre-selected and scrolled into view
         assert tree.cursor_node is not None and "allow-web" in tree.cursor_node.label.plain
         # the pane sits left of the trace, both inside the same dialog
         assert screen.query_one("#detail-pane").region.x < tree.region.x
@@ -548,23 +558,24 @@ async def test_enter_opens_entry_and_trace_side_by_side(structured_record, mgmt,
         assert app.screen is screen and tree.has_focus
 
 
-async def test_long_rule_details_are_shortened_on_collapsed_lines():
-    """The collapsed rule line keeps a short reason; the full text lives on the child leaf."""
+async def test_long_rule_names_are_shortened_in_the_tree_but_whole_in_detail():
+    """Long entity names are cut with an ellipsis in the tree; the selection
+    detail (package 4) always shows them whole."""
     from textual.app import App
 
     from viewer.trace import Flow, build_trace
     from viewer.views.trace_screen import TracePanel, _short
 
     assert _short("short") == "short"
-    assert _short("x" * 60).endswith("…") and len(_short("x" * 60)) == 40
+    assert _short("x" * 60).endswith("…") and len(_short("x" * 60)) == 48
 
-    many = [str(8000 + i) for i in range(14)]  # long port list → long miss detail
+    long_name = "allow-many-" + "x" * 50  # well past the 48-character tree limit
     policy = FirewallPolicyInfo(id="/p", name="p", sku_tier="Standard", threat_intel_mode="Alert",
                                 rule_collection_groups=[
         RuleCollectionGroup(id="/p/g", name="g", priority=100, rule_collections=[
             RuleCollection(name="rc", priority=100, action="Allow", rule_collection_type="Filter", rules=[
-                Rule(name="allow-many", rule_type="NetworkRule", source_addresses=["*"],
-                     destination_addresses=["*"], destination_ports=many, protocols=["Any"]),
+                Rule(name=long_name, rule_type="NetworkRule", source_addresses=["*"],
+                     destination_addresses=["*"], destination_ports=["8080"], protocols=["Any"]),
             ]),
         ]),
     ])
@@ -578,20 +589,15 @@ async def test_long_rule_details_are_shortened_on_collapsed_lines():
     app = _Host()
     async with app.run_test(size=(120, 30)) as pilot:
         await pilot.pause()
-        labels = _tree_labels(app.query_one("#trace-tree", Tree))
-    rule_line = next(line for line in labels if line.startswith("✗ allow-many"))
-    assert "…" in rule_line and len(rule_line) < 80, rule_line
-    assert any(line.startswith("✗ port:") and many[-1] in line for line in labels)  # full detail on the leaf
-
-
-def test_rule_definition_formats_dnat_targets_without_trailing_colon():
-    app = FirewallLogApp()
-    with_port = Rule(name="rdp", rule_type="NatRule", source_addresses=["*"], destination_addresses=["20.1.1.1"],
-                     destination_ports=["3389"], protocols=["TCP"], translated_address="10.3.5.4", translated_port="3389")
-    without_port = Rule(name="web", rule_type="NatRule", source_addresses=["*"], destination_addresses=["20.1.1.1"],
-                        destination_ports=["443"], protocols=["TCP"], translated_fqdn="web.internal")
-    assert app._rule_definition(with_port).endswith("to 20.1.1.1 → 10.3.5.4:3389")
-    assert app._rule_definition(without_port).endswith("to 20.1.1.1 → web.internal")
+        tree = app.query_one("#trace-tree", Tree)
+        labels = _tree_labels(tree)
+        rule_line = next(line for line in labels if line.startswith("✗ allow-many"))
+        assert "…" in rule_line and long_name not in rule_line
+        rule_node = next(n for n in _tree_nodes(tree) if n.label.plain.startswith("✗ allow-many"))
+        tree.move_cursor(rule_node)
+        await pilot.pause()
+        detail = str(app.query_one("#trace-detail-text", Static).content)
+        assert long_name in detail  # whole, unlike the tree line
 
 
 def test_flow_from_dnat_row_uses_the_public_destination(structured_record):
@@ -619,6 +625,25 @@ def test_flow_from_legacy_ipv6_network_rule_keeps_full_address(legacy_record):
     flow = FirewallLogApp._flow_from_row(row)
     assert flow.dst_ip == "fd00::2"
     assert flow.dst_fqdn == ""
+
+
+def test_detail_values_stay_inline_in_the_wide_dialog_and_wrap_beside_the_trace(structured_record):
+    """The own-line threshold follows the pane width: 84 columns alone, 52 beside the trace."""
+    from viewer.trace import Flow, Trace
+    row = parse_record(structured_record("AZFWFatFlow", Protocol="TCP", SourceIp="10.2.0.5", SourcePort=9684,
+                                         DestinationIp="142.251.14.102", DestinationPort=443, Flag="", Rate="2.8 Mbps"))
+    flow = "10.2.0.5:9684 → 142.251.14.102:443"      # 34 characters: the old threshold wrapped it nowhere
+    assert len(flow) == 34
+    alone = DetailDialog(row)
+    assert str(alone._field("Flow         ", flow).content).startswith("[dim]Flow")
+    assert "\n" not in str(alone._field("Flow         ", flow).content)
+    beside = DetailDialog(row, trace=Trace(flow=Flow(), logged=None, threat_intel="", passes=[],
+                                            infrastructure=None, outcome="x"))
+    v6_flow = "[fd10:2:0:1::4]:9684 → [2603:1020:c01:16::275]:443"   # 50 characters: fits alone, not beside the trace
+    assert "\n" not in str(alone._field("Flow         ", v6_flow).content)
+    assert "\n" in str(beside._field("Flow         ", v6_flow).content)
+    long_value = "x" * 70
+    assert "\n" in str(alone._field("Rule Def.    ", long_value).content)   # still wraps when it would not fit
 
 
 def test_ports_join_brackets_ipv6_addresses():
@@ -715,23 +740,99 @@ async def test_firewall_tab_shows_instance_networking_policy_and_logging(structu
         assert "fw-hub-gwc" in title and "Premium · AZFW_VNet · germanywestcentral" in title
         instance = str(view.query_one("#fw-instance", Static).content)
         assert "1, 2, 3" in instance and "Succeeded" in instance and "project=cclab" in instance
-        assert "EnableFatFlowLogging=true" in instance
+        assert _row("Fat flow logging", "on") in instance and "EnableFatFlowLogging" not in instance
         net = view.query_one("#fw-network", DataTable)
         rows = [[str(c) for c in net.get_row_at(i)] for i in range(net.row_count)]
-        assert rows[0] == ["IpConfiguration0", "10.2.0.4", "pip-fw-hub-gwc-001\n72.144.131.50"]
-        assert rows[1][1:] == ["fd10:2:0:1::4", "pip-fw-hub-gwc-ipv6-001\naddress not readable"]
-        assert rows[2][0] == "management" and rows[2][2].endswith("72.144.91.185")
+        # the addresses first, the configuration name last
+        assert rows[0] == ["10.2.0.4", "pip-fw-hub-gwc-001\n72.144.131.50", "IpConfiguration0"]
+        assert rows[1][:2] == ["fd10:2:0:1::4", "pip-fw-hub-gwc-ipv6-001\naddress not readable"]
+        assert rows[2][2] == "management" and rows[2][1].endswith("72.144.91.185")
         net_note = str(view.query_one("#fw-network-note", Static).content)
         assert "10.2.0.0/26" in net_note and "AzureFirewallSubnet, AzureFirewallManagementSubnet" in net_note
-        assert "forced tunneling" in net_note
+        assert "own subnet and public IP" in net_note and "forced tunneling" not in net_note
         pol = str(view.query_one("#fw-policy", Static).content)
         assert "fwp-hub-premium-gwc" in pol and "1 rule collection groups" in pol
         assert "DNS proxy" in pol and "Azure DNS" in pol and "2 signature overrides" in pol and "CA: fw-tls-intermediate-ca" in pol
         log = view.query_one("#fw-logging", DataTable)
-        lrows = [[str(c) for c in log.get_row_at(i)] for i in range(log.row_count)]
-        assert lrows == [["diag-fw\n  Event Hub ehns-fw-gwc/firewall-logs · 3 categories · 3 of 9 viewer"]]
+        assert [str(c.label) for c in log.columns.values()] == ["Category", "EH"]
+        lrows = {str(log.get_row_at(i)[0]): str(log.get_row_at(i)[1]) for i in range(log.row_count)}
+        assert list(lrows) == VIEWER_CATEGORIES                       # every viewer category, in order
+        assert lrows["AZFWNetworkRule"] == "✓" and lrows["AZFWDnsQuery"] == "✓" and lrows["AZFWNatRule"] == "·"
         note = str(view.query_one("#fw-logging-note", Static).content)
-        assert "Not to Event Hub" in note and "AZFWFlowTrace" in note and "AZFWNatRule" in note
+        assert "ehns-fw-gwc/firewall-logs" in note and "Event Hub · diag-fw" in note
+        assert "connected" not in note                                # no hub configured: no claim which one is ours
+        assert "Event Hub coverage" in note and "incomplete, missing AZFWNatRule" in note
+        assert "AZFWFlowTrace" not in note.split("incomplete")[1]     # never counted as missing
+        assert "Not to Event Hub" not in note
+
+
+async def test_firewall_tab_shows_the_0_6_0_facts_from_the_snapshot(structured_record, mgmt, firewall_id):
+    """Everything 0.6.0 reads must survive the app's plumbing from snapshot to tab:
+    subnets, NAT gateway, maintenance, autoscale, auto-learn SNAT, explicit proxy."""
+    from viewer.azure_resources import MaintenanceWindow, NatGatewayInfo, SubnetInfo
+    snap = make_snapshot()
+    snap.firewall.sku_name = "AZFW_VNet"
+    snap.firewall.autoscale_min, snap.firewall.autoscale_max = 4, 4
+    snap.firewall.route_server_id = "/subscriptions/s/resourceGroups/rg/providers/Microsoft.Network/virtualHubs/rs-hub"
+    snap.firewall.additional_properties = {"Network.RouteServerInfo.RouteServerID": snap.firewall.route_server_id}
+    snap.subnets = [SubnetInfo(id="/sn", name="AzureFirewallSubnet", cidrs=["10.2.0.0/26"], nat_gateway_id="/ng")]
+    snap.nat_gateways = [NatGatewayInfo(id="/ng", name="natgw-hub", subnet_name="AzureFirewallSubnet", readable=True,
+                                        public_ip_ids=["/p"], public_ip_names=["pip-natgw"], public_ip_addresses=["20.1.2.3"])]
+    snap.maintenance = [MaintenanceWindow(assignment_name="a", configuration_id="/mc", configuration_name="mc-fw-nightly",
+                                          readable=True, start="2026-01-01 22:00", duration="05:00",
+                                          time_zone="W. Europe Standard Time", recur_every="Day",
+                                          expiration="9999-12-31 23:59", scope="Resource", sub_scope="NetworkSecurity")]
+    snap.policy.snat_auto_learn = "Enabled"
+    snap.policy.explicit_proxy = True
+    snap.policy.explicit_proxy_http_port = 8080
+    snap.policy.explicit_proxy_pac = True
+    snap.policy.explicit_proxy_pac_port = 8090
+    snap.policy.explicit_proxy_pac_file = "https://acct.blob.core.windows.net/c/proxy.pac"
+    mgmt["snapshot"] = snap
+    app = FirewallLogApp()
+    async with app.run_test(size=(160, 45)) as pilot:
+        await pilot.pause()
+        await _load(app, pilot, firewall_id)
+        await pilot.pause()
+        view = app.query_one("#firewall-view", FirewallView)
+        instance = str(view.query_one("#fw-instance", Static).content)
+        assert "fixed at 4 capacity units, autoscaling off" in instance
+        assert "daily 22:00 for 5 h, W. Europe Standard Time" in instance and "mc-fw-nightly" in instance
+        assert "RouteServerID" not in instance   # has its own row in the Policy block
+        net_note = str(view.query_one("#fw-network-note", Static).content)
+        assert "natgw-hub on AzureFirewallSubnet" in net_note and "leaves with 20.1.2.3" in net_note
+        pol = str(view.query_one("#fw-policy", Static).content)
+        assert "via Route Server rs-hub" in pol and "not readable from here" in pol
+        assert "port 8080 for HTTP and HTTPS" in pol and "port 8090 · " in pol and "proxy.pac" in pol
+
+
+async def test_firewall_tab_panels_scroll_on_a_small_terminal(structured_record, mgmt, firewall_id):
+    """Regression for the Codex finding: a 120×30 terminal cannot show the whole
+    Policy block, so the panel must scroll rather than cut the rest off."""
+    from textual.containers import Vertical
+    snap = make_snapshot()
+    snap.policy.dns_proxy, snap.policy.dns_servers = True, ["10.0.0.53"]
+    snap.policy.idps_mode, snap.policy.tls_ca_name = "Alert", "fw-tls-intermediate-ca"
+    snap.policy.snat_auto_learn = "Enabled"
+    snap.policy.explicit_proxy, snap.policy.explicit_proxy_http_port = True, 8080
+    snap.policy.explicit_proxy_pac, snap.policy.explicit_proxy_pac_port = True, 8090
+    snap.policy.explicit_proxy_pac_file = "https://acct.blob.core.windows.net/c/proxy.pac"
+    mgmt["snapshot"] = snap
+    app = FirewallLogApp()
+    async with app.run_test(size=(120, 30)) as pilot:
+        await pilot.pause()
+        await _load(app, pilot, firewall_id)
+        app.query_one("#main-tabs", TabbedContent).active = "tab-firewall"
+        await pilot.pause()
+        panel = app.query_one("#panel-policy", Vertical)
+        text_lines = str(app.query_one("#fw-policy", Static).content).count("\n") + 1
+        assert text_lines > panel.size.height, "the fixture must overflow the panel for this test to mean anything"
+        assert panel.max_scroll_y > 0            # the overflow is reachable
+        # A layout pass after the tab switch can reset the scroll on a slow
+        # runner (seen on Windows CI), so scroll again until it sticks.
+        await wait_until(pilot, lambda: panel.scroll_y == panel.max_scroll_y
+                         or panel.scroll_end(animate=False, force=True))
+        assert panel.scroll_y == panel.max_scroll_y
 
 
 async def test_views_render_metadata(structured_record, mgmt, firewall_id):

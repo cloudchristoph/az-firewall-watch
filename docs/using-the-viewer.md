@@ -74,8 +74,14 @@ How it interacts with the rest of the filter bar:
 
 ## Row details
 
-`Enter` on the highlighted row opens the detail dialog with the full record: every
-field the firewall logged, formatted and labelled. `Escape` or `q` closes it.
+`Enter` on the highlighted row opens the detail dialog. Its first line is the
+connection, protocol and logged action; below it the record's fields in groups:
+*Connection* (time local and UTC, ports, and what the category adds: flag, rate,
+query, response, threat, signature), *Inspection* (explicit proxy, TLS inspection,
+only when the record carries them) and *Rule* (policy, group, collection, rule).
+The frame's colour and its title tab carry the logged action (`ALLOW · allow-web`
+in green, deny in red, dnat in yellow). `Escape` or `q` closes it, `Enter` too
+when there is no trace, and a Close button in the footer serves the mouse.
 
 The fields adapt to the category, because the raw log means different things
 depending on it:
@@ -88,29 +94,73 @@ depending on it:
   and a `Translated` line with what the firewall turned it into.
 - Everything else shows source, destination and ports as logged.
 
-When [policy context](policy-context.md) is available, the same dialog also carries
-the IP groups containing source and destination, the definition of the logged rule,
-and the evaluation trace beside the record's own fields.
+When [policy context](policy-context.md) is available, the same dialog gains a
+second header line with the trace's outcome and the cache age, a *Groups* block
+with the IP groups containing source and destination, and the evaluation trace
+beside the fields. The trace is described in
+[Evaluation trace](policy-context.md#evaluation-trace); the keys inside the
+dialog are `Enter` to fold a node, `p` to open the selected rule in the Policy
+tab, `a` to switch between the focused and the full tree, `Shift` + `↑` / `↓`
+to scroll the selection detail under the tree. Fields, tree and selection
+detail each sit in a titled frame (*Fields*, *Policy evaluation*, *Selection*).
+
+On a terminal narrower than 120 columns the fields and the trace become two
+tabs inside the dialog, *Fields* and *Policy trace*, switched with `Tab`; the
+trace tab opens first so the logged rule is the first thing on screen. Below
+40 rows the selection detail under the tree gives its rows to the tree, below
+30 it keeps only its name lines. A header line that would wrap drops the
+group and collection and keeps the rule name. Every pane scrolls on its own.
 
 Rows that are not a policy decision (`DnsQuery`, `DnsFailure`, `IDPS`, `FlowTrace`,
-`FatFlow`) show their fields alone, and the status bar says why, for example
-*no policy evaluation for FlowTrace rows*.
+`FatFlow`) show their fields alone, with a line underneath that says why, for
+example *No rule decision in this log: FatFlow records the top flows by rate, not
+a rule decision*.
 
 ## Status bar
 
-The bar at the bottom shows the connection state, the total number of events
-received, the currently visible count while a filter is active, and how many
-records were skipped (unknown or non-firewall categories). With policy context
-enabled it also carries a short metadata summary such as
-`Policy: Premium · 11 IP groups · fresh`.
+The bar at the bottom answers one question: can I trust what I am looking at?
+It has a pause indicator and then one segment per source, each with a glyph, a
+label and a state word:
+
+```text
+▶ LIVE │ ● EH connected │ ● Events receiving · 1079/5113 shown · last 2s ago │ ● Context loaded 35m ago
+```
+
+| Glyph | Meaning                                        |
+| ----- | ---------------------------------------------- |
+| `●`   | working as intended                            |
+| `◐`   | something is in progress                       |
+| `○`   | off, idle or not available; not an error       |
+| `✖`   | needs you                                      |
+
+- **EH** is the Event Hub connection: *connecting*, *verifying access*,
+  *connected*, *retrying* or *reconnecting* with the countdown, *failed*,
+  *stopped*, or *not configured* when `.env` has no credentials.
+- **Events** is whether records are arriving, which a standing connection alone
+  does not tell you: *waiting* until the first record, *receiving* while records
+  came in during the last minute, *idle* with the time since the last one, and
+  *paused*. The numbers are the total received, the visible count while a filter
+  is active, and how many records were skipped (unknown or non-firewall
+  categories).
+- **Context** is the optional [policy context](policy-context.md): *off*,
+  *pending* until the first record names the firewall, *loading*, *loaded* with
+  the age of the cached policy, *refreshing* with the reason, or *unavailable*
+  when the identity has no ARM access. The tier and the IP groups themselves live
+  in the Firewall, Policy and IP Groups tabs.
+
+The bar shows state only. One-off hints, such as why a row has no evaluation
+trace or that there is nothing to refresh yet, appear as notifications in the
+corner and disappear on their own. The last Event Hub error is the bar's tooltip.
+On a narrow terminal the details go first, then the labels.
 
 Clicking the status bar pauses and resumes the stream, the same as `Ctrl` + `P`.
 
 ## Reconnects
 
 If an established connection drops, the app reconnects on its own with a capped
-backoff (2 s → 5 s → 10 s → 30 s → 60 s) and reports the countdown in the status
-bar. Only the very first connection gives up after three attempts, and
+backoff (2 s → 5 s → 10 s → 30 s → 60 s). The EH segment shows *reconnecting*
+with the attempt and the countdown, and a notification carries the error text.
+Only the very first connection gives up after three attempts, and
 authentication errors stop immediately with a hint rather than retrying.
 
 ## Key bindings
@@ -121,9 +171,12 @@ authentication errors stop immediately with a hint rather than retrying.
 | `Ctrl` + `q` | Quit as well, and it works from inside a filter input where `q` would be typed text         |
 | `Ctrl` + `p` | Pause / resume streaming, same as clicking the status bar                                   |
 | `Ctrl` + `s` | Save an SVG screenshot of the current view                                                 |
-| `Enter`      | Open the row details, with the evaluation trace beside them when policy metadata is loaded |
+| `Enter`      | Open the row details, with the evaluation trace beside them when the policy context is loaded |
+| `p`, `a`, `Tab` | In the row details: open the selected rule in the Policy tab, toggle the full trace, switch tabs on a narrow terminal |
+| `Shift` + `↑` / `↓` | In the row details: scroll the selection detail under the trace tree |
 | `Escape`     | Clear all filter inputs (or close the open dialog)                                         |
 | `f`          | Jump focus to the filters                                                                  |
 | `Tab`        | Move between filter inputs                                                                 |
 | `c`          | Clear all rows from the table                                                              |
-| `Ctrl` + `r` | Re-fetch firewall / policy / IP-group metadata, bypassing the cache                        |
+| `Ctrl` + `r` | Refresh context: re-fetch firewall, policy and IP groups, bypassing the cache               |
+| `v`          | In the Policy tab: show or hide the values of the HTTP headers an application rule inserts |

@@ -19,6 +19,8 @@ import viewer.streaming as streaming
 from dialogs import ConnectingDialog, ErrorDialog, PolicyContextNoticeDialog, StatusBar, UpdateDialog
 from viewer.app import FirewallLogApp
 
+from .conftest import toasts
+
 pytestmark = pytest.mark.usefixtures("no_eventhub_env", "no_update_check", "fast_backoff")
 
 SAS_CONN = (
@@ -145,6 +147,14 @@ async def wait_until(pilot, cond: Callable[[], bool], timeout: float = 5.0) -> N
         await pilot.pause(0.05)
 
 
+def _connected(app: FirewallLogApp) -> bool:
+    """True once the status bar exists and the EH segment says connected. On a slow runner the
+    first poll can land before the main screen is mounted, and the query must
+    not fail there."""
+    bar = app.query("#status")
+    return bool(bar) and bar.first(StatusBar).eh_state == "connected"
+
+
 async def wait_for_dialog(pilot, app, cls, timeout: float = 5.0) -> None:
     """Wait until *cls* is the active screen and its widgets are composed."""
     await wait_until(pilot, lambda: isinstance(app.screen, cls), timeout)
@@ -176,7 +186,12 @@ async def test_no_credentials_sets_error_status_without_dialog(fake_client):
     async with app.run_test(size=(140, 40)) as pilot:
         await pilot.pause(0.2)
         status = app.query_one("#status", StatusBar)
-        assert status.status.startswith("ERROR: No Event Hub credentials")
+        assert status.eh_state == "unconfigured"
+        assert status.eh_detail == "no credentials in .env"
+        assert "EH not configured · no credentials in .env" in str(status.render())
+        assert status.eh_error.startswith("No Event Hub credentials configured")
+        assert status.tooltip == status.eh_error  # the long text lives in the tooltip
+        assert any(t.startswith("No Event Hub credentials configured") for t in toasts(app))
         assert not isinstance(app.screen, (ConnectingDialog, ErrorDialog))
         assert fake_client.instances == []
 
@@ -190,7 +205,7 @@ async def test_sas_connect_shows_splash_then_streams_rows(monkeypatch, fake_clie
     async with app.run_test(size=(140, 40)) as pilot:
         await wait_until(pilot, lambda: len(app._all_rows) == 3)
         status = app.query_one("#status", StatusBar)
-        assert status.status == "Connected"
+        assert status.eh_state == "connected"
         assert app.sub_title == "fw-hub"  # firewall name from the (upper-cased) resourceId, lower-cased
         assert not isinstance(app.screen, ConnectingDialog)  # popped on first real event
         client = fake_client.instances[0]
@@ -205,7 +220,7 @@ async def test_splash_shows_namespace_and_hub_but_never_the_key(monkeypatch, fak
     app = FirewallLogApp()
     async with app.run_test(size=(140, 40)) as pilot:
         await wait_for_dialog(pilot, app, ConnectingDialog)
-        await wait_until(pilot, lambda: app.query_one("#status", StatusBar).status == "Connected")
+        await wait_until(pilot, lambda: _connected(app))
         text = _dialog_text(app.screen)
         fields = {k.strip(): v.strip() for k, v in (line.split(":", 1) for line in text.splitlines() if ":" in line)}
         assert fields["Namespace"] == "lab-ns.servicebus.windows.net"
@@ -275,7 +290,7 @@ async def test_update_dialog_survives_first_event(monkeypatch, fake_client, fire
     fake_client.script = [{"events": []}]
     app = FirewallLogApp()
     async with app.run_test(size=(140, 40)) as pilot:
-        await wait_until(pilot, lambda: app.query_one("#status", StatusBar).status == "Connected")
+        await wait_until(pilot, lambda: _connected(app))
         await app.push_screen(UpdateDialog("9.9.9", "https://example.test/rel"))
         await pilot.pause()
         assert isinstance(app.screen, UpdateDialog)
@@ -302,7 +317,7 @@ async def test_policy_context_notice_survives_first_event(monkeypatch, fake_clie
     env.write_text(f"EVENT_HUB_CONNECTION_STRING={SAS_CONN}\n", encoding="utf-8")
     app = FirewallLogApp(policy_context=True, policy_context_notice=True, env_file=env)
     async with app.run_test(size=(140, 40)) as pilot:
-        await wait_until(pilot, lambda: app.query_one("#status", StatusBar).status == "Connected")
+        await wait_until(pilot, lambda: _connected(app))
         # the splash is pushed *beneath* the notice, so the question is visible at once
         assert [type(s).__name__ for s in app.screen_stack] == ["Screen", "ConnectingDialog", "PolicyContextNoticeDialog"]
 
@@ -332,7 +347,11 @@ async def test_transient_errors_retry_three_times_then_error_dialog(monkeypatch,
         assert len(fake_client.instances) == 3
         assert all(c.exited for c in fake_client.instances)
         status = app.query_one("#status", StatusBar)
-        assert status.status == "Failed after 3 attempts — see dialog"
+        assert status.eh_state == "failed"
+        assert status.eh_detail == "after 3 attempts, see dialog"
+        assert status.eh_error == "name resolution failed"
+        assert "✖ EH failed · after 3 attempts, see dialog" in str(status.render())
+        assert toasts(app).count("Connection error: name resolution failed") == 2  # attempts 1 and 2 retried
         text = _dialog_text(app.screen)
         assert "name resolution failed" in text
         assert "could not be reached" in text
@@ -373,6 +392,9 @@ async def test_auth_errors_do_not_retry_and_show_sas_hint(monkeypatch, fake_clie
         text = _dialog_text(app.screen)
         assert message in text
         assert "--reconfigure" in text
+        status = app.query_one("#status", StatusBar)
+        assert status.eh_error == message                          # the tooltip carries the terminal error too
+        assert status.eh_detail == "configuration error, see dialog"  # one try, not three
 
 
 async def test_error_dialog_q_quits_app(monkeypatch, fake_client):
@@ -407,7 +429,7 @@ async def test_receive_drop_after_connect_reconnects(monkeypatch, fake_client, f
     async with app.run_test(size=(140, 40)) as pilot:
         await wait_until(pilot, lambda: len(app._all_rows) == 3)
         assert len(fake_client.instances) == 2
-        assert app.query_one("#status", StatusBar).status == "Connected"
+        assert app.query_one("#status", StatusBar).eh_state == "connected"
         assert not isinstance(app.screen, ErrorDialog)
 
 
@@ -424,7 +446,7 @@ async def test_established_connection_reconnects_beyond_three_failures(monkeypat
         await wait_until(pilot, lambda: len(app._all_rows) == 3)
         assert len(fake_client.instances) == 8
         assert not isinstance(app.screen, ErrorDialog)
-        assert app.query_one("#status", StatusBar).status == "Connected"
+        assert app.query_one("#status", StatusBar).eh_state == "connected"
         assert app.sub_title == "fw-hub"
 
 
@@ -439,12 +461,15 @@ async def test_reconnect_status_and_backoff_cap(monkeypatch, fake_client, firewa
     app = FirewallLogApp()
     async with app.run_test(size=(140, 40)) as pilot:
         status = app.query_one("#status", StatusBar)
-        await wait_until(pilot, lambda: status.status.startswith("Connection lost"))
-        assert "link detached" in status.status
-        assert "reconnect attempt 1" in status.status
+        await wait_until(pilot, lambda: status.eh_state == "reconnecting" and status.eh_detail)
+        assert status.eh_error == "link detached"  # the exception text is tooltip, not bar text
+        assert status.eh_detail.startswith("attempt 1 in ")
+        assert "◐ EH reconnecting · attempt 1 in " in str(status.render())
         assert app.sub_title == "Live Log Monitor  |  connection lost"
-        await wait_until(pilot, lambda: "reconnect attempt 2" in status.status)
-        await wait_until(pilot, lambda: status.status == "Connected", timeout=8)
+        await wait_until(pilot, lambda: status.eh_detail.startswith("attempt 2 in "))
+        await wait_until(pilot, lambda: status.eh_state == "connected", timeout=8)
+        assert status.eh_detail == "" and status.eh_error == ""
+        assert toasts(app).count("Connection lost: link detached") == 1  # one toast per outage, not per attempt
         assert len(fake_client.instances) == 3
 
 
@@ -466,10 +491,10 @@ async def test_worker_cancellation_pops_splash_and_stops(monkeypatch, fake_clien
     fake_client.script = [{"events": []}]
     app = FirewallLogApp()
     async with app.run_test(size=(140, 40)) as pilot:
-        await wait_until(pilot, lambda: app.query_one("#status", StatusBar).status == "Connected")
+        await wait_until(pilot, lambda: _connected(app))
         assert isinstance(app.screen, ConnectingDialog)
         app.workers.cancel_all()
-        await wait_until(pilot, lambda: app.query_one("#status", StatusBar).status == "Streaming stopped")
+        await wait_until(pilot, lambda: app.query_one("#status", StatusBar).eh_state == "stopped")
         assert not isinstance(app.screen, ConnectingDialog)
         assert app.is_running
 
@@ -544,7 +569,7 @@ async def test_entra_arm_check_failure_is_ignored(monkeypatch, fake_client, fake
     app = FirewallLogApp()
     async with app.run_test(size=(140, 40)) as pilot:
         await wait_until(pilot, lambda: len(app._all_rows) == 1)
-        assert app.query_one("#status", StatusBar).status == "Connected"
+        assert app.query_one("#status", StatusBar).eh_state == "connected"
 
 
 async def test_entra_auth_error_shows_entra_hint_and_closes_credential(monkeypatch, fake_client, fake_credential):

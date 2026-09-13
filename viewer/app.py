@@ -112,6 +112,12 @@ class FirewallLogApp(App[None]):
     DataTable {
         height: 1fr;
     }
+    /* The Firewall tab's tables sit inside scrolling panels and take their
+       natural height there; app CSS outranks a view's DEFAULT_CSS, so the
+       exception lives here, next to the rule it overrides. */
+    FirewallView .panel > DataTable {
+        height: auto;
+    }
 
     StatusBar {
         height: 1;
@@ -138,7 +144,7 @@ class FirewallLogApp(App[None]):
         Binding("escape", "clear_filters", "Clear Filters"),
         Binding("f", "focus_filter", "Filter"),
         Binding("ctrl+s", "screenshot", "Screenshot", show=True),
-        Binding("ctrl+r", "refresh_metadata", "Refresh metadata", show=True),
+        Binding("ctrl+r", "refresh_context", "Refresh context", show=True),
     ]
 
     # ── state ──────────────────────────────────────────────────────────────────
@@ -225,7 +231,8 @@ class FirewallLogApp(App[None]):
         # Initial state: Logs tab is active, filters must be visible, and the
         # table has focus so single-key bindings (f, c, arrows) work at once.
         tbl.focus()
-        self._refresh_metadata_views()
+        self.query_one("#status", StatusBar).ctx_state = "pending" if self._policy_context else "off"
+        self._refresh_context_views()
         self._start_stream()
         self.set_interval(1.0, self._flush_rows)
         self.set_interval(60.0, self._check_cache_age)
@@ -270,7 +277,7 @@ class FirewallLogApp(App[None]):
         self._subnet_cidrs = []
         self.workers.cancel_group(self, "mgmt")
         status = self.query_one("#status", StatusBar)
-        status.meta = "policy context off"
+        status.ctx_state, status.ctx_detail, status.ctx_fetched_at = "off", "", None
         try:
             tabs = self.query_one("#main-tabs", TabbedContent)
             for pane in ("tab-firewall", "tab-policy", "tab-ipgroups"):
@@ -297,10 +304,12 @@ class FirewallLogApp(App[None]):
         if snap is None:
             # Keep whatever was loaded before (still valid policy data) but say
             # so; only report "unavailable" when there is nothing to show.
-            status.meta = (
-                "refresh failed · showing previous metadata"
-                if self._mgmt_loaded else "metadata unavailable (no ARM access)"
-            )
+            if self._mgmt_loaded:
+                status.ctx_state, status.ctx_detail = "loaded", "refresh failed"
+                self.notify("Refresh failed. The previous policy context stays on screen.",
+                            title="Policy context", severity="warning")
+            else:
+                status.ctx_state, status.ctx_detail = "unavailable", "no ARM access"
             return
         self._fw_info = snap.firewall
         self._policy_info = snap.policy
@@ -318,16 +327,17 @@ class FirewallLogApp(App[None]):
             # resourceId only gave us an upper-cased one.
             self.sub_title = snap.firewall.name
             self._fw_name_set = True
-        status.meta = self._meta_text(snap)
-        self._refresh_metadata_views()
+        status.ctx_state, status.ctx_detail, status.ctx_fetched_at = "loaded", "", snap.fetched_at
+        self._refresh_context_views()
         self._refresh_table()
 
-    @staticmethod
-    def _meta_text(snap: CachedSnapshot) -> str:
-        policy_txt = f"Policy: {snap.policy.sku_tier or 'unknown tier'}" if snap.policy else "Policy: none"
+    def _cache_age_label(self) -> str:
+        """The detail dialog's cache-age phrase, e.g. ``fresh`` or ``12 min old``."""
+        snap = self._snapshot
+        if snap is None:
+            return ""
         age_min = int(snap.age_seconds() // 60)
-        age = "fresh" if age_min < 1 else f"cache {age_min}m"
-        return f"{policy_txt} · {len(snap.ip_groups)} IP groups · {age}"
+        return "fresh" if age_min < 1 else f"{age_min} min old"
 
     # ── keeping the policy context current ────────────────────────────────────
     _AUTO_REFRESH_INTERVAL = 300.0  # seconds between automatic re-fetches
@@ -342,21 +352,18 @@ class FirewallLogApp(App[None]):
         if self._last_auto_refresh is not None and now - self._last_auto_refresh < self._AUTO_REFRESH_INTERVAL:
             return False
         self._last_auto_refresh = now
-        self.query_one("#status", StatusBar).meta = f"refreshing metadata ({reason})…"
+        status = self.query_one("#status", StatusBar)
+        status.ctx_state, status.ctx_detail = "refreshing", reason
         self._load_mgmt(self._firewall_id, force=True)
         return True
 
     def _check_cache_age(self) -> None:
-        """Every minute: keep the age in the status bar honest; re-fetch once the TTL is over."""
+        """Every minute: re-fetch once the TTL is over (the status bar ages the cache itself)."""
         snap = self._snapshot
         if snap is None or not self._policy_context:
             return
         if not snap.is_fresh():
-            if self._refresh_policy_context("cache expired"):
-                return
-        status = self.query_one("#status", StatusBar)
-        if status.meta.startswith("Policy: "):
-            status.meta = self._meta_text(snap)
+            self._refresh_policy_context("cache expired")
 
     def _note_unknown_rules(self, batch: list[FirewallDataRow]) -> None:
         """A logged rule the loaded policy does not know means the cache is stale."""
@@ -368,13 +375,18 @@ class FirewallLogApp(App[None]):
                 self._refresh_policy_context(f"new rule {r.rule_name}")
                 return
 
-    def _refresh_metadata_views(self) -> None:
+    def _refresh_context_views(self) -> None:
         """Refresh Firewall / Policy / IP Groups tabs from current state."""
         if not self._policy_context:
             return
+        snap = self._snapshot
         self.query_one("#firewall-view", FirewallView).render_data(
             self._fw_info, self._policy_info, self._subnet_cidrs,
-            self._snapshot.diagnostics if self._snapshot else [],
+            snap.diagnostics if snap else [],
+            subnets=snap.subnets if snap else [],
+            nat_gateways=snap.nat_gateways if snap else [],
+            maintenance=snap.maintenance if snap else [],
+            maintenance_readable=snap.maintenance_readable if snap else True,
         )
         self.query_one("#policy-view", PolicyView).render_data(self._policy_info, self._ip_groups)
         self.query_one("#ipgroups-view", IpGroupsView).render_data(
@@ -405,6 +417,7 @@ class FirewallLogApp(App[None]):
             return
         if self._firewall_id is None:
             self._firewall_id = firewall_id
+            self.query_one("#status", StatusBar).ctx_state = "loading"
             self._load_mgmt(firewall_id)
 
     # ── periodic flush ─────────────────────────────────────────────────────────
@@ -420,6 +433,7 @@ class FirewallLogApp(App[None]):
         status = self.query_one("#status", StatusBar)
         status.total += len(batch)
         status.skipped += skips
+        status.last_event_at = time.monotonic()  # skipped records count as "receiving" too
         if not batch:
             return
 
@@ -715,23 +729,48 @@ class FirewallLogApp(App[None]):
     def _is_traceable(self, row: FirewallDataRow) -> bool:
         return row.category.lower() in self._TRACEABLE
 
+    # Why an observation row has no trace: what the category records instead of
+    # a rule decision. The wording must not read as "the firewall skipped the
+    # policy": it did not, the log simply does not carry its decision here.
+    _NO_DECISION = {
+        "flowtrace": "FlowTrace records the handshake and flags of a connection, not a rule decision.",
+        "fatflow": "FatFlow records the top flows by rate, not a rule decision.",
+        "dnsquery": "DNS proxy rows record the query and its answer, not a rule decision.",
+        "dnsfailure": "DNS proxy rows record a failed resolution, not a rule decision.",
+        "idps": "IDPS rows record a signature hit; the rule decision for the flow is a separate row.",
+    }
+
+    def _trace_note(self, row: FirewallDataRow) -> str:
+        """Title and reason for a missing trace, empty when a trace can be built."""
+        cat = row.category.lower()
+        if cat not in self._TRACEABLE:
+            why = self._NO_DECISION.get(cat, f"{row.category} rows record observations, not a rule decision.")
+            return f"No rule decision in this log\n{why} There is no policy trace to show."
+        if not self._mgmt_loaded:
+            return "Policy trace not available\nIt needs the policy context, which is not loaded yet."
+        if self._policy_info is None:
+            # Loaded, but without a policy: waiting changes nothing here.
+            return ("Policy trace not available\nThe policy context is loaded, but it carries no policy: "
+                    "the policy could not be read, or the firewall uses classic rules.")
+        return ""
+
     def _open_detail(self, row: FirewallDataRow) -> None:
         """Open the row detail dialog; the evaluation trace sits beside it when possible.
 
-        When policy context is on but no trace can be built, the status bar says why.
+        When policy context is on but no trace can be built, the dialog itself
+        says why. The status bar keeps the Context segment as it is: a property
+        of one row must not overwrite the state of the application.
         """
         trace = None
+        note = ""
         if self._policy_context:
-            status = self.query_one("#status", StatusBar)
-            if not self._is_traceable(row):
-                status.meta = f"no policy evaluation for {row.category} rows"
-            elif not self._mgmt_loaded or self._policy_info is None:
-                status.meta = "trace needs policy metadata (not loaded)"
-            else:
+            note = self._trace_note(row)
+            if not note and self._policy_info is not None:
                 trace = build_trace(self._flow_from_row(row), self._policy_info, self._ip_groups,
                                     self._logged_from_row(row))
         self.push_screen(
-            DetailDialog(row, enrichment=self._compute_enrichment(row), trace=trace),
+            DetailDialog(row, enrichment=self._compute_enrichment(row), trace=trace, trace_note=note,
+                         cache_age=self._cache_age_label()),
             callback=self._on_trace_result,
         )
 
@@ -754,6 +793,8 @@ class FirewallLogApp(App[None]):
             dst_fqdn=target if is_fqdn else "",
             dst_port="" if port == "-" else port,
             action=row.action if row.action != "-" else "",
+            explicit_proxy=row.explicit_proxy == "yes",
+            tls_inspected={"yes": True, "no": False}.get(row.tls_inspected),   # "" (no column) stays unknown
         )
 
     @staticmethod
@@ -790,31 +831,13 @@ class FirewallLogApp(App[None]):
                 policy_name, grp, rc, rule = found
                 out["rule_priority"] = f"RCG:{grp.priority} \u00bb RC:{rc.priority}"
                 out["rule_action"] = rc.action
-                out["rule_definition"] = self._rule_definition(rule)
                 if policy_name and policy_name != self._policy_info.name:
                     out["rule_policy"] = f"{policy_name} (inherited)"
-            elif logged is not None:
-                out["rule_definition"] = "logged rule not in loaded policy (Ctrl+R to refresh)"
+            # No one-line definition here: the trace beside the fields shows every
+            # criterion, Enter on the rule opens it in the Policy tab, and a rule
+            # missing from the loaded policy is the trace's own warning.
         return out
 
-    def _rule_definition(self, rule) -> str:
-        """One-line summary of a rule's definition with IP groups resolved to names."""
-        def names(ids: list[str]) -> list[str]:
-            return [self._ip_groups[g].name if g in self._ip_groups else g.rsplit("/", 1)[-1] for g in ids]
-        src = rule.source_addresses + names(rule.source_ip_groups)
-        dst = (rule.destination_addresses + names(rule.destination_ip_groups)
-               + rule.destination_fqdns + rule.fqdn_tags + rule.target_urls)
-        dst_txt = ", ".join(dst) or "any"
-        if rule.translated_address or rule.translated_fqdn:
-            target = rule.translated_address or rule.translated_fqdn
-            dst_txt += f" → {target}:{rule.translated_port}" if rule.translated_port else f" → {target}"
-        parts = [
-            ", ".join(rule.protocols) or "any",
-            ", ".join(rule.destination_ports) or "any port",
-            "from " + (", ".join(src) or "any"),
-            "to " + dst_txt,
-        ]
-        return "  ".join(parts)
 
     # ── actions (key bindings) ─────────────────────────────────────────────────
     def action_toggle_pause(self) -> None:
@@ -861,16 +884,17 @@ class FirewallLogApp(App[None]):
         self.query_one("#main-tabs", TabbedContent).active = "tab-policy"
         self.query_one("#policy-view", PolicyView).focus_rule(rule_ref)
 
-    def action_refresh_metadata(self) -> None:
-        """Force-refresh the firewall / policy / IP-group cache."""
-        status = self.query_one("#status", StatusBar)
+    def action_refresh_context(self) -> None:
+        """Force-refresh the policy context (firewall, policy, IP groups), bypassing the cache."""
         if not self._policy_context:
-            status.meta = "policy context off (POLICY_CONTEXT=on or --policy-context to enable)"
+            self.notify("Policy context is off. Enable it with POLICY_CONTEXT=on or --policy-context.",
+                        title="Refresh context", severity="warning")
             return
         if self._firewall_id is None:
-            status.meta = "refresh skipped: no firewall seen yet"
+            self.notify("Nothing to refresh yet: no firewall seen in the logs.", title="Refresh context")
             return
-        status.meta = "refreshing metadata…"
+        status = self.query_one("#status", StatusBar)
+        status.ctx_state, status.ctx_detail = "refreshing", ""
         self._load_mgmt(self._firewall_id, force=True)
 
     def get_system_commands(self, screen: Screen):

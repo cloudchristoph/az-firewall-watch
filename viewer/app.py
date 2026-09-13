@@ -12,6 +12,7 @@ from textual import on, work
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal
+from textual.css.query import NoMatches
 from textual.screen import Screen
 from textual.widgets import (
     DataTable,
@@ -427,10 +428,15 @@ class FirewallLogApp(App[None]):
         if not has_new:
             return
 
+        try:
+            status = self.query_one("#status", StatusBar)
+            tbl = self.query_one("#log-table", DataTable)
+        except NoMatches:
+            return  # shutting down: the screen is already gone, the rows stay pending
+
         batch, self._pending = self._pending[:], []
         skips, self._skip_pending = self._skip_pending, 0
 
-        status = self.query_one("#status", StatusBar)
         status.total += len(batch)
         status.skipped += skips
         status.last_event_at = time.monotonic()  # skipped records count as "receiving" too
@@ -449,7 +455,6 @@ class FirewallLogApp(App[None]):
         merged = list(heapq.merge(batch, self._all_rows, key=_row_time, reverse=True))
         self._all_rows = merged[:MAX_ROWS]
 
-        tbl = self.query_one("#log-table", DataTable)
         needs_full_rebuild = (
             # The single-policy display rule changed → existing rows render differently.
             (policies_before <= 1 < len(self._seen_policies))

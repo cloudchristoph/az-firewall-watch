@@ -51,6 +51,23 @@ async def _inject(app: FirewallLogApp, pilot, rows, skipped: int = 0):
     await pilot.pause()
 
 
+async def test_flush_tolerates_a_screen_that_is_already_gone(structured_record):
+    """The flush timer can tick once more while the app is shutting down and the
+    table has been removed; that must not raise, and the rows must stay pending
+    rather than be dropped half-way through the bookkeeping."""
+    app = FirewallLogApp()
+    async with app.run_test(size=(140, 40)) as pilot:
+        await pilot.pause()
+        await app.query_one("#log-table", DataTable).remove()
+        await pilot.pause()
+        rows = _rows(structured_record)
+        app._pending.extend(rows)
+        app._skip_pending += 1
+        await app._flush_rows()  # no NoMatches
+        assert app._pending == rows and app._skip_pending == 1
+        assert app.query_one("#status", StatusBar).total == 0
+
+
 async def test_flush_populates_table_and_status(structured_record):
     app = FirewallLogApp()
     async with app.run_test(size=(140, 40)) as pilot:

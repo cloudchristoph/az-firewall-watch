@@ -28,7 +28,7 @@ from textual.widgets import (
 
 from dialogs import PolicyContextNoticeDialog, StatusBar
 from fw_parser import FirewallDataRow
-from helpers import _category_text, _highlight, _is_ipv6, _to_local
+from helpers import _category_text, _highlight, _is_ipv6, _to_local, address_matches
 
 from .azure_resources import FirewallInfo, FirewallPolicyInfo, IpGroupInfo
 from .cache import CachedSnapshot
@@ -663,8 +663,8 @@ class FirewallLogApp(App[None]):
     @staticmethod
     def _matches(row: FirewallDataRow, f: dict) -> bool:
         if f["hide_dns"] and row.category.lower() == "dnsquery":               return False
-        if f["src"]    and f["src"]    not in row.sourceip.lower():             return False
-        if f["dst"]    and f["dst"]    not in (row.targetip or "").lower():     return False
+        if f["src"]    and not address_matches(f["src"], row.sourceip):        return False
+        if f["dst"]    and not address_matches(f["dst"], row.targetip):        return False
         if f["action"] and f["action"] not in row.action.lower():               return False
         if f["cat"] and not FirewallLogApp._category_matches(f["cat"], row.category):    return False
         if f["proto"]  and f["proto"]  not in row.protocol.lower():             return False

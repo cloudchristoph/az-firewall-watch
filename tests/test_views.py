@@ -321,8 +321,15 @@ async def _open_trace(app: FirewallLogApp, pilot, row) -> DetailDialog:
     await pilot.pause()
     await pilot.press("enter")
     await wait_until(pilot, lambda: isinstance(app.screen, DetailDialog) and app.screen.has_trace)
+    screen = app.screen
+    panel = screen.query_one(TracePanel)
+    if panel._logged_node is not None:
+        # The panel moves the cursor onto the logged rule after its next refresh
+        # (call_after_refresh); on a slow runner that lands after a fixed pause.
+        tree = panel.query_one("#trace-tree", Tree)
+        await wait_until(pilot, lambda: tree.cursor_node is not None)
     await pilot.pause(0.2)
-    return app.screen
+    return screen
 
 
 def _tree_nodes(tree: Tree) -> list:

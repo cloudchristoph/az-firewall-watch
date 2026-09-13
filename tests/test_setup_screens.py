@@ -826,7 +826,14 @@ class TestDeployNew:
             await pilot.click("#btn-deploy")
             await wait_until(pilot, lambda: not app.screen.query_one("#btn-back-progress", Button).disabled)
             log = app.screen.query_one("#progress-log", RichLog)
-            text = "\n".join("".join(seg.text for seg in strip) for strip in log.lines)
+
+            def _text() -> str:
+                return "\n".join("".join(seg.text for seg in strip) for strip in log.lines)
+
+            # The log renders its writes on its next refresh, which on a slow runner
+            # comes after the button was re-enabled; wait for the line, not the button.
+            await wait_until(pilot, lambda: "Deployment failed" in _text())
+            text = _text()
             assert "az eventhubs eventhub create failed" in text
             assert "not valid for the Basic tier" in text
             assert "returned non-zero exit status" not in text

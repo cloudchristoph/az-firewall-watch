@@ -363,6 +363,10 @@ async def run_stream(app: FirewallLogApp) -> None:
         except Exception as exc:
             last_exc = exc
             app._fw_name_set = False  # allow subtitle refresh on next connect
+            # The error text is too long for the bar: tooltip plus a toast,
+            # the bar itself only carries the state and the countdown. Set
+            # before the short-circuit below, so a terminal error shows too.
+            status.eh_error = str(exc)
 
             # Auth / configuration errors will not fix themselves — skip retries.
             if isinstance(exc, PermissionError) or any(
@@ -372,9 +376,6 @@ async def run_stream(app: FirewallLogApp) -> None:
                 break
 
             attempt += 1
-            # The error text is too long for the bar: tooltip plus a toast,
-            # the bar itself only carries the state and the countdown.
-            status.eh_error = str(exc)
             if connected_once:
                 # Lost an established connection: keep trying, capped backoff.
                 delay = _RECONNECT_BACKOFF[min(attempt, len(_RECONNECT_BACKOFF)) - 1]
@@ -411,7 +412,10 @@ async def run_stream(app: FirewallLogApp) -> None:
                 "Check your network connection and the connection string,\n"
                 "then restart the app (optionally with  --reconfigure)."
             )
-        status.eh_state, status.eh_detail = "failed", f"after {_MAX_ATTEMPTS} attempts, see dialog"
+        # A configuration error stops after the first try; only network
+        # trouble actually went through the retries.
+        status.eh_state = "failed"
+        status.eh_detail = "configuration error, see dialog" if is_cfg_error else f"after {_MAX_ATTEMPTS} attempts, see dialog"
         if _splash_shown:
             _splash_shown = False
             await _remove_splash(app)

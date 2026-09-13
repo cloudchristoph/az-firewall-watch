@@ -392,6 +392,9 @@ async def test_auth_errors_do_not_retry_and_show_sas_hint(monkeypatch, fake_clie
         text = _dialog_text(app.screen)
         assert message in text
         assert "--reconfigure" in text
+        status = app.query_one("#status", StatusBar)
+        assert status.eh_error == message                          # the tooltip carries the terminal error too
+        assert status.eh_detail == "configuration error, see dialog"  # one try, not three
 
 
 async def test_error_dialog_q_quits_app(monkeypatch, fake_client):

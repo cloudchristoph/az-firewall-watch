@@ -39,7 +39,7 @@ class Flow:
     dst_port: str = ""
     action: str = ""        # the action the firewall logged (used for rows decided outside the rules)
     explicit_proxy: bool = False   # AZFWApplicationRule.IsExplicitProxyRequest == "yes"
-    tls_inspected: bool = False    # AZFWApplicationRule.IsTlsInspected == "yes"
+    tls_inspected: bool | None = False   # IsTlsInspected: True / False, None when the log has no such column
 
     @property
     def threat_intel(self) -> bool:
@@ -182,6 +182,12 @@ def _protocol_check(rule: Rule, flow: Flow) -> Check:
         # Compare the bare names: a prefix test would let HTTPS match Http.
         app_proto = proto.split("/", 1)[0]
         inspected = False
+        if flow.tls_inspected is None and app_proto == "HTTP" and ("HTTP" in rule_protos) != ("HTTPS" in rule_protos):
+            # No IsTlsInspected column (the legacy properties.msg format): an
+            # inspected HTTPS request is logged as HTTP too, and this rule
+            # would decide differently for the two, so neither is claimed.
+            return Check("protocol", UNKNOWN,
+                         f"{flow.protocol} logged, IsTlsInspected not in this log: an inspected HTTPS request looks the same")
         if flow.tls_inspected and app_proto == "HTTP":
             # A TLS-inspected HTTPS request is logged as the decrypted inner
             # request, Protocol "HTTP/1.1" with IsTlsInspected true (seen on real

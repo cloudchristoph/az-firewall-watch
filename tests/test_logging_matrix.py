@@ -95,6 +95,13 @@ def test_expected_categories_follow_sku_and_switches():
     assert standard == ["AZFWNetworkRule", "AZFWApplicationRule", "AZFWNatRule", "AZFWFqdnResolveFailure"]
 
 
+def test_expected_categories_treat_an_empty_threat_intel_mode_as_on():
+    """Azure's default is Alert; an absent mode is not evidence of Off."""
+    assert "AZFWThreatIntel" in expected_categories(_policy(ti=""), _fw())
+    assert "AZFWThreatIntel" in expected_categories(None, _fw())
+    assert "AZFWThreatIntel" not in expected_categories(_policy(ti="Off"), _fw())
+
+
 def test_expected_categories_without_a_policy_use_the_classic_switches():
     fw = _fw(**{"Network.DNS.EnableProxy": "true"})
     fw.threat_intel_mode = "Deny"

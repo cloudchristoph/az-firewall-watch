@@ -297,7 +297,7 @@ def _no_gateway_rows(fw: FirewallInfo) -> list[str]:
         return [_row("NAT gateway", "none"),
                 _note("the data-plane IP configurations have no public IP; egress depends on your routes")]
     return [_row("NAT gateway", "none"),
-            _note("internet-bound traffic leaves with the firewall's public IPs"),
+            _note("traffic routed straight to the internet leaves with the firewall's public IPs"),
             _note("routes to an NVA or gateway (forced tunneling) are not read here")]
 
 
@@ -692,7 +692,9 @@ def expected_categories(policy: FirewallPolicyInfo | None, fw: FirewallInfo) -> 
     props = fw.additional_properties
     dns_proxy = (policy.dns_proxy if policy is not None
                  else props.get(CLASSIC_DNS_PROXY_KEY, "").strip().lower() == "true")
-    ti_mode = (policy.threat_intel_mode if policy is not None else fw.threat_intel_mode) or "Off"
+    # An empty mode is not evidence of Off (Azure's default is Alert); only an
+    # explicit Off takes the category out of the expectation.
+    ti_mode = (policy.threat_intel_mode if policy is not None else fw.threat_intel_mode) or ""
     idps = policy is not None and policy.sku_tier == "Premium" and bool(policy.idps_mode) \
         and policy.idps_mode.lower() != "off"
     fat_flow = props.get(FAT_FLOW_KEY, "").strip().lower() == "true"

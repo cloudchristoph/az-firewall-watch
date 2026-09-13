@@ -9,7 +9,7 @@ import pytest
 from fw_parser import parse_record
 from viewer.arm import ArmError
 from viewer.azure_resources import FirewallInfo, FirewallPolicyInfo, fetch_policy
-from viewer.trace import MATCH, MISS, NA, Flow, evaluate_rule
+from viewer.trace import MATCH, MISS, NA, UNKNOWN, Flow, evaluate_rule
 from viewer.views.detail_screen import DetailDialog
 from viewer.views.firewall import FirewallView, _explicit_proxy_rows, _note, _row
 
@@ -320,6 +320,40 @@ def test_transparent_tls_inspected_row_matches_an_https_only_rule():
     r = evaluate_rule(rule, flow, {})
     assert r.verdict == MATCH
     assert next(c for c in r.checks if c.name == "protocol").result == MATCH
+
+
+def test_unknown_tls_flag_is_a_question_mark_where_it_would_decide():
+    """The legacy properties.msg format has no IsTlsInspected column: an HTTP
+    row there may be an inspected HTTPS request, and a rule that treats the
+    two differently gets neither a match nor a miss."""
+    flow = Flow(category="AppRule", protocol="HTTP/1.1", src_ip="10.3.8.4", dst_fqdn="httpbin.org",
+                dst_port="443", tls_inspected=None)
+    for protocols in (["Https"], ["Http"]):
+        rule = _app_rule(destination_fqdns=["httpbin.org"], protocols=protocols, destination_ports=["443"])
+        proto = next(c for c in evaluate_rule(rule, flow, {}).checks if c.name == "protocol")
+        assert proto.result == UNKNOWN, protocols
+        assert proto.detail == "HTTP/1.1 logged, IsTlsInspected not in this log: an inspected HTTPS request looks the same"
+    # both protocols on the rule: the flag would not change the answer
+    rule = _app_rule(destination_fqdns=["httpbin.org"], protocols=["Http", "Https"], destination_ports=["443"])
+    proto = next(c for c in evaluate_rule(rule, flow, {}).checks if c.name == "protocol")
+    assert proto.result == MATCH and proto.detail == "HTTP"
+    # an explicit "no" is still a plain HTTP row
+    plain = Flow(category="AppRule", protocol="HTTP/1.1", src_ip="10.3.8.4", dst_fqdn="httpbin.org",
+                 dst_port="443", tls_inspected=False)
+    rule = _app_rule(destination_fqdns=["httpbin.org"], protocols=["Https"], destination_ports=["443"])
+    assert next(c for c in evaluate_rule(rule, plain, {}).checks if c.name == "protocol").result == MISS
+
+
+def test_flow_from_row_keeps_the_unknown_tls_flag(structured_record):
+    from viewer.app import FirewallLogApp
+    yes = parse_record(structured_record("AZFWApplicationRule", Protocol="HTTP/1.1", Fqdn="a.example",
+                                         IsTlsInspected=True, **RULE_PROPS))
+    no = parse_record(structured_record("AZFWApplicationRule", Protocol="HTTP/1.1", Fqdn="a.example",
+                                        IsTlsInspected=False, **RULE_PROPS))
+    absent = parse_record(structured_record("AZFWApplicationRule", Protocol="HTTP/1.1", Fqdn="a.example", **RULE_PROPS))
+    assert FirewallLogApp._flow_from_row(yes).tls_inspected is True
+    assert FirewallLogApp._flow_from_row(no).tls_inspected is False
+    assert FirewallLogApp._flow_from_row(absent).tls_inspected is None
 
 
 def test_tls_inspected_row_misses_an_http_only_rule():

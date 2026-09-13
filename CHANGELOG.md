@@ -8,6 +8,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [0.6.0] - 2026-09-13
+
 0.5.1 took back the verdicts the trace had no grounds for. This release goes after the next category: places where the viewer knew something and said nothing. Almost every item below is one more field from an ARM call the viewer already makes, read into the Firewall and Policy tabs, and every one of them replaces an answer that looked complete and was not. Nothing here writes to Azure, and nothing needs more than Reader; where Azure only offers a POST action for a piece of information, the tab says the information is not readable from here rather than fetching it.
 
 ### Added
@@ -246,7 +250,9 @@ This release adds passwordless Entra ID authentication, better Azure Firewall lo
 
 [Full diff](https://github.com/cloudchristoph/az-firewall-watch/commits/v0.1.0)
 
-[Unreleased]: https://github.com/cloudchristoph/az-firewall-watch/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/cloudchristoph/az-firewall-watch/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/cloudchristoph/az-firewall-watch/compare/v0.5.1...v0.6.0
+[0.5.1]: https://github.com/cloudchristoph/az-firewall-watch/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/cloudchristoph/az-firewall-watch/compare/v0.4.1...v0.5.0
 [0.4.1]: https://github.com/cloudchristoph/az-firewall-watch/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/cloudchristoph/az-firewall-watch/compare/v0.3.0...v0.4.0

@@ -828,8 +828,10 @@ async def test_firewall_tab_panels_scroll_on_a_small_terminal(structured_record,
         text_lines = str(app.query_one("#fw-policy", Static).content).count("\n") + 1
         assert text_lines > panel.size.height, "the fixture must overflow the panel for this test to mean anything"
         assert panel.max_scroll_y > 0            # the overflow is reachable
-        panel.scroll_end(animate=False)
-        await pilot.pause()
+        # A layout pass after the tab switch can reset the scroll on a slow
+        # runner (seen on Windows CI), so scroll again until it sticks.
+        await wait_until(pilot, lambda: panel.scroll_y == panel.max_scroll_y
+                         or panel.scroll_end(animate=False, force=True))
         assert panel.scroll_y == panel.max_scroll_y
 
 

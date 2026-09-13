@@ -752,10 +752,10 @@ class FirewallLogApp(App[None]):
             why = self._NO_DECISION.get(cat, f"{row.category} rows record observations, not a rule decision.")
             return f"No rule decision in this log\n{why} There is no policy trace to show."
         if not self._mgmt_loaded:
-            return "Policy trace not available\nIt needs the firewall metadata, which is not loaded yet."
+            return "Policy trace not available\nIt needs the policy context, which is not loaded yet."
         if self._policy_info is None:
             # Loaded, but without a policy: waiting changes nothing here.
-            return ("Policy trace not available\nThe firewall metadata is loaded, but it carries no policy: "
+            return ("Policy trace not available\nThe policy context is loaded, but it carries no policy: "
                     "the policy could not be read, or the firewall uses classic rules.")
         return ""
 

@@ -138,7 +138,7 @@ authentication errors stop immediately with a hint rather than retrying.
 | `Ctrl` + `q` | Quit as well, and it works from inside a filter input where `q` would be typed text         |
 | `Ctrl` + `p` | Pause / resume streaming, same as clicking the status bar                                   |
 | `Ctrl` + `s` | Save an SVG screenshot of the current view                                                 |
-| `Enter`      | Open the row details, with the evaluation trace beside them when policy metadata is loaded |
+| `Enter`      | Open the row details, with the evaluation trace beside them when the policy context is loaded |
 | `p`, `a`, `Tab` | In the row details: open the selected rule in the Policy tab, toggle the full trace, switch tabs on a narrow terminal |
 | `Shift` + `↑` / `↓` | In the row details: scroll the selection detail under the trace tree |
 | `Escape`     | Clear all filter inputs (or close the open dialog)                                         |

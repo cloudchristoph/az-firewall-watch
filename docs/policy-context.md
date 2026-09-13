@@ -169,7 +169,7 @@ The trace is built only for rows that are a policy decision: `NetworkRule`,
 row's fields alone and says why underneath: *No rule decision in this log*, with
 what that category records instead (FatFlow the top flows by rate, FlowTrace the
 handshake and flags, DNS proxy rows the query and its answer, IDPS a signature
-hit), or *Policy trace not available* while the firewall metadata is not loaded
+hit), or *Policy trace not available* while the policy context is not loaded
 yet. The status bar keeps showing the policy and cache state.
 
 > [!NOTE]

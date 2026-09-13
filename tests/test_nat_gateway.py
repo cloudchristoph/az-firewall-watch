@@ -372,8 +372,8 @@ def _vnet_fw(*, data_public: bool, forced_tunneling: bool, subnet_ids=("/sn1",))
 
 def test_nat_gateway_rows_no_subnet_ids_treated_as_no_gateway():
     rows = _nat_gateway_rows(VNET_FW_NO_SUBNET_IDS, [], [])
-    assert len(rows) == 1
-    assert rows[0].startswith(_row("NAT gateway", "none"))
+    assert rows[0] == _row("NAT gateway", "none")
+    assert all(r.startswith(" ") for r in rows[1:])   # the qualifier as notes, no second row
 
 
 def test_nat_gateway_rows_no_gateway_with_a_public_data_plane_qualifies_the_egress():
@@ -381,8 +381,9 @@ def test_nat_gateway_rows_no_gateway_with_a_public_data_plane_qualifies_the_egre
     for traffic that goes straight to the internet."""
     subnet = SubnetInfo(id="/sn1", name="AzureFirewallSubnet")
     rows = _nat_gateway_rows(_vnet_fw(data_public=True, forced_tunneling=False), [subnet], [])
-    assert rows == [_row("NAT gateway", "none", "traffic routed straight to the internet leaves with the "
-                         "firewall's public IPs; routes to an NVA or gateway (forced tunneling) are not read here")]
+    assert rows == [_row("NAT gateway", "none"),
+                    _note("internet-bound traffic leaves with the firewall's public IPs"),
+                    _note("routes to an NVA or gateway (forced tunneling) are not read here")]
 
 
 def test_nat_gateway_rows_private_data_plane_with_management_nic_never_names_a_firewall_public_ip():
@@ -392,8 +393,8 @@ def test_nat_gateway_rows_private_data_plane_with_management_nic_never_names_a_f
                SubnetInfo(id="/sn2", name="AzureFirewallManagementSubnet")]
     fw = _vnet_fw(data_public=False, forced_tunneling=True, subnet_ids=("/sn1", "/sn2"))
     rows = _nat_gateway_rows(fw, subnets, [])
-    assert rows == [_row("NAT gateway", "none", "the data-plane IP configurations have no public IP; "
-                         "egress depends on your routes")]
+    assert rows == [_row("NAT gateway", "none"),
+                    _note("the data-plane IP configurations have no public IP; egress depends on your routes")]
     assert "leaves with the firewall's public IPs" not in rows[0]
 
 
@@ -403,15 +404,16 @@ def test_nat_gateway_rows_management_nic_alone_does_not_mean_forced_tunneling():
     subnet = SubnetInfo(id="/sn1", name="AzureFirewallSubnet")
     fw = _vnet_fw(data_public=True, forced_tunneling=True)
     rows = _nat_gateway_rows(fw, [subnet], [])
-    assert "forced tunneling:" not in rows[0]
-    assert "traffic routed straight to the internet leaves with the firewall's public IPs" in rows[0]
+    joined = "\n".join(rows)
+    assert "forced tunneling:" not in joined
+    assert "internet-bound traffic leaves with the firewall's public IPs" in joined
 
 
 def test_nat_gateway_rows_private_only_data_plane_without_forced_tunneling():
     subnet = SubnetInfo(id="/sn1", name="AzureFirewallSubnet")
     rows = _nat_gateway_rows(_vnet_fw(data_public=False, forced_tunneling=False), [subnet], [])
-    assert rows == [_row("NAT gateway", "none", "the data-plane IP configurations have no public IP; "
-                         "egress depends on your routes")]
+    assert rows == [_row("NAT gateway", "none"),
+                    _note("the data-plane IP configurations have no public IP; egress depends on your routes")]
 
 
 TWO_SUBNET_FW = FirewallInfo(id="/fw", name="fw", subscription_id="s", resource_group="rg", location="gwc",

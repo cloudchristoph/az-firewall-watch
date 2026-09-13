@@ -109,7 +109,7 @@ def test_coverage_complete_names_the_optional_category_that_is_not_forwarded():
     targets = logging_targets([_eh(categories=[c for c in VIEWER_CATEGORIES if c != "AZFWFlowTrace"])])
     line = _coverage_row(connected_event_hub_targets(targets), _policy(), _fw(**{FAT_FLOW_KEY: "true"}))
     assert line.startswith(_row("Event Hub coverage", "[green]complete[/]"))
-    assert "AZFWFlowTrace not forwarded" in line and "incomplete" not in line
+    assert "AZFWFlowTrace absent, not counted" in line and "incomplete" not in line
 
 
 def test_coverage_complete_with_all_logs_has_nothing_to_add():

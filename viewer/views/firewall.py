@@ -285,7 +285,7 @@ def _one_nat_gateway_rows(gw: NatGatewayInfo) -> list[str]:
     ]
 
 
-def _no_gateway_row(fw: FirewallInfo) -> str:
+def _no_gateway_rows(fw: FirewallInfo) -> list[str]:
     """The "none" row, careful not to name an egress address the data does not establish.
 
     The snapshot reads no route tables: a route to an NVA or a virtual network
@@ -294,10 +294,11 @@ def _no_gateway_row(fw: FirewallInfo) -> str:
     A data plane without any public IP cannot SNAT to one at all.
     """
     if not any(c.public_ip_id for c in fw.ip_configs):
-        return _row("NAT gateway", "none", "the data-plane IP configurations have no public IP; "
-                    "egress depends on your routes")
-    return _row("NAT gateway", "none", "traffic routed straight to the internet leaves with the firewall's "
-                "public IPs; routes to an NVA or gateway (forced tunneling) are not read here")
+        return [_row("NAT gateway", "none"),
+                _note("the data-plane IP configurations have no public IP; egress depends on your routes")]
+    return [_row("NAT gateway", "none"),
+            _note("internet-bound traffic leaves with the firewall's public IPs"),
+            _note("routes to an NVA or gateway (forced tunneling) are not read here")]
 
 
 def _nat_gateway_rows(fw: FirewallInfo, subnets: list[SubnetInfo], nat_gateways: list[NatGatewayInfo]) -> list[str]:
@@ -318,7 +319,7 @@ def _nat_gateway_rows(fw: FirewallInfo, subnets: list[SubnetInfo], nat_gateways:
             # is only a statement about the readable ones.
             return [_row("NAT gateway", "none on the readable subnets", f"{unread} of {len(fw.subnet_ids)} "
                          "firewall subnets not readable, so a gateway there would not show")]
-        return [_no_gateway_row(fw)]
+        return _no_gateway_rows(fw)
     rows: list[str] = []
     if unread > 0:
         rows.append(_note(f"{unread} of {len(fw.subnet_ids)} firewall subnets not readable; the list below may be incomplete"))
@@ -433,10 +434,8 @@ class FirewallView(Vertical):
     FirewallView .panel > Static {
         height: auto;
     }
-    FirewallView .panel > DataTable {
-        height: auto;
-        max-height: 14;
-    }
+    /* .panel > DataTable: natural height, set in the app's CSS (it outranks
+       DEFAULT_CSS and carries the global "DataTable { height: 1fr }"). */
     FirewallView .panel > .panel-note {
         color: $text-muted;
         margin-top: 1;
@@ -612,8 +611,7 @@ class FirewallView(Vertical):
                  f"{t.long_kind} · {escape(t.setting.name)}")
             for t in targets
         ]
-        legend.append(_coverage_row(connected, policy, fw))
-        note.update("\n".join(legend))
+        note.update("\n".join([_coverage_row(connected, policy, fw), *legend]))
 
 
 # ── Logging helpers: targets, the connected hub, and what it should carry ─────
@@ -720,5 +718,5 @@ def _coverage_row(connected: list[LoggingTarget], policy: FirewallPolicyInfo | N
     missing = [c for c in expected_categories(policy, fw) if c not in forwarded]
     if missing:
         return _row("Event Hub coverage", f"[yellow]incomplete, missing {', '.join(missing)}[/]")
-    optional = [f"{c} not forwarded, not counted" for c in _OPTIONAL_CATEGORIES if c not in forwarded]
+    optional = [f"{c} absent, not counted" for c in _OPTIONAL_CATEGORIES if c not in forwarded]
     return _row("Event Hub coverage", "[green]complete[/]", "; ".join(optional))

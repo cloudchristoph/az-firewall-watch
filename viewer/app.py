@@ -112,6 +112,12 @@ class FirewallLogApp(App[None]):
     DataTable {
         height: 1fr;
     }
+    /* The Firewall tab's tables sit inside scrolling panels and take their
+       natural height there; app CSS outranks a view's DEFAULT_CSS, so the
+       exception lives here, next to the rule it overrides. */
+    FirewallView .panel > DataTable {
+        height: auto;
+    }
 
     StatusBar {
         height: 1;

@@ -119,6 +119,32 @@ async def test_az_async_runs_the_cli_off_the_event_loop(monkeypatch):
     assert seen == [(("/usr/bin/az", "account", "show"), True, True, True)]
 
 
+_AZ_STDERR = (
+    "ERROR: (MessagingGatewayBadRequest) SubCode=40000. The value '7' for MessageRetentionInDays "
+    "is not valid for the Basic tier.\n"
+    "Code: MessagingGatewayBadRequest\n"
+    "Message: SubCode=40000. The value '7' for MessageRetentionInDays is not valid for the Basic tier.\n"
+)
+
+
+def test_cli_error_text_shows_the_cli_reason():
+    exc = subprocess.CalledProcessError(
+        1, ["/opt/homebrew/bin/az", "eventhubs", "eventhub", "create", "--name", "h"], output="", stderr=_AZ_STDERR,
+    )
+    text = utils.cli_error_text(exc)
+    assert text.startswith("az eventhubs eventhub create failed: (MessagingGatewayBadRequest)")
+    assert "not valid for the Basic tier" in text
+    assert "Code:" not in text  # the ERROR line carries the reason once
+
+
+def test_cli_error_text_falls_back_to_the_exception():
+    bare = subprocess.CalledProcessError(1, ["az", "group", "create"])
+    assert utils.cli_error_text(bare) == str(bare)
+    without_error_line = subprocess.CalledProcessError(1, ["az", "x"], stderr="something odd\n")
+    assert utils.cli_error_text(without_error_line) == "az x failed: something odd"
+    assert utils.cli_error_text(RuntimeError("Azure CLI not found")) == "Azure CLI not found"
+
+
 def test_find_az_missing(monkeypatch):
     monkeypatch.setattr("shutil.which", lambda name: None)
     assert find_az() is None

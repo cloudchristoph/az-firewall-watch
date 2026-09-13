@@ -28,6 +28,25 @@ async def az_async(*args: str, capture: bool = True, check: bool = False):
     return await asyncio.to_thread(run_az, *args, capture=capture, check=check)
 
 
+def cli_error_text(exc: BaseException) -> str:
+    """Describe a failed CLI call for the user.
+
+    ``CalledProcessError`` only says which command returned which exit status;
+    the reason is in its captured stderr, where the CLI writes an ``ERROR:``
+    line and often repeats it as ``Code:`` / ``Message:``. Keep the first
+    ``ERROR:`` line (or the whole stderr when there is none) so the wizard
+    shows why, not just that, a step failed.
+    """
+    if not isinstance(exc, subprocess.CalledProcessError):
+        return str(exc)
+    stderr = (exc.stderr or "").strip() if isinstance(exc.stderr, str) else ""
+    if not stderr:
+        return str(exc)
+    reason = next((line for line in stderr.splitlines() if line.startswith("ERROR:")), stderr)
+    command = " ".join(str(part) for part in exc.cmd[1:4]) if isinstance(exc.cmd, (list, tuple)) else ""
+    return f"az {command} failed: {reason.removeprefix('ERROR:').strip()}"
+
+
 _LOC_SHORT: dict[str, str] = {
     "germanywestcentral": "gwc", "germanynorth": "gn",
     "westeurope": "we",          "northeurope": "ne",

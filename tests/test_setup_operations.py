@@ -365,6 +365,10 @@ async def test_deploy_sas_creates_resources_in_order(az, log, no_sleep):
 
     ns_create = az.called("eventhubs", "namespace", "create")[0]
     assert "--sku" in ns_create and "Basic" in ns_create
+    # Basic accepts at most one day of retention; the CLI default (seven days) fails the create.
+    hub_create = az.called("eventhubs", "eventhub", "create")[0]
+    assert hub_create[hub_create.index("--retention-time-in-hours") + 1] == "24"
+    assert hub_create[hub_create.index("--cleanup-policy") + 1] == "Delete"
     assert "--minimum-tls-version" in ns_create and "1.2" in ns_create
     assert "project=az-firewall-watch" in ns_create
 

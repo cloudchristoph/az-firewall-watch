@@ -6,6 +6,7 @@ import site so the wizard can be driven end-to-end without Azure.
 from __future__ import annotations
 
 import asyncio
+import subprocess
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -19,6 +20,7 @@ from textual.widgets import (
     ListView,
     LoadingIndicator,
     RadioSet,
+    RichLog,
     Static,
 )
 
@@ -588,6 +590,26 @@ class TestPickExisting:
             assert "keys list failed" in _visible_error(app.screen, "#lbl-scan-error")
         assert not env_file.exists()
 
+    async def test_sas_cli_failure_names_the_reason(self, env_file, fake_ops):
+        fake_ops["sas_conn"] = subprocess.CalledProcessError(
+            1, ["/usr/bin/az", "eventhubs", "eventhub", "authorization-rule", "create"],
+            stderr="ERROR: (AuthorizationFailed) The client does not have authorization.\n",
+        )
+        app = WizardApp(env_file)
+        async with app.run_test(size=(100, 40)) as pilot:
+            await self._open_and_scan(app, pilot)
+            app.screen.query_one("#hub-list", ListView).index = 0
+            await pilot.click("#btn-select")
+            await wait_until(pilot, lambda: isinstance(app.screen, AuthMethodScreen))
+            await pilot.pause()
+            await _pick_radio(pilot, app.screen, "#opt-sas")
+            await pilot.click("#btn-next")
+            await _pass_policy_context(app, pilot)
+            await wait_until(pilot, lambda: bool(_visible_error(app.screen, "#lbl-scan-error")))
+            error = _visible_error(app.screen, "#lbl-scan-error")
+            assert "az eventhubs eventhub authorization-rule failed" in error
+            assert "does not have authorization" in error
+
     async def test_auth_back_returns_to_list(self, env_file, fake_ops):
         app = WizardApp(env_file)
         async with app.run_test(size=(100, 40)) as pilot:
@@ -791,6 +813,23 @@ class TestDeployNew:
             assert not app._exit
             assert app.screen.query_one(ContentSwitcher).current == "step-progress"
         assert not env_file.exists()
+
+    async def test_deploy_failure_names_the_cli_reason(self, env_file, fake_ops):
+        """A failed az call must tell the user why, not only that it returned 1."""
+        fake_ops["deploy_conn"] = subprocess.CalledProcessError(
+            1, ["/usr/bin/az", "eventhubs", "eventhub", "create"],
+            stderr="ERROR: (MessagingGatewayBadRequest) retention not valid for the Basic tier.\nCode: X\n",
+        )
+        app = WizardApp(env_file)
+        async with app.run_test(size=(100, 50)) as pilot:
+            await self._through_summary(app, pilot, "sas")
+            await pilot.click("#btn-deploy")
+            await wait_until(pilot, lambda: not app.screen.query_one("#btn-back-progress", Button).disabled)
+            log = app.screen.query_one("#progress-log", RichLog)
+            text = "\n".join("".join(seg.text for seg in strip) for strip in log.lines)
+            assert "az eventhubs eventhub create failed" in text
+            assert "not valid for the Basic tier" in text
+            assert "returned non-zero exit status" not in text
 
     async def test_back_after_failed_deploy_returns_to_summary(self, env_file, fake_ops):
         fake_ops["deploy_conn"] = RuntimeError("quota exceeded")

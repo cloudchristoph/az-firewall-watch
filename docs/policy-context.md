@@ -92,8 +92,10 @@ MSSQL flows.
 
 The dialog's header says what happened: connection, protocol and the logged
 action on the first line, the trace's outcome and the cache age on the second
-(`✓ Allow by rcg-net » rc-web » allow-web   cached policy · 12 min`). The log
-entry's own fields sit on the left, the trace on the right. Each pass reports
+(`✓ matched in rcg-net » rc-web   cached policy · 12 min`); the frame's title
+tab names the action and the rule (`ALLOW · allow-web`) and the frame takes the
+action's colour. The log entry's own fields sit on the left in a *Fields*
+frame, the trace on the right under *Policy evaluation*. Each pass reports
 its own verdict (`✓ matched`, `✗ no match`, `? no certain match`), and under it
 the rule collection groups with their collections in priority order. Lines are
 status, priority and name only; the collection's own action is the short tag
@@ -156,7 +158,7 @@ checked against real records rather than the documentation.
 | `a`            | The full tree, including the folded collections, and back     |
 | `Shift` + `↑` / `↓` | Scroll the selection detail under the tree                |
 | `Tab`          | On a terminal under 120 columns: switch between *Fields* and *Policy trace* |
-| `Escape` / `q` | Close the dialog                                              |
+| `Escape` / `q` | Close the dialog; the footer's Close button does the same, and without a trace `Enter` closes too |
 
 Below 120 columns the fields and the trace are tabs rather than columns, and
 the trace tab opens first. Below 40 rows the selection detail shrinks so the

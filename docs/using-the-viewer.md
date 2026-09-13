@@ -79,7 +79,9 @@ connection, protocol and logged action; below it the record's fields in groups:
 *Connection* (time local and UTC, ports, and what the category adds: flag, rate,
 query, response, threat, signature), *Inspection* (explicit proxy, TLS inspection,
 only when the record carries them) and *Rule* (policy, group, collection, rule).
-`Escape` or `q` closes it.
+The frame's colour and its title tab carry the logged action (`ALLOW · allow-web`
+in green, deny in red, dnat in yellow). `Escape` or `q` closes it, `Enter` too
+when there is no trace, and a Close button in the footer serves the mouse.
 
 The fields adapt to the category, because the raw log means different things
 depending on it:
@@ -99,7 +101,8 @@ beside the fields. The trace is described in
 [Evaluation trace](policy-context.md#evaluation-trace); the keys inside the
 dialog are `Enter` to fold a node, `p` to open the selected rule in the Policy
 tab, `a` to switch between the focused and the full tree, `Shift` + `↑` / `↓`
-to scroll the selection detail under the tree.
+to scroll the selection detail under the tree. Fields, tree and selection
+detail each sit in a titled frame (*Fields*, *Policy evaluation*, *Selection*).
 
 On a terminal narrower than 120 columns the fields and the trace become two
 tabs inside the dialog, *Fields* and *Policy trace*, switched with `Tab`; the

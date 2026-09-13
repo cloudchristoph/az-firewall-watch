@@ -383,11 +383,12 @@ async def test_threat_intel_row_still_renders_its_two_lines(structured_record, m
 # ── keys: Shift+↑↓ scroll the selection detail without leaving the tree ───────
 
 async def test_shift_arrows_scroll_the_selection_detail(structured_record, mgmt, firewall_id):
-    """At 120x30 the detail is capped at five rows and the header rule's
-    detail has more; the tree keeps the focus, the detail scrolls."""
+    """At 120x28 (the -tiny layout) the detail is capped at four content
+    rows under its top rule and the header rule's detail has more; the tree
+    keeps the focus, the detail scrolls."""
     mgmt["snapshot"] = _header_snapshot()
     app = FirewallLogApp()
-    async with app.run_test(size=(120, 30)) as pilot:
+    async with app.run_test(size=(120, 28)) as pilot:
         await pilot.pause()
         await _load(app, pilot, firewall_id)
         row = parse_record(structured_record(

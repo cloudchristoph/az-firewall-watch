@@ -23,6 +23,7 @@ import html
 import re
 import time
 from collections import Counter
+from dataclasses import replace
 
 import pytest
 from textual.widgets import DataTable, Tree
@@ -321,3 +322,61 @@ async def test_not_evaluated_collection_is_dim_as_a_whole_not_red(structured_rec
         deny_fill = _deny_tag_fills(svg)
         assert na_fill and deny_fill
         assert not (na_fill & deny_fill)  # dim, never mistaken for the loud deny tag
+
+
+# ── the frame carries the verdict ─────────────────────────────────────────────
+
+_CORNER_RE = re.compile(r'<text class="([\w-]+)" x="([\d.]+)"[^>]*>([^<]*)</text>')
+
+
+def _frame_fills(svg: str) -> set[str]:
+    """The fill of the dialog's own round-border top-left corner: the
+    leftmost ╭ on screen. The areas inside the dialog carry round frames
+    too, but every one of them starts further right."""
+    fills = _fill_by_class(svg)
+    corners = [(float(x), cls) for cls, x, raw in _CORNER_RE.findall(svg) if _decode(raw).startswith("╭")]
+    if not corners:
+        return set()
+    _, cls = min(corners)
+    fill = fills.get(cls)
+    return {fill} if fill else set()
+
+
+def test_verdict_class_and_border_title(structured_record):
+    """The class names the row's logged action; the title tab spells it out
+    with the matched rule when there is a trace, the bare action without one,
+    and the category for rows that carry no action at all."""
+    from viewer.views.detail_screen import _border_title, _verdict_class
+
+    assert _verdict_class("Allow") == "allow"
+    assert _verdict_class("Deny") == "deny"
+    assert _verdict_class("DenyWithThreat") == "deny"
+    assert _verdict_class("DNAT") == "dnat"
+    assert _verdict_class("-") == "" and _verdict_class("") == ""
+
+    deny = parse_record(structured_record(
+        "AZFWNetworkRule", Protocol="TCP", SourceIp="10.3.5.4", SourcePort=1, DestinationIp="1.1.1.1",
+        DestinationPort=443, Action="Deny"))
+    assert _border_title(deny, None) == "DENY"
+    dns = parse_record(structured_record("AZFWDnsQuery", SourceIp="10.3.5.4", QueryName="www.example.com"))
+    assert _border_title(dns, None) == "REQUEST"  # a DNS row's action is the query itself
+    no_action = replace(deny, action="-")
+    assert _border_title(no_action, None) == no_action.category
+
+
+async def test_allow_frame_is_neither_deny_red_nor_background(structured_record, mgmt, firewall_id):
+    mgmt["snapshot"] = _colour_snapshot()
+    app = FirewallLogApp()
+    async with app.run_test(size=(160, 45)) as pilot:
+        await pilot.pause()
+        await _load(app, pilot, firewall_id)
+        screen = await _open_colour_trace(app, pilot, structured_record)
+        assert screen.has_class("-verdict-allow")
+        assert screen.query_one("#dialog").border_title == "ALLOW · app-match"
+        tree = screen.query_one("#trace-tree", Tree)
+        neutral = _node(tree, lambda label: label.strip().startswith("Threat Intelligence"))
+        svg = await _capture(app, pilot, neutral)
+        frame = _frame_fills(svg)
+        assert len(frame) == 1, f"the frame should be one colour, found {frame}"
+        assert not (frame & _deny_tag_fills(svg))  # an allow frame must never read as a denial
+        assert next(iter(frame)) != _background_fill(svg)

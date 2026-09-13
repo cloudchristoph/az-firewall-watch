@@ -14,7 +14,7 @@ from textual.app import ComposeResult
 from textual.containers import Horizontal, Vertical
 from textual.css.query import NoMatches
 from textual.screen import ModalScreen
-from textual.widgets import Static, TabbedContent, TabPane
+from textual.widgets import Button, Static, TabbedContent, TabPane
 
 from fw_parser import FirewallDataRow, tcp_direction
 from helpers import _to_local, _utc_short, format_endpoint
@@ -43,10 +43,14 @@ _IDPS_FIELDS = ("Severity", "Signature", "Class", "Description")  # "Class": the
 # repeating them in the fields would say the same thing twice.
 _DUP_HEADER_ENDPOINTS = {"apprule", "networkrule", "natrule", "threatintel", "idps"}
 _FOOTER_WITH_TRACE = "Enter expand/collapse · p open in Policy tab · a all / focused · Shift+↑↓ detail · Esc close"
-_FOOTER_ALONE = "Esc close"
+# Enter opened the row, so Enter closes it again; with a trace the key belongs
+# to the tree (expand / collapse) and only Esc closes.
+_FOOTER_ALONE = "Enter / Esc close"
 # The tabbed layout sits on a terminal under 120 columns, where the full
 # footer would wrap and cost the tree a row; same keys, fewer words.
-_FOOTER_TABBED = "Enter fold · p Policy tab · a all · Tab fields/trace · Esc close"
+# No "Esc close" here: 80 columns hold the hint or the Close button, not
+# both, and Esc still closes.
+_FOOTER_TABBED = "Enter fold · p Policy tab · a all · Tab fields/trace"
 
 # Below this many columns there is no room for the fields pane and the trace
 # side by side; they become two tabs instead (see DetailDialog._classify).
@@ -153,10 +157,51 @@ def _compact_outcome(outcome: str) -> str:
     return f"{action} · {rule_name}"
 
 
+def _verdict_class(action: str) -> str:
+    """The CSS class suffix colouring the dialog frame by the row's logged
+    action, or ``""`` for rows without a verdict (DNS queries, flow traces)."""
+    a = (action or "").lower()
+    if a in ("deny", "denywiththreat"):
+        return "deny"
+    if a == "allow":
+        return "allow"
+    if a == "dnat":
+        return "dnat"
+    return ""
+
+
+def _border_title(row: FirewallDataRow, trace: Trace | None) -> str:
+    """The verdict as the frame's title tab: ``ALLOW · allow-web`` with a
+    matched rule, the bare action without one, the category for rows that
+    carry no action. Rich markup, so the names are escaped."""
+    action = row.action if row.action and row.action != "-" else ""
+    if not action:
+        return escape(row.category)
+    title = action.upper()
+    if trace is not None:
+        _, sep, rule = _compact_outcome(trace.outcome).partition(" · ")
+        if sep:
+            title = f"{title} · {rule.partition(' (')[0]}"  # the note stays on the header line
+    return escape(title)
+
+
+def _outcome_path(outcome: str) -> tuple[str, str]:
+    """``(group, collection)`` out of ``"Allow by rcg » rc » rule"``; empty
+    strings when the outcome has no such path."""
+    _, sep, rest = outcome.partition(" by ")
+    parts = [part.strip() for part in rest.split("»")] if sep else []
+    if len(parts) < 3:
+        return "", ""
+    return parts[0], parts[1]
+
+
 def _header_line2(trace: Trace, cache_age: str, width: int | None = None) -> str:
-    """The outcome line. With ``width`` the line is shortened until it fits
-    on one row: first the group and collection go (the selection detail
-    under the tree still names them), then the cache age."""
+    """The outcome line under the flow. The frame title already names the
+    action and the rule, so a matched rule leaves only *where* it sits:
+    ``✓ matched in group » collection``. Every other outcome (default
+    action, threat intelligence, a rule the cache does not know) is spelled
+    out in full. With ``width`` the line is shortened until it fits on one
+    row: first the cache age goes, then the group."""
     if trace.matched_rule is not None:
         icon = "[green]✓[/]"
     elif trace.flow.threat_intel:
@@ -166,11 +211,19 @@ def _header_line2(trace: Trace, cache_age: str, width: int | None = None) -> str
     else:
         icon = "[red]✗[/]"
     age = f"   [dim]cached policy · {escape(cache_age)}[/]" if cache_age else ""
-    candidates = [
-        f"{icon} {escape(trace.outcome)}{age}",
-        f"{icon} {escape(_compact_outcome(trace.outcome))}{age}",
-        f"{icon} {escape(_compact_outcome(trace.outcome))}",
-    ]
+    group, collection = _outcome_path(trace.outcome)
+    if trace.matched_rule is not None and collection:
+        candidates = [
+            f"{icon} matched in {escape(group)} » {escape(collection)}{age}",
+            f"{icon} matched in {escape(group)} » {escape(collection)}",
+            f"{icon} matched in {escape(collection)}",
+        ]
+    else:
+        candidates = [
+            f"{icon} {escape(trace.outcome)}{age}",
+            f"{icon} {escape(_compact_outcome(trace.outcome))}{age}",
+            f"{icon} {escape(_compact_outcome(trace.outcome))}",
+        ]
     if width is None:
         return candidates[0]
     for line in candidates:
@@ -187,16 +240,37 @@ class DetailDialog(ModalScreen[str | None]):
     """
 
     DEFAULT_CSS = """
+    /* The log table stays visible behind the dialog (it is the context the
+       reader came from), but one step further back than Textual's default
+       veil, and the dialog itself sits one step above the table's surface. */
     DetailDialog {
         align: center middle;
+        background: $background 80%;
     }
     DetailDialog > #dialog {
         width: 84;
         height: auto;
         max-height: 92%;
-        background: $surface;
-        border: round $panel;
+        background: $surface-lighten-1;
+        border: round $primary;
+        border-title-color: $text;
+        border-title-background: $primary;
+        border-title-style: bold;
         padding: 1 2;
+    }
+    /* The frame carries the row's verdict: its colour and the title tab say
+       allow / deny / dnat before a single line inside is read. */
+    DetailDialog.-verdict-allow > #dialog {
+        border: round $success;
+        border-title-background: $success;
+    }
+    DetailDialog.-verdict-deny > #dialog {
+        border: round $error;
+        border-title-background: $error;
+    }
+    DetailDialog.-verdict-dnat > #dialog {
+        border: round $warning;
+        border-title-background: $warning;
     }
     DetailDialog.-with-trace > #dialog {
         width: 96%;
@@ -209,11 +283,39 @@ class DetailDialog(ModalScreen[str | None]):
         height: 100%;
     }
     DetailDialog > #dialog > #dialog-header {
-        margin-bottom: 1;
+        margin-bottom: 0;
     }
-    DetailDialog > #dialog > #dialog-footer {
+    /* Inside the verdict frame every area sits in a quiet frame of its own,
+       titled, so the reader sees where the fields end and the evaluation
+       begins without a blank row between them. The tabbed layout drops the
+       fields frame: the tab strip already delimits the pane, and 80 columns
+       have none to spare. */
+    DetailDialog .area-frame {
+        border: round $panel-lighten-2;
+        border-title-color: $text-muted;
+        border-title-style: none;
+    }
+    DetailDialog > #dialog > #dialog-footer-row {
         margin-top: 1;
+        height: 1;
+    }
+    DetailDialog #dialog-footer {
+        width: 1fr;
         color: $text-muted;
+    }
+    /* A mouse target only: it never takes the focus, so Tab and the keys
+       stay with the tree (or the fields pane). */
+    DetailDialog #btn-close {
+        width: auto;
+        min-width: 0;
+        padding: 0 1;
+        background: $surface-lighten-3;
+        color: $text;
+    }
+    /* The legend sits right under the selection frame; without the frame's
+       bottom rule (short terminals) it keeps a blank row of its own. */
+    DetailDialog.-short TracePanel > #trace-legend {
+        margin-top: 1;
     }
     DetailDialog #dialog-body {
         width: 100%;
@@ -230,19 +332,18 @@ class DetailDialog(ModalScreen[str | None]):
         overflow-y: auto;
     }
     DetailDialog.-with-trace #detail-pane {
-        width: 52;
+        width: 54;
         height: 100%;
-        margin-right: 2;
-        border-right: solid $panel;
-        padding-right: 1;
+        margin-right: 1;
+        padding: 0 1;
     }
     /* Narrow with a trace: fields and trace are tabs, not columns — the
        fields pane takes the tab's full width instead of a fixed 52. */
     DetailDialog.-tabbed #detail-pane {
         width: 100%;
         margin-right: 0;
-        border-right: none;
-        padding-right: 0;
+        border: none;
+        padding: 0;
     }
     DetailDialog #dialog-body TracePanel {
         width: 1fr;
@@ -264,23 +365,41 @@ class DetailDialog(ModalScreen[str | None]):
         height: 100%;
         padding: 0;
     }
+    /* Under the tab strip the tree's own top rule would double the tab
+       underline; the "Policy trace" tab is the title there. The id in the
+       selector outranks the -tiny rule below, which a tabbed terminal
+       usually matches as well. */
+    DetailDialog.-tabbed #dialog-body TracePanel > Tree {
+        border: none;
+    }
     /* Fewer than _SHORT_BELOW_ROWS rows: give the tree the room back from the
        selection detail below it. More specific than TracePanel's own
        "max-height: 12" (DetailDialog.-short + descendant beats a bare type
        selector), so this works without editing trace_screen.py. */
     DetailDialog.-short TracePanel > #trace-detail {
-        max-height: 5;
+        max-height: 7;
+        border: none;
+        border-top: solid $panel-lighten-2;
     }
     /* Fewer than _TINY_BELOW_ROWS rows: the detail keeps its name lines and
        the first check; the rest is one scroll away, the tree gets the rows. */
     DetailDialog.-tiny TracePanel > #trace-detail {
-        max-height: 3;
+        max-height: 5;
+    }
+    /* The tree's frame folds to its top rule as well: the title stays, the
+       bottom row goes back to the tree. */
+    DetailDialog.-tiny TracePanel > Tree {
+        border: none;
+        border-top: solid $panel-lighten-2;
     }
     DetailDialog #trace-note {
         margin-top: 1;
     }
     DetailDialog .detail-row {
         height: auto;
+    }
+    DetailDialog #detail-pane > .group-caption:first-child {
+        margin-top: 0;
     }
     DetailDialog .group-caption {
         margin-top: 1;
@@ -298,6 +417,9 @@ class DetailDialog(ModalScreen[str | None]):
         self._trace_note = trace_note
         self._cache_age = cache_age
         self._inline_max = _INLINE_VALUE_MAX_WITH_TRACE if trace is not None else _INLINE_VALUE_MAX_ALONE
+        verdict = _verdict_class(row.action)
+        if verdict:
+            self.add_class(f"-verdict-{verdict}")
         if trace is not None:
             self.add_class("-with-trace")
         # Set for real by _classify(), called from compose() once the
@@ -362,7 +484,8 @@ class DetailDialog(ModalScreen[str | None]):
 
     def compose(self) -> ComposeResult:
         self._tabbed_mode = self._classify()
-        with Vertical(id="dialog"):
+        with Vertical(id="dialog") as dialog:
+            dialog.border_title = _border_title(self._row, self._trace)
             yield Static(self._header_text(), id="dialog-header")
             with Horizontal(id="dialog-body"):
                 if self._tabbed_mode:
@@ -378,7 +501,9 @@ class DetailDialog(ModalScreen[str | None]):
                         with TabPane("Policy trace", id="tab-trace"):
                             yield TracePanel(trace, id="trace-panel")
                 else:
-                    with Vertical(id="detail-pane"):
+                    with Vertical(id="detail-pane", classes="area-frame" if self._trace is not None else "") as pane:
+                        if self._trace is not None:
+                            pane.border_title = "Fields"
                         yield from self._entry_fields()
                         if self._trace is None and self._trace_note:
                             title, _, why = self._trace_note.partition("\n")
@@ -386,7 +511,11 @@ class DetailDialog(ModalScreen[str | None]):
                                          classes="detail-row", markup=True)
                     if self._trace is not None:
                         yield TracePanel(self._trace, id="trace-panel")
-            yield Static(f"[dim]{self._footer_text()}[/]", id="dialog-footer", markup=True)
+            with Horizontal(id="dialog-footer-row"):
+                yield Static(f"[dim]{self._footer_text()}[/]", id="dialog-footer", markup=True)
+                close = Button("Close", id="btn-close", compact=True)
+                close.can_focus = False
+                yield close
 
     def _entry_fields(self) -> ComposeResult:
         """The row's own fields, grouped; whatever the header already shows
@@ -395,7 +524,7 @@ class DetailDialog(ModalScreen[str | None]):
         with_trace = self._trace is not None
         cat = row.category.lower()
 
-        yield Static("[dim]Connection[/]", classes="group-caption")
+        yield Static("[b]Connection[/b]", classes="group-caption")
         yield self._time_field(row)
         if cat == "dnsquery" and row.protocol and row.protocol != "-":
             yield self._field(_PROTOCOL_LABEL[cat].ljust(13), row.protocol)
@@ -436,7 +565,7 @@ class DetailDialog(ModalScreen[str | None]):
             if row.tls_inspected:
                 inspection.append(self._field("TLS inspected", row.tls_inspected))
         if inspection:
-            yield Static("[dim]Inspection[/]", classes="group-caption")
+            yield Static("[b]Inspection[/b]", classes="group-caption")
             yield from inspection
 
         enr = self._enrichment
@@ -450,7 +579,7 @@ class DetailDialog(ModalScreen[str | None]):
         if enr.get("dest_ip_groups"):
             groups.append(self._ip_groups_field("Dst IP groups", enr["dest_ip_groups"]))
         if groups:
-            yield Static("[dim]Groups[/]", classes="group-caption")
+            yield Static("[b]Groups[/b]", classes="group-caption")
             yield from groups
 
         if not with_trace:
@@ -470,7 +599,7 @@ class DetailDialog(ModalScreen[str | None]):
             if enr.get("rule_action"):
                 rule.append(self._field("Rule Action  ", enr["rule_action"]))
             if rule:
-                yield Static("[dim]Rule[/]", classes="group-caption")
+                yield Static("[b]Rule[/b]", classes="group-caption")
                 yield from rule
 
     def _flowtrace_fields(self, row: FirewallDataRow) -> ComposeResult:
@@ -517,8 +646,12 @@ class DetailDialog(ModalScreen[str | None]):
         event.stop()
         self.dismiss(event.rule_ref)
 
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        event.stop()
+        self.dismiss(None)
+
     def on_key(self, event: events.Key) -> None:
-        if event.key in ("q", "escape"):
+        if event.key in ("q", "escape") or (event.key == "enter" and self._trace is None):
             # Stop the key here: once the modal is gone the event would bubble
             # on to the App and trigger its own q / escape bindings.
             event.stop()

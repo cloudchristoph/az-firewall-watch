@@ -282,8 +282,8 @@ def _net_in_long_names(structured_record):
 
 
 def test_header_line2_shortens_until_it_fits(structured_record):
-    """Full outcome first; then the group and collection go; then the cache
-    age. Never the rule name, never the icon."""
+    """Full path first; then the cache age goes; then the group. Never the
+    collection, never the icon. The rule itself is the frame title's."""
     from viewer.trace import build_trace
     from viewer.views.detail_screen import _header_line2
 
@@ -292,12 +292,12 @@ def test_header_line2_shortens_until_it_fits(structured_record):
     trace = build_trace(FirewallLogApp._flow_from_row(row), snap.policy, snap.ip_groups,
                         FirewallLogApp._logged_from_row(row))
     full = _header_line2(trace, "fresh")
-    assert _LONG_GROUP in full and "cached policy · fresh" in full
+    assert full == f"[green]✓[/] matched in {_LONG_GROUP} » {_LONG_COLLECTION}   [dim]cached policy · fresh[/]"
     assert _header_line2(trace, "fresh", width=200) == full
-    medium = _header_line2(trace, "fresh", width=60)
-    assert "»" not in medium and "Allow · allow-web" in medium and "cached policy · fresh" in medium
-    tight = _header_line2(trace, "fresh", width=30)
-    assert tight == "[green]✓[/] Allow · allow-web"
+    medium = _header_line2(trace, "fresh", width=110)
+    assert medium == f"[green]✓[/] matched in {_LONG_GROUP} » {_LONG_COLLECTION}"
+    tight = _header_line2(trace, "fresh", width=60)
+    assert tight == f"[green]✓[/] matched in {_LONG_COLLECTION}"
     assert _header_line2(trace, "fresh", width=5) == tight   # never shorter than that
 
 
@@ -313,7 +313,7 @@ async def test_header_stays_two_lines_on_a_narrow_terminal(structured_record, mg
         header = screen.query_one("#dialog-header", Static)
         lines = str(header.content).split("\n")
         assert len(lines) == 2 and header.region.height == 2
-        assert "allow-web" in lines[1] and "»" not in lines[1]
+        assert _LONG_COLLECTION in lines[1] and "»" not in lines[1]
 
 
 async def test_header_line2_stays_full_at_160x45(structured_record, mgmt, firewall_id):  # noqa: F811
@@ -325,7 +325,7 @@ async def test_header_line2_stays_full_at_160x45(structured_record, mgmt, firewa
         await _load(app, pilot, firewall_id)
         screen = await _open_matched_trace(app, pilot, structured_record)
         header = str(screen.query_one("#dialog-header", Static).content)
-        assert "rcg-net » rc-web » allow-web" in header
+        assert "matched in rcg-net » rc-web" in header
 
 
 # ── screenshots: a cheap guard that rendering does not raise ──────────────────
@@ -412,7 +412,8 @@ async def test_footer_fits_one_row_at_80_columns(structured_record, mgmt, firewa
         screen = await _open_matched_trace(app, pilot, structured_record)
         footer = screen.query_one("#dialog-footer", Static)
         assert footer.region.height == 1
-        assert "Tab fields/trace" in str(footer.content) and "Esc close" in str(footer.content)
+        assert "Tab fields/trace" in str(footer.content)
+        assert screen.query("#btn-close")  # the Close button takes the room "Esc close" had
 
 
 async def test_resize_switches_between_columns_and_tabs(structured_record, mgmt, firewall_id):  # noqa: F811

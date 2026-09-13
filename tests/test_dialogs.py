@@ -113,7 +113,7 @@ async def test_threat_intel_entry_labels_and_long_values(structured_record):
         assert fqdn in text and "HTTP" in text
         assert not any(c.startswith("[dim]Destination  [/]") for c in contents)
         assert not any(c.startswith("[dim]Protocol     [/]") for c in contents)
-        assert not dialog.query("#btn-close")
+        assert dialog.query("#btn-close")  # the footer's mouse target, see test_detail_dialog
 
 
 async def test_flowtrace_dialog_shows_connection_and_packet_direction(structured_record):
@@ -196,8 +196,9 @@ async def test_dnat_dialog_shows_public_destination_and_translation(structured_r
     assert "Translated" in text and "10.3.6.4:80" in text
 
 
-@pytest.mark.parametrize("key", ["escape", "q"])
+@pytest.mark.parametrize("key", ["escape", "q", "enter"])
 async def test_detail_dialog_closes_on_key(structured_record, key):
+    """Enter opened the row, so without a trace Enter closes the dialog too."""
     app = FirewallLogApp()
     async with app.run_test(size=(140, 40)) as pilot:
         await pilot.pause()

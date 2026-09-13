@@ -166,6 +166,11 @@ class TracePanel(Vertical):
     }
     TracePanel > Tree {
         height: 1fr;
+        border: round $panel-lighten-2;
+        border-title-color: $text-muted;
+        scrollbar-size: 1 1;
+        scrollbar-background: $surface-lighten-1;
+        scrollbar-color: $panel-lighten-3;
         /* A label wider than the pane is cut, not scrolled: a horizontal
            scrollbar would cost a row the tree cannot spare on a short
            terminal, and the selection detail below carries every name whole. */
@@ -173,9 +178,16 @@ class TracePanel(Vertical):
     }
     TracePanel > #trace-detail {
         height: auto;
-        max-height: 12;
+        max-height: 14;
         overflow-y: auto;
-        margin-top: 1;
+        border: round $panel-lighten-2;
+        border-title-color: $text-muted;
+        padding: 0 1;
+        /* A thin bar in the dialog's own greys; Textual's default is a black
+           gutter with a saturated thumb, which reads as a fourth panel. */
+        scrollbar-size: 1 1;
+        scrollbar-background: $surface-lighten-1;
+        scrollbar-color: $panel-lighten-3;
     }
     TracePanel > #trace-detail > #trace-detail-text {
         height: auto;
@@ -186,7 +198,7 @@ class TracePanel(Vertical):
          * text-muted color would dim an already-dim span a second time —
          * a different, darker grey than the tree's, breaking the one promise
          * this legend makes (it shows the tree's own colours). */
-        margin-top: 1;
+        margin-top: 0;
     }
 
     /* The tree stays focused the whole time it is shown (see _build), which
@@ -201,18 +213,25 @@ class TracePanel(Vertical):
      * the same [dim] glyph in the legend below it. Cancelling the tint keeps
      * the promise that a mark means the same colour everywhere in this panel.
      */
+    TracePanel > Tree {
+        /* Tree paints its own $surface by default; the dialog sits one step
+         * above that, and a second surface inside it would read as a box —
+         * and blend the tree's [dim] glyphs against a different grey than the
+         * legend's. Inherit the dialog's background instead. */
+        background: transparent;
+    }
     TracePanel > Tree:focus {
         background-tint: $foreground 0%;
     }
     TracePanel > Tree > .tree--cursor,
     TracePanel > Tree:focus > .tree--cursor {
-        background: $surface-lighten-2;
+        background: $surface-lighten-3;
         color: $text;
         text-style: bold;
     }
     TracePanel > Tree > .tree--highlight-line,
     TracePanel > Tree:focus > .tree--highlight-line {
-        background: $surface-lighten-1;
+        background: $surface-lighten-2;
     }
     TracePanel > Tree > .tree--guides,
     TracePanel > Tree:focus > .tree--guides {
@@ -236,11 +255,14 @@ class TracePanel(Vertical):
         t = self._trace
         if t.warnings:
             yield Static("\n".join(f"⚠ {escape(w)}" for w in t.warnings), id="trace-warnings", markup=True)
-        yield _TraceTree("Policy evaluation", id="trace-tree")
+        tree = _TraceTree("Policy evaluation", id="trace-tree")
+        tree.border_title = "Policy evaluation"
+        yield tree
         # A Static clips what does not fit; only a scroll container gives the
         # rows beyond the height cap a way to be reached (wheel, or Shift+↑↓
         # from the dialog).
-        with VerticalScroll(id="trace-detail"):
+        with VerticalScroll(id="trace-detail") as detail:
+            detail.border_title = "Selection"
             yield Static(id="trace-detail-text")
         yield Static(Text.from_markup(LEGEND), id="trace-legend")
 
@@ -296,6 +318,7 @@ class TracePanel(Vertical):
                 root.add_leaf(f"{_LEAF_PAD}[red]✗[/] {escape(t.outcome)}")
         root.expand()
 
+        self._size_detail(tree)
         matched = self._logged_node
         if matched is not None:
             def _go(node=matched) -> None:
@@ -444,20 +467,35 @@ class TracePanel(Vertical):
     def on_tree_node_highlighted(self, event: Tree.NodeHighlighted) -> None:
         self._render_detail(event.node)
 
+    @staticmethod
+    def _detail_text(data: object) -> str:
+        if not isinstance(data, dict):
+            return ""
+        kind = data.get("kind")
+        if kind == "rule":
+            return _render_rule_detail(data["rule"], data["collection"])
+        if kind == "collection":
+            return _render_collection_detail(data["collection"])
+        if kind == "pass":
+            return _render_pass_detail(data["pass"])
+        if kind in ("group", "summary"):
+            return _render_group_detail(data["name"], data["priority"], data["collections"])
+        return ""
+
+    def _size_detail(self, tree: Tree) -> None:
+        """Give the selection frame the height of the longest detail any
+        node of this tree can show, so it does not grow and shrink with the
+        cursor. A short terminal still caps it (see the dialog's CSS)."""
+        rows = 1
+        pending = [tree.root]
+        while pending:
+            node = pending.pop()
+            rows = max(rows, self._detail_text(node.data).count("\n") + 1)
+            pending.extend(node.children)
+        frame = self.query_one("#trace-detail", VerticalScroll)
+        frame.styles.height = rows + 2  # the top and bottom rule
+
     def _render_detail(self, node: TreeNode | None) -> None:
         detail = self.query_one("#trace-detail-text", Static)
-        data = node.data if node is not None else None
-        if not isinstance(data, dict):
-            detail.update("")
-            return
-        kind = data.get("kind")
-        text = ""
-        if kind == "rule":
-            text = _render_rule_detail(data["rule"], data["collection"])
-        elif kind == "collection":
-            text = _render_collection_detail(data["collection"])
-        elif kind == "pass":
-            text = _render_pass_detail(data["pass"])
-        elif kind in ("group", "summary"):
-            text = _render_group_detail(data["name"], data["priority"], data["collections"])
+        text = self._detail_text(node.data if node is not None else None)
         detail.update(Text.from_markup(text) if text else "")

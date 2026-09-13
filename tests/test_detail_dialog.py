@@ -8,11 +8,16 @@ from __future__ import annotations
 import time
 
 import pytest
-from textual.widgets import Static, Switch
+from textual.widgets import Button, Static, Switch, Tree
 
 from fw_parser import parse_record
 from tests.test_dialogs import _dialog_text, _open_detail
-from tests.test_views import _load, make_snapshot, mgmt  # noqa: F401  (fixture; pytest needs it bound as "mgmt")
+from tests.test_views import (  # noqa: F401  (fixture; pytest needs it bound as "mgmt")
+    _load,
+    make_snapshot,
+    mgmt,
+    wait_until,
+)
 from viewer.app import FirewallLogApp
 from viewer.azure_resources import FirewallInfo, FirewallPolicyInfo, IpGroupInfo
 from viewer.cache import CachedSnapshot
@@ -182,7 +187,10 @@ async def test_header_line2_matched_rule_is_green_check(structured_record, mgmt,
         dialog = await _open_detail(app, pilot, _matched_network_row(structured_record))
         assert dialog.has_trace
         header = _header_text(dialog)
-        assert "✓" in header and "Allow by rcg-net » rc-web » allow-web" in header
+        # the frame title names the action and the rule; the line says where it sits
+        assert dialog.query_one("#dialog").border_title == "ALLOW · allow-web"
+        assert "✓" in header and "matched in rcg-net » rc-web" in header
+        assert "allow-web" not in header and "Allow by" not in header
         assert "cached policy · fresh" in header
 
 
@@ -233,7 +241,7 @@ async def test_footer_without_trace(structured_record):
     async with app.run_test(size=(140, 40)) as pilot:
         await pilot.pause()
         dialog = await _open_detail(app, pilot, _network_row(structured_record))
-        assert _footer_text(dialog) == "[dim]Esc close[/]"
+        assert _footer_text(dialog) == "[dim]Enter / Esc close[/]"
 
 
 async def test_footer_with_trace(structured_record, mgmt, firewall_id):  # noqa: F811
@@ -247,25 +255,33 @@ async def test_footer_with_trace(structured_record, mgmt, firewall_id):  # noqa:
         )
 
 
-# ── no close button, either mode ──────────────────────────────────────────────
+# ── close button: a mouse target in the footer row, never the focus ───────────
 
-async def test_no_close_button_without_trace(structured_record):
+async def test_close_button_without_trace_closes_and_takes_no_focus(structured_record):
     app = FirewallLogApp()
     async with app.run_test(size=(140, 40)) as pilot:
         await pilot.pause()
         dialog = await _open_detail(app, pilot, _network_row(structured_record))
-        assert not dialog.query("#btn-close")
-        assert not dialog.query("Button")
+        button = dialog.query_one("#btn-close", Button)
+        assert not button.can_focus and dialog.focused is not button
+        await pilot.click("#btn-close")
+        await wait_until(pilot, lambda: not isinstance(app.screen, DetailDialog))
 
 
-async def test_no_close_button_with_trace(structured_record, mgmt, firewall_id):  # noqa: F811
+async def test_close_button_with_trace_leaves_the_tree_focused(structured_record, mgmt, firewall_id):  # noqa: F811
     app = FirewallLogApp()
     async with app.run_test(size=(160, 45)) as pilot:
         await pilot.pause()
         await _load(app, pilot, firewall_id)
         dialog = await _open_detail(app, pilot, _matched_network_row(structured_record))
-        assert not dialog.query("#btn-close")
-        assert not dialog.query("Button")
+        button = dialog.query_one("#btn-close", Button)
+        assert button.can_focus is False
+        assert dialog.query_one("#trace-tree", Tree).has_focus
+        await pilot.press("tab")
+        await pilot.pause()
+        assert dialog.focused is not button  # Tab walks the panes, never the button
+        await pilot.click("#btn-close")
+        await wait_until(pilot, lambda: not isinstance(app.screen, DetailDialog))
 
 
 # ── keys ──────────────────────────────────────────────────────────────────────
@@ -281,6 +297,19 @@ async def test_close_keys_do_not_quit_app_with_trace(structured_record, mgmt, fi
         await pilot.pause(0.2)
         assert not isinstance(app.screen, DetailDialog)
         assert app.is_running
+
+
+async def test_enter_with_trace_stays_in_the_dialog(structured_record, mgmt, firewall_id):  # noqa: F811
+    """With a trace Enter belongs to the tree (expand / collapse), so it must
+    not close the dialog the way it does without one."""
+    app = FirewallLogApp()
+    async with app.run_test(size=(160, 45)) as pilot:
+        await pilot.pause()
+        await _load(app, pilot, firewall_id)
+        dialog = await _open_detail(app, pilot, _matched_network_row(structured_record))
+        await pilot.press("enter")
+        await pilot.pause(0.2)
+        assert app.screen is dialog
 
 
 async def test_a_toggles_expand_all_with_trace(structured_record, mgmt, firewall_id):  # noqa: F811
@@ -318,7 +347,7 @@ async def test_connection_caption_always_present(structured_record):
         await pilot.pause()
         dialog = await _open_detail(app, pilot, _network_row(structured_record))
         text = _dialog_text(dialog)
-        assert "[dim]Connection[/]" in text
+        assert "[b]Connection[/b]" in text
 
 
 async def test_inspection_caption_present_for_apprule_with_flags(structured_record):
@@ -328,7 +357,7 @@ async def test_inspection_caption_present_for_apprule_with_flags(structured_reco
         with_flags = await _open_detail(
             app, pilot, _app_row(structured_record, IsExplicitProxyRequest=True, IsTlsInspected=False))
         text = _dialog_text(with_flags)
-        assert "[dim]Inspection[/]" in text
+        assert "[b]Inspection[/b]" in text
         assert "Expl. proxy" in text and "TLS inspected" in text
 
 
@@ -337,7 +366,7 @@ async def test_inspection_caption_absent_otherwise(structured_record):
     async with app.run_test(size=(140, 40)) as pilot:
         await pilot.pause()
         without_flags = await _open_detail(app, pilot, _network_row(structured_record))
-        assert "[dim]Inspection[/]" not in _dialog_text(without_flags)
+        assert "[b]Inspection[/b]" not in _dialog_text(without_flags)
 
 
 async def test_groups_caption_absent_without_metadata(structured_record):
@@ -345,7 +374,7 @@ async def test_groups_caption_absent_without_metadata(structured_record):
     async with app.run_test(size=(140, 40)) as pilot:
         await pilot.pause()
         no_mgmt = await _open_detail(app, pilot, _network_row(structured_record))
-        assert "[dim]Groups[/]" not in _dialog_text(no_mgmt)
+        assert "[b]Groups[/b]" not in _dialog_text(no_mgmt)
 
 
 async def test_groups_caption_present_when_enriched(structured_record, mgmt, firewall_id):  # noqa: F811
@@ -355,7 +384,7 @@ async def test_groups_caption_present_when_enriched(structured_record, mgmt, fir
         await _load(app, pilot, firewall_id)
         enriched = await _open_detail(app, pilot, _matched_network_row(structured_record))
         text = _dialog_text(enriched)
-        assert "[dim]Groups[/]" in text
+        assert "[b]Groups[/b]" in text
         assert "Src IP groups" in text and "ipgroup-all-spokes" in text
 
 
@@ -366,7 +395,7 @@ async def test_rule_caption_present_without_trace(structured_record):
         row = _network_row(structured_record, Policy="pol-hub", RuleCollectionGroup="rcg",
                            RuleCollection="rc", Rule="r-web")
         no_trace = await _open_detail(app, pilot, row)
-        assert "[dim]Rule[/]" in _dialog_text(no_trace)
+        assert "[b]Rule[/b]" in _dialog_text(no_trace)
 
 
 async def test_rule_caption_absent_with_trace(structured_record, mgmt, firewall_id):  # noqa: F811

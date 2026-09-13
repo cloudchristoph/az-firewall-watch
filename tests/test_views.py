@@ -23,7 +23,7 @@ from viewer.azure_resources import (
 from viewer.cache import CachedSnapshot
 from viewer.views import FirewallView, IpGroupsView, PolicyView
 from viewer.views.detail_screen import DetailDialog, _ports_join
-from viewer.views.firewall import _row
+from viewer.views.firewall import VIEWER_CATEGORIES, _row
 from viewer.views.ip_groups import IpGroupDetailDialog
 from viewer.views.trace_screen import TracePanel
 
@@ -734,9 +734,10 @@ async def test_firewall_tab_shows_instance_networking_policy_and_logging(structu
         assert _row("Fat flow logging", "on") in instance and "EnableFatFlowLogging" not in instance
         net = view.query_one("#fw-network", DataTable)
         rows = [[str(c) for c in net.get_row_at(i)] for i in range(net.row_count)]
-        assert rows[0] == ["IpConfiguration0", "10.2.0.4", "pip-fw-hub-gwc-001\n72.144.131.50"]
-        assert rows[1][1:] == ["fd10:2:0:1::4", "pip-fw-hub-gwc-ipv6-001\naddress not readable"]
-        assert rows[2][0] == "management" and rows[2][2].endswith("72.144.91.185")
+        # the addresses first, the configuration name last
+        assert rows[0] == ["10.2.0.4", "pip-fw-hub-gwc-001\n72.144.131.50", "IpConfiguration0"]
+        assert rows[1][:2] == ["fd10:2:0:1::4", "pip-fw-hub-gwc-ipv6-001\naddress not readable"]
+        assert rows[2][2] == "management" and rows[2][1].endswith("72.144.91.185")
         net_note = str(view.query_one("#fw-network-note", Static).content)
         assert "10.2.0.0/26" in net_note and "AzureFirewallSubnet, AzureFirewallManagementSubnet" in net_note
         assert "own subnet and public IP" in net_note and "forced tunneling" not in net_note
@@ -744,10 +745,16 @@ async def test_firewall_tab_shows_instance_networking_policy_and_logging(structu
         assert "fwp-hub-premium-gwc" in pol and "1 rule collection groups" in pol
         assert "DNS proxy" in pol and "Azure DNS" in pol and "2 signature overrides" in pol and "CA: fw-tls-intermediate-ca" in pol
         log = view.query_one("#fw-logging", DataTable)
-        lrows = [[str(c) for c in log.get_row_at(i)] for i in range(log.row_count)]
-        assert lrows == [["diag-fw\n  Event Hub ehns-fw-gwc/firewall-logs · 3 categories · 3 of 9 viewer"]]
+        assert [str(c.label) for c in log.columns.values()] == ["Category", "EH"]
+        lrows = {str(log.get_row_at(i)[0]): str(log.get_row_at(i)[1]) for i in range(log.row_count)}
+        assert list(lrows) == VIEWER_CATEGORIES                       # every viewer category, in order
+        assert lrows["AZFWNetworkRule"] == "✓" and lrows["AZFWDnsQuery"] == "✓" and lrows["AZFWNatRule"] == "·"
         note = str(view.query_one("#fw-logging-note", Static).content)
-        assert "Not to Event Hub" in note and "AZFWFlowTrace" in note and "AZFWNatRule" in note
+        assert "ehns-fw-gwc/firewall-logs" in note and "Event Hub · diag-fw" in note
+        assert "connected" not in note                                # no hub configured: no claim which one is ours
+        assert "Event Hub coverage" in note and "incomplete, missing AZFWNatRule" in note
+        assert "AZFWFlowTrace" not in note.split("incomplete")[1]     # never counted as missing
+        assert "Not to Event Hub" not in note
 
 
 async def test_firewall_tab_shows_the_0_6_0_facts_from_the_snapshot(structured_record, mgmt, firewall_id):
@@ -787,7 +794,7 @@ async def test_firewall_tab_shows_the_0_6_0_facts_from_the_snapshot(structured_r
         assert "natgw-hub on AzureFirewallSubnet" in net_note and "leaves with 20.1.2.3" in net_note
         pol = str(view.query_one("#fw-policy", Static).content)
         assert "via Route Server rs-hub" in pol and "not readable from here" in pol
-        assert "port 8080 for HTTP and HTTPS" in pol and "served on port 8090" in pol and "proxy.pac" in pol
+        assert "port 8080 for HTTP and HTTPS" in pol and "port 8090 · " in pol and "proxy.pac" in pol
 
 
 async def test_firewall_tab_panels_scroll_on_a_small_terminal(structured_record, mgmt, firewall_id):

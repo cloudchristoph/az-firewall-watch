@@ -23,7 +23,7 @@ def _fw(**props: str) -> FirewallInfo:
 
 
 def test_empty_bag_shows_only_fat_flow_logging_and_no_additional_line():
-    assert _additional_property_rows(_fw()) == [_row("Fat flow logging", "off   [dim]not set[/]")]
+    assert _additional_property_rows(_fw()) == [_row("Fat flow logging", "off", "not set")]
 
 
 @pytest.mark.parametrize("value,expected", [("true", "on"), ("True", "on"), ("false", "off"), ("maybe", "maybe")])
@@ -47,7 +47,7 @@ def test_active_ftp_row_only_when_the_key_is_present():
 def test_classic_dns_proxy_and_snat_rows():
     rows = _additional_property_rows(_fw(**{CLASSIC_DNS_PROXY_KEY: "true", CLASSIC_DNS_SERVERS_KEY: "10.0.0.53",
                                              CLASSIC_SNAT_KEY: "10.0.0.0/8, 172.16.0.0/12"}))
-    assert _row("DNS proxy (classic)", "on   [dim]servers: 10.0.0.53[/]") in rows
+    assert _row("DNS proxy (classic)", "on", "servers: 10.0.0.53") in rows
     assert _row("SNAT ranges (classic)", "10.0.0.0/8, 172.16.0.0/12") in rows
 
 

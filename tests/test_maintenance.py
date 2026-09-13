@@ -134,7 +134,7 @@ async def test_fetch_maintenance_unreadable_list_is_none_not_empty(status, code)
 
 def test_maintenance_rows_unreadable_assignment_list_is_unknown_not_none():
     rows = _maintenance_rows(_fw(), [], readable=False)
-    assert rows == [_row("Maintenance", "unknown   [dim]maintenance assignments not readable from here[/]")]
+    assert rows == [_row("Maintenance", "unknown", "maintenance assignments not readable from here")]
     assert "no customer-controlled window" not in rows[0]
 
 
@@ -201,7 +201,7 @@ def test_maintenance_defaults_to_empty_list_when_absent_from_an_older_cache_entr
 
 def test_maintenance_rows_empty_list():
     assert _maintenance_rows(_fw(), []) == [
-        _row("Maintenance", "no customer-controlled window   [dim]Azure picks the time for updates[/]"),
+        _row("Maintenance", "none", "no customer-controlled window"),
     ]
 
 
@@ -213,7 +213,7 @@ def test_maintenance_rows_readable_window_common_case():
                           expiration="9999-12-31 23:59", scope="Resource", sub_scope="NetworkSecurity")
     rows = _maintenance_rows(_fw(), [w])
     assert rows == [
-        _row("Maintenance", "daily 22:00 for 5 h, W. Europe Standard Time   [dim]mc-fw-nightly[/]"),
+        _row("Maintenance", "daily 22:00 for 5 h, W. Europe Standard Time", "mc-fw-nightly"),
         _note("covers guest OS and service updates; host updates and urgent security fixes can fall outside the window"),
     ]
 
@@ -253,7 +253,7 @@ def test_maintenance_rows_date_only_start_is_shown_raw_and_never_dated():
                           readable=True, start="2099-01-01", duration="05:00", time_zone="UTC", recur_every="Day",
                           expiration="9999-12-31 23:59")
     rows = _maintenance_rows(_fw(), [w])
-    assert rows[0] == _row("Maintenance", "daily 2099-01-01 for 5 h, UTC   [dim]mc-fw-nightly[/]")
+    assert rows[0] == _row("Maintenance", "daily 2099-01-01 for 5 h, UTC", "mc-fw-nightly")
     assert "from " not in rows[0]
 
 
@@ -262,7 +262,7 @@ def test_maintenance_rows_duration_with_minutes():
                           start="2020-01-01 22:00", duration="05:30", time_zone="UTC", recur_every="Day",
                           expiration="9999-12-31 23:59")
     rows = _maintenance_rows(_fw(), [w])
-    assert rows[0] == _row("Maintenance", "daily 22:00 for 5 h 30 min, UTC   [dim]mc[/]")
+    assert rows[0] == _row("Maintenance", "daily 22:00 for 5 h 30 min, UTC", "mc")
 
 
 def test_maintenance_rows_unparseable_duration_shown_raw():
@@ -270,7 +270,7 @@ def test_maintenance_rows_unparseable_duration_shown_raw():
                           start="2020-01-01 22:00", duration="bogus", time_zone="UTC", recur_every="Day",
                           expiration="9999-12-31 23:59")
     rows = _maintenance_rows(_fw(), [w])
-    assert rows[0] == _row("Maintenance", "daily 22:00 for bogus, UTC   [dim]mc[/]")
+    assert rows[0] == _row("Maintenance", "daily 22:00 for bogus, UTC", "mc")
 
 
 def test_maintenance_rows_non_daily_recurrence():
@@ -278,7 +278,7 @@ def test_maintenance_rows_non_daily_recurrence():
                           start="2020-01-01 22:00", duration="05:00", time_zone="UTC", recur_every="3Days",
                           expiration="9999-12-31 23:59")
     rows = _maintenance_rows(_fw(), [w])
-    assert rows[0] == _row("Maintenance", "every 3Days 22:00 for 5 h, UTC   [dim]mc[/]")
+    assert rows[0] == _row("Maintenance", "every 3Days 22:00 for 5 h, UTC", "mc")
 
 
 def test_maintenance_rows_future_start_gets_from_prefix():
@@ -286,7 +286,7 @@ def test_maintenance_rows_future_start_gets_from_prefix():
                           start="2099-06-15 22:00", duration="05:00", time_zone="UTC", recur_every="Day",
                           expiration="9999-12-31 23:59")
     rows = _maintenance_rows(_fw(), [w])
-    assert rows[0] == _row("Maintenance", "from 2099-06-15, daily 22:00 for 5 h, UTC   [dim]mc[/]")
+    assert rows[0] == _row("Maintenance", "from 2099-06-15, daily 22:00 for 5 h, UTC", "mc")
 
 
 def test_maintenance_rows_expiration_set_in_the_future_is_appended():
@@ -294,7 +294,7 @@ def test_maintenance_rows_expiration_set_in_the_future_is_appended():
                           start="2020-01-01 22:00", duration="05:00", time_zone="UTC", recur_every="Day",
                           expiration="2099-12-31 23:59")
     rows = _maintenance_rows(_fw(), [w])
-    assert rows[0] == _row("Maintenance", "daily 22:00 for 5 h, UTC until 2099-12-31 23:59   [dim]mc[/]")
+    assert rows[0] == _row("Maintenance", "daily 22:00 for 5 h, UTC until 2099-12-31 23:59", "mc")
 
 
 @pytest.mark.parametrize("days_ago, expired", [(2, True), (1, False), (0, False), (-1, False)])
@@ -309,7 +309,7 @@ def test_maintenance_rows_expired_only_after_a_full_day_in_any_zone(days_ago, ex
                           recur_every="Day", expiration=f"{exp.isoformat()} 23:59")
     rows = _maintenance_rows(_fw(), [w])
     if expired:
-        assert rows == [_row("Maintenance", f"[yellow]expired {exp.isoformat()}[/]   [dim]mc[/]")]
+        assert rows == [_row("Maintenance", f"[yellow]expired {exp.isoformat()}[/]", "mc")]
     else:
         assert "expired" not in rows[0]
         assert f"until {exp.isoformat()} 23:59" in str(rows[0])
@@ -320,7 +320,7 @@ def test_maintenance_rows_expired_window_skips_the_note():
                           start="2010-01-01 22:00", duration="05:00", time_zone="UTC", recur_every="Day",
                           expiration="2020-06-30 23:59")
     rows = _maintenance_rows(_fw(), [w])
-    assert rows == [_row("Maintenance", "[yellow]expired 2020-06-30[/]   [dim]mc-fw-nightly[/]")]
+    assert rows == [_row("Maintenance", "[yellow]expired 2020-06-30[/]", "mc-fw-nightly")]
 
 
 def test_maintenance_rows_unexpected_sub_scope_is_flagged():
@@ -329,14 +329,13 @@ def test_maintenance_rows_unexpected_sub_scope_is_flagged():
                           expiration="9999-12-31 23:59", sub_scope="Foo")
     rows = _maintenance_rows(_fw(), [w])
     assert rows[0] == _row("Maintenance",
-                           "daily 22:00 for 5 h, UTC   [yellow]subscope Foo: not a firewall maintenance window[/]"
-                           "   [dim]mc[/]")
+                           "daily 22:00 for 5 h, UTC   [yellow]subscope Foo: not a firewall maintenance window[/]", "mc")
 
 
 def test_maintenance_rows_assignment_without_a_configuration_id_is_not_a_rights_problem():
     w = MaintenanceWindow(assignment_name="assign1", configuration_id="", readable=False)
     rows = _maintenance_rows(_fw(), [w])
-    assert rows == [_row("Maintenance", "assigned: assign1   [dim]the assignment names no maintenance configuration[/]")]
+    assert rows == [_row("Maintenance", "assigned: assign1", "the assignment names no maintenance configuration")]
 
 
 def test_maintenance_rows_not_readable():
@@ -344,7 +343,7 @@ def test_maintenance_rows_not_readable():
                           readable=False)
     rows = _maintenance_rows(_fw(), [w])
     assert rows == [
-        _row("Maintenance", "assigned: mc-fw-nightly   [dim]window not readable from here[/]"),
+        _row("Maintenance", "assigned: mc-fw-nightly", "window not readable from here"),
     ]
 
 
@@ -356,9 +355,9 @@ def test_maintenance_rows_several_entries_each_get_their_own_row_and_note_in_ord
                                    readable=False)
     rows = _maintenance_rows(_fw(), [readable, unreadable])
     assert rows == [
-        _row("Maintenance", "daily 22:00 for 5 h, UTC   [dim]mc-a[/]"),
+        _row("Maintenance", "daily 22:00 for 5 h, UTC", "mc-a"),
         _note("covers guest OS and service updates; host updates and urgent security fixes can fall outside the window"),
-        _row("Maintenance", "assigned: mc-b   [dim]window not readable from here[/]"),
+        _row("Maintenance", "assigned: mc-b", "window not readable from here"),
     ]
 
 

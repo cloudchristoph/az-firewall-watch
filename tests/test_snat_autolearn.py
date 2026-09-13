@@ -13,7 +13,7 @@ from viewer.azure_resources import (
     fetch_firewall,
     fetch_policy,
 )
-from viewer.views.firewall import FirewallView, _snat_rows
+from viewer.views.firewall import FirewallView, _note, _row, _snat_rows
 
 SUB = "/subscriptions/25ca1d83-3de5-46c7-9941-fb98c2ea026e"
 FW_ID = f"{SUB}/resourceGroups/rg-hub-network-gwc/providers/Microsoft.Network/azureFirewalls/fw-hub-gwc"
@@ -105,8 +105,8 @@ def _fw(sku_name: str = "AZFW_VNet", route_server_id: str = "") -> FirewallInfo:
 
 def test_snat_rows_default_ranges_when_none_configured():
     rows = _snat_rows(FirewallPolicyInfo(id=POLICY_ID, name="p"), _fw())
-    assert rows[0] == "[dim]SNAT ranges       [/]  default (RFC 1918 and RFC 6598)"
-    assert rows[1] == "                    [dim]applies to network rules only; application rules are always SNATed[/]"
+    assert rows[0] == _row("SNAT ranges", "default", "RFC 1918 and RFC 6598")
+    assert rows[1] == _note("network rules only, application rules always SNAT")
 
 
 def test_snat_rows_configured_ranges_are_escaped_and_joined():
@@ -131,7 +131,7 @@ def test_snat_rows_auto_learn_off_when_absent():
 def test_snat_rows_auto_learn_on_via_hub_builtin_route_server():
     pol = FirewallPolicyInfo(id=POLICY_ID, name="p", snat_auto_learn="Enabled")
     rows = _snat_rows(pol, _fw(sku_name="AZFW_Hub"))
-    assert rows[2] == "[dim]Auto-learn SNAT   [/]  on   [dim]via the hub's built-in Route Server[/]"
+    assert rows[2] == _row("Auto-learn SNAT", "on", "via the hub's built-in Route Server")
     assert rows[3] == ("                    [dim]learned ranges are not readable from here: listing them is a "
                         "POST action, and this tool only reads[/]")
     assert len(rows) == 4
@@ -140,7 +140,7 @@ def test_snat_rows_auto_learn_on_via_hub_builtin_route_server():
 def test_snat_rows_auto_learn_on_via_vnet_route_server():
     pol = FirewallPolicyInfo(id=POLICY_ID, name="p", snat_auto_learn="Enabled")
     rows = _snat_rows(pol, _fw(sku_name="AZFW_VNet", route_server_id=RS_STANDALONE_ID))
-    assert rows[2] == "[dim]Auto-learn SNAT   [/]  on   [dim]via Route Server rs-hub[/]"
+    assert rows[2] == _row("Auto-learn SNAT", "on", "via Route Server rs-hub")
     assert rows[3] == ("                    [dim]learned ranges are not readable from here: listing them is a "
                         "POST action, and this tool only reads[/]")
     assert len(rows) == 4
@@ -163,7 +163,7 @@ def test_policy_panel_includes_snat_rows():
                              snat_private_ranges=["100.64.0.0/10"])
     out = FirewallView._policy(pol, fw)
     assert "[dim]SNAT ranges       [/]  100.64.0.0/10" in out
-    assert "[dim]Auto-learn SNAT   [/]  on   [dim]via Route Server rs-hub[/]" in out
+    assert _row("Auto-learn SNAT", "on", "via Route Server rs-hub") in out
 
 
 # ── rendering: Instance panel excludes the Route Server key ───────────────────

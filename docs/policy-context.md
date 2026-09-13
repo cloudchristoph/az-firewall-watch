@@ -37,12 +37,19 @@ resource ID from the first log record it receives and fetches from there.
     DNS proxy and its servers, IDPS mode with bypass and override counts, TLS
     inspection with the CA name, SNAT ranges with the auto-learn state and its
     Route Server, explicit proxy with its ports and PAC file, child policies.
-  - *Logging*: a table of the firewall's diagnostic settings, each with its
-    target (Event Hub, Log Analytics, Storage) and how many categories it
-    forwards, including how many of those the viewer understands. Below it, a
-    **Not to Event Hub** line names the categories this viewer understands that
-    no setting forwards at all. That line answers the most common question about
-    a missing category before you start looking for a bug.
+  - *Logging*: a matrix of log categories against the targets of the
+    firewall's diagnostic settings (Event Hub, Log Analytics, Storage), the
+    viewer's categories first, and a legend naming each target and the
+    setting behind it. Below it, one **Event Hub coverage** line says whether
+    the Event Hub this viewer reads from carries every category this firewall
+    can produce: green *complete*, or yellow *incomplete* with the missing
+    names. Categories the configuration cannot produce are not expected (no
+    IDPS log without Premium and IDPS on, no DNS log without the proxy, no
+    fat flow log without the switch, no threat intel log with the mode off);
+    flow trace depends on a subscription feature the viewer does not read, so
+    it is named but never counted as missing. That line answers the most
+    common question about a missing category before you start looking for a
+    bug.
 - **Policy**: a tree of rule collection groups → rule collections → rules, ordered
   by priority, with a detail pane showing sources, destinations, ports, protocols,
   IP groups resolved to their actual addresses and, on application rules, TLS
@@ -53,7 +60,7 @@ resource ID from the first log record it receives and fetches from there.
   for the selected group the rules that reference it. `Enter` on a rule jumps to it
   in the Policy tab.
 
-![The Firewall tab in four blocks: Instance, Networking, Policy and Logging, the last one ending in the Not to Event Hub line. Subscription ID and public IP addresses are blacked out](images/firewall-tab.png)
+![The Firewall tab in four blocks: Instance, Networking, Policy and Logging, the last one a matrix of categories against targets ending in the Event Hub coverage line](images/firewall-tab.png)
 
 ![The Policy tab: rule collection groups and collections in priority order on the left, the selected rule's definition on the right](images/policy-tab.png)
 

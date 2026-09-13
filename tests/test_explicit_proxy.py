@@ -11,7 +11,7 @@ from viewer.arm import ArmError
 from viewer.azure_resources import FirewallInfo, FirewallPolicyInfo, fetch_policy
 from viewer.trace import MATCH, MISS, NA, Flow, evaluate_rule
 from viewer.views.detail_screen import DetailDialog
-from viewer.views.firewall import FirewallView, _explicit_proxy_rows
+from viewer.views.firewall import FirewallView, _explicit_proxy_rows, _note, _row
 
 SUB = "/subscriptions/25ca1d83-3de5-46c7-9941-fb98c2ea026e"
 POLICY_ID = f"{SUB}/resourceGroups/rg/providers/Microsoft.Network/firewallPolicies/fwp-hub"
@@ -116,24 +116,24 @@ def test_proxy_on_both_ports():
     rows = _explicit_proxy_rows(_policy(
         explicit_proxy=True, explicit_proxy_http_port=8080, explicit_proxy_https_port=8443,
     ))
-    assert rows[0] == "[dim]Explicit proxy    [/]  on   [dim]HTTP port 8080 · HTTPS port 8443[/]"
+    assert rows[0] == _row("Explicit proxy", "on", "HTTP port 8080 · HTTPS port 8443")
     assert rows[1] == "[dim]PAC file          [/]  off"
     assert "IsExplicitProxyRequest" in rows[2]
 
 
 def test_proxy_on_http_port_only_serves_both():
     rows = _explicit_proxy_rows(_policy(explicit_proxy=True, explicit_proxy_http_port=8080))
-    assert rows[0] == "[dim]Explicit proxy    [/]  on   [dim]port 8080 for HTTP and HTTPS[/]"
+    assert rows[0] == _row("Explicit proxy", "on", "port 8080 for HTTP and HTTPS")
 
 
 def test_proxy_on_https_port_only():
     rows = _explicit_proxy_rows(_policy(explicit_proxy=True, explicit_proxy_https_port=8443))
-    assert rows[0] == "[dim]Explicit proxy    [/]  on   [dim]HTTPS port 8443, no HTTP port[/]"
+    assert rows[0] == _row("Explicit proxy", "on", "HTTPS port 8443, no HTTP port")
 
 
 def test_proxy_on_no_port_at_all():
     rows = _explicit_proxy_rows(_policy(explicit_proxy=True))
-    assert rows[0] == "[dim]Explicit proxy    [/]  on   [dim]no port set[/]"
+    assert rows[0] == _row("Explicit proxy", "on", "no port set")
 
 
 def test_pac_enabled_with_port_and_file():
@@ -141,8 +141,7 @@ def test_pac_enabled_with_port_and_file():
         explicit_proxy=True, explicit_proxy_pac=True, explicit_proxy_pac_port=8090,
         explicit_proxy_pac_file="https://acct.blob.core.windows.net/c/proxy.pac",
     ))
-    assert rows[1] == ("[dim]PAC file          [/]  served on port 8090   "
-                        "[dim]https://acct.blob.core.windows.net/c/proxy.pac[/]")
+    assert rows[1] == _row("PAC file", "on", "port 8090 · https://acct.blob.core.windows.net/c/proxy.pac")
 
 
 def test_pac_enabled_no_port():
@@ -150,12 +149,12 @@ def test_pac_enabled_no_port():
         explicit_proxy=True, explicit_proxy_pac=True,
         explicit_proxy_pac_file="https://acct.blob.core.windows.net/c/proxy.pac",
     ))
-    assert rows[1] == "[dim]PAC file          [/]  on   [dim]port not set[/]"
+    assert rows[1] == _row("PAC file", "on", "port not set")
 
 
 def test_pac_enabled_port_but_no_file():
     rows = _explicit_proxy_rows(_policy(explicit_proxy=True, explicit_proxy_pac=True, explicit_proxy_pac_port=8090))
-    assert rows[1] == "[dim]PAC file          [/]  served on port 8090   [dim]no file URL set[/]"
+    assert rows[1] == _row("PAC file", "on", "port 8090 · no file URL set")
 
 
 def test_pac_disabled():
@@ -165,8 +164,7 @@ def test_pac_disabled():
 
 def test_proxy_on_ends_with_note():
     rows = _explicit_proxy_rows(_policy(explicit_proxy=True))
-    assert rows[-1] == ("                    [dim]proxy requests still need an application rule; "
-                         "the log marks them as IsExplicitProxyRequest[/]")
+    assert rows[-1] == _note("logged as IsExplicitProxyRequest; rules still apply")
 
 
 def test_proxy_off_has_no_note():
@@ -187,7 +185,7 @@ def test_explicit_proxy_rows_through_firewall_view_policy():
     pol = _policy(explicit_proxy=True, explicit_proxy_http_port=8080, explicit_proxy_https_port=8443)
     out = FirewallView._policy(pol, FW)
     joined = "\n".join(out)
-    assert "on   [dim]HTTP port 8080 · HTTPS port 8443[/]" in joined
+    assert _row("Explicit proxy", "on", "HTTP port 8080 · HTTPS port 8443") in joined
     assert "IsExplicitProxyRequest" in joined
 
 

@@ -25,8 +25,9 @@ displayed.
 
 If a category never shows up at all, the diagnostic setting is the usual reason.
 With [policy context](policy-context.md) enabled, the Firewall tab's *Logging*
-block lists your diagnostic settings and names, under **Not to Event Hub**, every
-category this viewer understands that nothing forwards.
+block shows which category goes to which target, and its **Event Hub coverage**
+line names every category this firewall can produce that the connected Event
+Hub does not carry.
 
 > [!NOTE]
 > **Reading FatFlow rows.** Records are sampled every 3 minutes, and rates well

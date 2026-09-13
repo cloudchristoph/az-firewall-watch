@@ -180,6 +180,10 @@ class DiagnosticSetting:
     categories: list[str] = field(default_factory=list)   # enabled categories
     all_logs: bool = False        # categoryGroup allLogs / audit covers everything
 
+    def forwards(self, category: str) -> bool:
+        """Whether this setting sends ``category`` to its targets."""
+        return self.all_logs or category in self.categories
+
 
 @dataclass
 class SubnetInfo:

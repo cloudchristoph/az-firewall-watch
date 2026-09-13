@@ -78,13 +78,13 @@ def _fw(sku_tier: str = "Premium", autoscale_min: int = 0, autoscale_max: int = 
 
 def test_scaling_basic_sku_does_not_scale():
     assert _scaling_rows(_fw(sku_tier="Basic", autoscale_min=5, autoscale_max=5)) == [
-        _row("Scaling", "none   [dim]the Basic SKU does not scale[/]")
+        _row("Scaling", "none", "the Basic SKU does not scale")
     ]
 
 
 def test_scaling_absent_is_service_default():
     assert _scaling_rows(_fw(autoscale_min=0, autoscale_max=0)) == [
-        _row("Scaling", "autoscaling, service default   [dim]up to 20 capacity units[/]")
+        _row("Scaling", "autoscaling", "service default, up to 20 capacity units")
     ]
 
 
@@ -96,7 +96,7 @@ def test_scaling_fixed_capacity_min_equals_max():
 
 def test_scaling_prescaled_range():
     assert _scaling_rows(_fw(autoscale_min=5, autoscale_max=10)) == [
-        _row("Scaling", "autoscaling between 5 and 10 capacity units   [dim]prescaled[/]")
+        _row("Scaling", "autoscaling", "between 5 and 10 capacity units, prescaled")
     ]
 
 
@@ -127,4 +127,4 @@ def test_scaling_row_sits_between_provisioning_and_maintenance():
     assert labels.index("Scaling") == labels.index("Provisioning") + 1
     assert labels.index("Scaling") == labels.index("Maintenance") - 1
     assert labels.index("Maintenance") < labels.index("Resource group")
-    assert any("autoscaling between 5 and 10 capacity units" in r for r in rows)
+    assert any("between 5 and 10 capacity units, prescaled" in r for r in rows)

@@ -8,7 +8,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-Nothing yet.
+### Added
+
+- **CIDR and IPv6-aware address filters.** The Source and Dest / FQDN filters accept a prefix (`10.3.0.0/16`, `fd10:2::/32`) and keep only rows whose address lies inside it, for IPv4 and IPv6; a CIDR never matches an FQDN or the other address family. A full IPv6 address matches in any spelling (`fd10::10` finds `fd10:0:0:0:0:0:0:10`), and a fragment such as `::10` is compared against the compressed form as well as the logged text. Plain substrings behave as before. This closes the *IPv6 is parsed and matched, but not filtered* limitation from 0.6.0.
+- **IPv6 coverage for the structured parser and the trace.** Tests pin down that `AZFWNetworkRule`, `AZFWDnsQuery`, `AZFWFlowTrace` and `AZFWFatFlow` rows with IPv6 addresses parse unchanged, and that the trace matches IPv6 flows against IPv6 prefixes in rules and IP groups, reports a flow of the other address family as a clean miss, sends an IPv6 destination through the address check rather than the FQDN branch, and answers *n/a* for an address it cannot parse. The dual-stack plan and its remaining lab verification live in `docs/ipv6-plan.md`.
 
 ## [0.6.0] - 2026-09-13
 

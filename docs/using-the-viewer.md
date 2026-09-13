@@ -32,11 +32,17 @@ All filters are **case-insensitive substring matches**, applied instantly as you
 type. Press `f` to jump into the filter bar, `Tab` to move between inputs, and
 `Escape` to clear everything at once.
 
+The two address filters understand addresses as well: a **CIDR prefix**
+(`10.3.0.0/16`, `fd10:2::/32`) keeps only rows whose address lies inside it, and
+a full IPv6 address matches in any spelling, compressed or expanded. Anything
+that is not a prefix or an address is a plain substring, so `10.3.` or `::10`
+work the way you would expect.
+
 <!-- markdownlint-disable MD060 -->
 | Filter      | Matches against                                                                        |
 | ----------- | -------------------------------------------------------------------------------------- |
-| Source IP   | `sourceip` field                                                                       |
-| Dest / FQDN | `targetip` / FQDN field                                                                |
+| Source IP   | `sourceip` field: substring, full address or CIDR                                      |
+| Dest / FQDN | `targetip` / FQDN field: substring, full address or CIDR                               |
 | Action      | `allow`, `deny`, `dnat`, `alert`, `resolvefail`, DNS RCODEs (`noerror`, `nxdomain`, …), flow flags (`rst`, `invalid`, …), `mbps` |
 | Category    | A preset or a single category, see below                                              |
 | Protocol    | `TCP`, `UDP`, `HTTPS`, `HTTP`, DNS query types (`A`, `AAAA`, `MX`, …)                  |

@@ -68,7 +68,7 @@ resource ID from the first log record it receives and fetches from there.
 
 ### Richer log rows
 
-The metadata also feeds back into the **Logs** tab:
+The policy context also feeds back into the **Logs** tab:
 
 - Addresses inside the firewall's own subnets are rendered as `AzFw.<last octet>`,
   so traffic from the firewall instances themselves (DNS proxy, probes) stands out.
@@ -76,7 +76,8 @@ The metadata also feeds back into the **Logs** tab:
   Whatever the trace beside it already shows (the logged rule and its criteria,
   policy path, priorities, action, SKU) is left out rather than printed twice;
   the rule's full definition is one `p` away in the Policy tab.
-- The status bar shows a short summary: `Policy: Premium · 11 IP groups · fresh`.
+- The status bar's Context segment shows whether the context is loaded and how
+  old it is: `● Context loaded 35m ago`.
 
 ## Evaluation trace
 
@@ -170,7 +171,7 @@ row's fields alone and says why underneath: *No rule decision in this log*, with
 what that category records instead (FatFlow the top flows by rate, FlowTrace the
 handshake and flags, DNS proxy rows the query and its answer, IDPS a signature
 hit), or *Policy trace not available* while the policy context is not loaded
-yet. The status bar keeps showing the policy and cache state.
+yet. The status bar keeps its Context segment as it is.
 
 > [!NOTE]
 > The trace explains the **cached** policy. If the rule the firewall logged is
@@ -200,16 +201,18 @@ If the `Microsoft.Maintenance` provider is not registered in the subscription
 there is simply no assignment to read, and the tab says *no customer-controlled
 window*.
 
-Without ARM access at all nothing breaks: the status bar says *metadata
-unavailable (no ARM access)*, the extra tabs stay empty and the viewer behaves
-exactly as it does with policy context switched off.
+Without ARM access at all nothing breaks: the status bar says
+`○ Context unavailable · no ARM access`, the extra tabs stay empty and the viewer
+behaves exactly as it does with policy context switched off. The glyph is the
+quiet one on purpose: the context is optional, so missing it is a state, not an
+error.
 
 ## Caching and staying current
 
 Metadata is cached for **one hour** in `~/.az-firewall-watch/cache.json` (file mode
 `0600`, directory `0700`). If your home directory is not writable, the cache falls
 back to `.azfw-cache.json` next to the binary. The file carries a version, so a
-release that collects more metadata discards the old cache and fetches once on
+release that reads more from ARM discards the old cache and fetches once on
 first start rather than showing you a half-filled tab.
 
 You rarely have to think about it, because the viewer keeps the cache current on
@@ -217,24 +220,25 @@ its own:
 
 | Trigger                                                    | What happens                                                                 |
 | ---------------------------------------------------------- | ---------------------------------------------------------------------------- |
-| A log row names a rule the loaded policy does not know      | Re-fetch, status bar *refreshing metadata (new rule …)…*                      |
-| The one-hour TTL runs out (checked once a minute)           | Re-fetch, status bar *refreshing metadata (cache expired)…*                   |
-| `Ctrl` + `R`                                                | Re-fetch on demand, for instance right after you changed a rule in the portal |
+| A log row names a rule the loaded policy does not know      | Re-fetch, status bar `◐ Context refreshing · new rule …`                      |
+| The one-hour TTL runs out (checked once a minute)           | Re-fetch, status bar `◐ Context refreshing · cache expired`                   |
+| `Ctrl` + `R` (*Refresh context*)                            | Re-fetch on demand, for instance right after you changed a rule in the portal |
 
 Automatic re-fetches are rate-limited to one every five minutes, so a burst of
 rows against a stale policy does not turn into a burst of ARM requests. `Ctrl` + `R`
 is not rate-limited.
 
-The status bar carries the cache age (`fresh` under a minute, then `cache 12m`),
-so you can always see how old the policy behind the tabs and the trace is. Two
-more states worth recognising:
+The status bar carries the cache age (`loaded just now` under a minute, then
+`loaded 12m ago`), so you can always see how old the policy behind the tabs and
+the trace is. Two more situations worth recognising:
 
-- *refresh failed · showing previous metadata*: the re-fetch did not work, for
+- `● Context loaded 61m ago · refresh failed`: the re-fetch did not work, for
   example because the token expired. The previous data stays on screen rather
-  than disappearing, so remember it is the older picture.
-- *refresh skipped: no firewall seen yet*, meaning `Ctrl` + `R` came before the first log
-  record arrived. The viewer learns the firewall from the records, so there is
-  nothing to refresh yet.
+  than disappearing, so remember it is the older picture. A notification says
+  the same when it happens.
+- `Ctrl` + `R` before the first log record answers with the notification *Nothing
+  to refresh yet: no firewall seen in the logs*. The viewer learns the firewall
+  from the records, and until then the segment reads `○ Context pending`.
 
 ## Turning it off
 
@@ -248,9 +252,9 @@ precedence:
 | Setup wizard     | *Policy context* step, writes the `.env` key for you | Persistent   |
 
 **What "off" actually means:** no ARM requests, no Azure CLI token, no cache file,
-and the Logs tab only. `Enter` then shows the plain row details, and `Ctrl` + `R`
-answers in the status bar with *policy context off (POLICY_CONTEXT=on or
---policy-context to enable)*.
+and the Logs tab only. The status bar reads `○ Context off`, `Enter` shows the
+plain row details, and `Ctrl` + `R` answers with the notification *Policy context
+is off. Enable it with POLICY_CONTEXT=on or --policy-context*.
 
 **Upgrading from an earlier release:** a `.env` written before this feature existed
 has no `POLICY_CONTEXT` key. The viewer then shows a one-time notice at start-up

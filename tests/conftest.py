@@ -20,6 +20,11 @@ FIREWALL_ID = (
 )
 
 
+def toasts(app: Any) -> list[str]:
+    """Messages of the notifications (toasts) the app has raised so far."""
+    return [n.message for n in app._notifications]
+
+
 @pytest.fixture
 def firewall_id() -> str:
     return FIREWALL_ID

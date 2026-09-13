@@ -104,7 +104,7 @@ to the second question, and you can skip it entirely by writing `.env` yourself.
 
 That is the complete list for day-to-day use. The viewer only ever reads, and
 without these roles it degrades instead of failing: no Data Receiver means the
-connection is refused with a hint, no Reader means *metadata unavailable* and the
+connection is refused with a hint, no Reader means `○ Context unavailable` and the
 Logs tab alone. Nothing the viewer does is an ARM action: the learned SNAT
 prefixes of an auto-learn firewall, for example, are only available through a
 POST and therefore stay off screen by design.

@@ -64,7 +64,8 @@ async def test_flush_populates_table_and_status(structured_record):
         # Hide DNS is on by default → the DnsQuery row is hidden and the counter is active
         assert table.row_count == 4
         assert status.visible_count == 4
-        assert "filtered" in status.render()
+        assert "4/5 shown" in str(status.render())
+        assert status.last_event_at is not None  # the Events segment knows records arrived
 
 
 async def test_hide_dns_toggle_reveals_dns_rows(structured_record):
@@ -79,7 +80,7 @@ async def test_hide_dns_toggle_reveals_dns_rows(structured_record):
         status = app.query_one("#status", StatusBar)
         assert table.row_count == 5
         assert status.visible_count == -1  # no filter active → plain counter
-        assert "filtered" not in status.render()
+        assert "shown" not in str(status.render())
 
 
 async def test_action_filter_narrows_rows(structured_record):

@@ -115,19 +115,49 @@ a rule decision*.
 
 ## Status bar
 
-The bar at the bottom shows the connection state, the total number of events
-received, the currently visible count while a filter is active, and how many
-records were skipped (unknown or non-firewall categories). With policy context
-enabled it also carries a short metadata summary such as
-`Policy: Premium · 11 IP groups · fresh`.
+The bar at the bottom answers one question: can I trust what I am looking at?
+It has a pause indicator and then one segment per source, each with a glyph, a
+label and a state word:
+
+```text
+▶ LIVE │ ● EH connected │ ● Events receiving · 1079/5113 shown · last 2s ago │ ● Context loaded 35m ago
+```
+
+| Glyph | Meaning                                        |
+| ----- | ---------------------------------------------- |
+| `●`   | working as intended                            |
+| `◐`   | something is in progress                       |
+| `○`   | off, idle or not available; not an error       |
+| `✖`   | needs you                                      |
+
+- **EH** is the Event Hub connection: *connecting*, *verifying access*,
+  *connected*, *retrying* or *reconnecting* with the countdown, *failed*,
+  *stopped*, or *not configured* when `.env` has no credentials.
+- **Events** is whether records are arriving, which a standing connection alone
+  does not tell you: *waiting* until the first record, *receiving* while records
+  came in during the last minute, *idle* with the time since the last one, and
+  *paused*. The numbers are the total received, the visible count while a filter
+  is active, and how many records were skipped (unknown or non-firewall
+  categories).
+- **Context** is the optional [policy context](policy-context.md): *off*,
+  *pending* until the first record names the firewall, *loading*, *loaded* with
+  the age of the cached policy, *refreshing* with the reason, or *unavailable*
+  when the identity has no ARM access. The tier and the IP groups themselves live
+  in the Firewall, Policy and IP Groups tabs.
+
+The bar shows state only. One-off hints, such as why a row has no evaluation
+trace or that there is nothing to refresh yet, appear as notifications in the
+corner and disappear on their own. The last Event Hub error is the bar's tooltip.
+On a narrow terminal the details go first, then the labels.
 
 Clicking the status bar pauses and resumes the stream, the same as `Ctrl` + `P`.
 
 ## Reconnects
 
 If an established connection drops, the app reconnects on its own with a capped
-backoff (2 s → 5 s → 10 s → 30 s → 60 s) and reports the countdown in the status
-bar. Only the very first connection gives up after three attempts, and
+backoff (2 s → 5 s → 10 s → 30 s → 60 s). The EH segment shows *reconnecting*
+with the attempt and the countdown, and a notification carries the error text.
+Only the very first connection gives up after three attempts, and
 authentication errors stop immediately with a hint rather than retrying.
 
 ## Key bindings
@@ -145,5 +175,5 @@ authentication errors stop immediately with a hint rather than retrying.
 | `f`          | Jump focus to the filters                                                                  |
 | `Tab`        | Move between filter inputs                                                                 |
 | `c`          | Clear all rows from the table                                                              |
-| `Ctrl` + `r` | Re-fetch firewall / policy / IP-group metadata, bypassing the cache                        |
+| `Ctrl` + `r` | Refresh context: re-fetch firewall, policy and IP groups, bypassing the cache               |
 | `v`          | In the Policy tab: show or hide the values of the HTTP headers an application rule inserts |

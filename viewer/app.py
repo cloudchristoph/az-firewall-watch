@@ -144,7 +144,7 @@ class FirewallLogApp(App[None]):
         Binding("escape", "clear_filters", "Clear Filters"),
         Binding("f", "focus_filter", "Filter"),
         Binding("ctrl+s", "screenshot", "Screenshot", show=True),
-        Binding("ctrl+r", "refresh_metadata", "Refresh metadata", show=True),
+        Binding("ctrl+r", "refresh_context", "Refresh context", show=True),
     ]
 
     # ── state ──────────────────────────────────────────────────────────────────
@@ -231,7 +231,8 @@ class FirewallLogApp(App[None]):
         # Initial state: Logs tab is active, filters must be visible, and the
         # table has focus so single-key bindings (f, c, arrows) work at once.
         tbl.focus()
-        self._refresh_metadata_views()
+        self.query_one("#status", StatusBar).ctx_state = "pending" if self._policy_context else "off"
+        self._refresh_context_views()
         self._start_stream()
         self.set_interval(1.0, self._flush_rows)
         self.set_interval(60.0, self._check_cache_age)
@@ -276,7 +277,7 @@ class FirewallLogApp(App[None]):
         self._subnet_cidrs = []
         self.workers.cancel_group(self, "mgmt")
         status = self.query_one("#status", StatusBar)
-        status.meta = "policy context off"
+        status.ctx_state, status.ctx_detail, status.ctx_fetched_at = "off", "", None
         try:
             tabs = self.query_one("#main-tabs", TabbedContent)
             for pane in ("tab-firewall", "tab-policy", "tab-ipgroups"):
@@ -303,10 +304,12 @@ class FirewallLogApp(App[None]):
         if snap is None:
             # Keep whatever was loaded before (still valid policy data) but say
             # so; only report "unavailable" when there is nothing to show.
-            status.meta = (
-                "refresh failed · showing previous metadata"
-                if self._mgmt_loaded else "metadata unavailable (no ARM access)"
-            )
+            if self._mgmt_loaded:
+                status.ctx_state, status.ctx_detail = "loaded", "refresh failed"
+                self.notify("Refresh failed. The previous policy context stays on screen.",
+                            title="Policy context", severity="warning")
+            else:
+                status.ctx_state, status.ctx_detail = "unavailable", "no ARM access"
             return
         self._fw_info = snap.firewall
         self._policy_info = snap.policy
@@ -324,16 +327,9 @@ class FirewallLogApp(App[None]):
             # resourceId only gave us an upper-cased one.
             self.sub_title = snap.firewall.name
             self._fw_name_set = True
-        status.meta = self._meta_text(snap)
-        self._refresh_metadata_views()
+        status.ctx_state, status.ctx_detail, status.ctx_fetched_at = "loaded", "", snap.fetched_at
+        self._refresh_context_views()
         self._refresh_table()
-
-    @staticmethod
-    def _meta_text(snap: CachedSnapshot) -> str:
-        policy_txt = f"Policy: {snap.policy.sku_tier or 'unknown tier'}" if snap.policy else "Policy: none"
-        age_min = int(snap.age_seconds() // 60)
-        age = "fresh" if age_min < 1 else f"cache {age_min}m"
-        return f"{policy_txt} · {len(snap.ip_groups)} IP groups · {age}"
 
     def _cache_age_label(self) -> str:
         """The detail dialog's cache-age phrase, e.g. ``fresh`` or ``12 min old``."""
@@ -356,21 +352,18 @@ class FirewallLogApp(App[None]):
         if self._last_auto_refresh is not None and now - self._last_auto_refresh < self._AUTO_REFRESH_INTERVAL:
             return False
         self._last_auto_refresh = now
-        self.query_one("#status", StatusBar).meta = f"refreshing metadata ({reason})…"
+        status = self.query_one("#status", StatusBar)
+        status.ctx_state, status.ctx_detail = "refreshing", reason
         self._load_mgmt(self._firewall_id, force=True)
         return True
 
     def _check_cache_age(self) -> None:
-        """Every minute: keep the age in the status bar honest; re-fetch once the TTL is over."""
+        """Every minute: re-fetch once the TTL is over (the status bar ages the cache itself)."""
         snap = self._snapshot
         if snap is None or not self._policy_context:
             return
         if not snap.is_fresh():
-            if self._refresh_policy_context("cache expired"):
-                return
-        status = self.query_one("#status", StatusBar)
-        if status.meta.startswith("Policy: "):
-            status.meta = self._meta_text(snap)
+            self._refresh_policy_context("cache expired")
 
     def _note_unknown_rules(self, batch: list[FirewallDataRow]) -> None:
         """A logged rule the loaded policy does not know means the cache is stale."""
@@ -382,7 +375,7 @@ class FirewallLogApp(App[None]):
                 self._refresh_policy_context(f"new rule {r.rule_name}")
                 return
 
-    def _refresh_metadata_views(self) -> None:
+    def _refresh_context_views(self) -> None:
         """Refresh Firewall / Policy / IP Groups tabs from current state."""
         if not self._policy_context:
             return
@@ -424,6 +417,7 @@ class FirewallLogApp(App[None]):
             return
         if self._firewall_id is None:
             self._firewall_id = firewall_id
+            self.query_one("#status", StatusBar).ctx_state = "loading"
             self._load_mgmt(firewall_id)
 
     # ── periodic flush ─────────────────────────────────────────────────────────
@@ -439,6 +433,7 @@ class FirewallLogApp(App[None]):
         status = self.query_one("#status", StatusBar)
         status.total += len(batch)
         status.skipped += skips
+        status.last_event_at = time.monotonic()  # skipped records count as "receiving" too
         if not batch:
             return
 
@@ -763,7 +758,7 @@ class FirewallLogApp(App[None]):
         """Open the row detail dialog; the evaluation trace sits beside it when possible.
 
         When policy context is on but no trace can be built, the dialog itself
-        says why. The status bar keeps the policy and cache state: a property
+        says why. The status bar keeps the Context segment as it is: a property
         of one row must not overwrite the state of the application.
         """
         trace = None
@@ -889,16 +884,17 @@ class FirewallLogApp(App[None]):
         self.query_one("#main-tabs", TabbedContent).active = "tab-policy"
         self.query_one("#policy-view", PolicyView).focus_rule(rule_ref)
 
-    def action_refresh_metadata(self) -> None:
-        """Force-refresh the firewall / policy / IP-group cache."""
-        status = self.query_one("#status", StatusBar)
+    def action_refresh_context(self) -> None:
+        """Force-refresh the policy context (firewall, policy, IP groups), bypassing the cache."""
         if not self._policy_context:
-            status.meta = "policy context off (POLICY_CONTEXT=on or --policy-context to enable)"
+            self.notify("Policy context is off. Enable it with POLICY_CONTEXT=on or --policy-context.",
+                        title="Refresh context", severity="warning")
             return
         if self._firewall_id is None:
-            status.meta = "refresh skipped: no firewall seen yet"
+            self.notify("Nothing to refresh yet: no firewall seen in the logs.", title="Refresh context")
             return
-        status.meta = "refreshing metadata…"
+        status = self.query_one("#status", StatusBar)
+        status.ctx_state, status.ctx_detail = "refreshing", ""
         self._load_mgmt(self._firewall_id, force=True)
 
     def get_system_commands(self, screen: Screen):

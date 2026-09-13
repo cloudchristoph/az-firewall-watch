@@ -27,6 +27,8 @@ from viewer.views.firewall import VIEWER_CATEGORIES, _row
 from viewer.views.ip_groups import IpGroupDetailDialog
 from viewer.views.trace_screen import TracePanel
 
+from .conftest import toasts
+
 pytestmark = pytest.mark.usefixtures("no_eventhub_env", "no_update_check")
 
 G_SPOKES = "/subscriptions/s/resourceGroups/rg/providers/Microsoft.Network/ipGroups/ipgroup-all-spokes"
@@ -115,12 +117,13 @@ async def test_metadata_load_fills_status_segment_and_title(structured_record, m
     async with app.run_test(size=(160, 45)) as pilot:
         await pilot.pause()
         status = app.query_one("#status", StatusBar)
-        before = status.status
+        before = status.eh_state
+        assert status.ctx_state == "pending"  # context on, no firewall seen yet
         await _load(app, pilot, firewall_id)
         assert mgmt["calls"] == [(firewall_id, False)]
-        assert status.status == before  # connection status untouched
-        assert status.meta == "Policy: Premium · 2 IP groups · fresh"
-        assert "Policy: Premium" in status.render()
+        assert status.eh_state == before  # connection status untouched
+        assert (status.ctx_state, status.ctx_detail) == ("loaded", "")
+        assert "● Context loaded just now" in str(status.render())
         assert app.sub_title == "fw-hub-gwc"  # real name from ARM
 
 
@@ -160,7 +163,7 @@ async def test_expired_cache_is_refetched_by_the_minute_check(structured_record,
     async with app.run_test(size=(160, 45)) as pilot:
         await pilot.pause()
         await _load(app, pilot, firewall_id)
-        assert app.query_one("#status", StatusBar).meta.endswith("cache 61m")
+        assert "Context loaded 1h ago" in str(app.query_one("#status", StatusBar).render())
         app._check_cache_age()
         await wait_until(pilot, lambda: (firewall_id, True) in mgmt["calls"])
         app._check_cache_age()                                            # within the interval: no second fetch
@@ -168,24 +171,21 @@ async def test_expired_cache_is_refetched_by_the_minute_check(structured_record,
         assert mgmt["calls"].count((firewall_id, True)) == 1
 
 
-async def test_minute_check_updates_the_cache_age(structured_record, mgmt, firewall_id):
+async def test_status_bar_ages_the_context_on_its_own(structured_record, mgmt, firewall_id):
+    """The bar keeps the snapshot's timestamp and renders the age at draw time; no timer rewrites it."""
     mgmt["snapshot"] = make_snapshot(fetched_at=time.time() - 7 * 60)
     app = FirewallLogApp()
     async with app.run_test(size=(160, 45)) as pilot:
         await pilot.pause()
         await _load(app, pilot, firewall_id)
-        app._snapshot.fetched_at -= 5 * 60                                # five minutes pass
-        app._check_cache_age()
-        assert app.query_one("#status", StatusBar).meta.endswith("cache 12m")
-
-
-async def test_metadata_cache_age_is_shown(structured_record, mgmt, firewall_id):
-    mgmt["snapshot"] = make_snapshot(fetched_at=time.time() - 7 * 60)
-    app = FirewallLogApp()
-    async with app.run_test(size=(160, 45)) as pilot:
-        await pilot.pause()
-        await _load(app, pilot, firewall_id)
-        assert app.query_one("#status", StatusBar).meta.endswith("cache 7m")
+        status = app.query_one("#status", StatusBar)
+        assert status.ctx_fetched_at == app._snapshot.fetched_at
+        assert "Context loaded 7m ago" in str(status.render())
+        status.ctx_fetched_at -= 5 * 60                                   # five minutes pass
+        assert "Context loaded 12m ago" in str(status.render())
+        # A stale hint no longer sticks: the trace toast leaves the segment alone.
+        app.notify("anything")
+        assert "Context loaded 12m ago" in str(status.render())
 
 
 async def test_metadata_unavailable_is_reported_without_touching_status(firewall_id, monkeypatch):
@@ -197,11 +197,13 @@ async def test_metadata_unavailable_is_reported_without_touching_status(firewall
     async with app.run_test(size=(160, 45)) as pilot:
         await pilot.pause()
         status = app.query_one("#status", StatusBar)
-        before = status.status
+        before = status.eh_state
         app.request_mgmt_load(firewall_id)
-        await wait_until(pilot, lambda: bool(status.meta))
-        assert status.meta == "metadata unavailable (no ARM access)"
-        assert status.status == before
+        await wait_until(pilot, lambda: status.ctx_state == "unavailable")
+        assert status.ctx_detail == "no ARM access"
+        assert "○ Context unavailable · no ARM access" in str(status.render())
+        assert status.eh_state == before
+        assert not any(t.startswith("Refresh failed") for t in toasts(app))  # missing optional data is a state, not an alert
         assert not app._mgmt_loaded
 
 
@@ -213,8 +215,10 @@ async def test_failed_refresh_keeps_previous_metadata(structured_record, mgmt, f
         mgmt["snapshot"] = None  # ARM now unreachable
         await pilot.press("ctrl+r")
         status = app.query_one("#status", StatusBar)
-        await wait_until(pilot, lambda: status.meta.startswith("refresh failed"))
-        assert status.meta == "refresh failed · showing previous metadata"
+        await wait_until(pilot, lambda: status.ctx_detail == "refresh failed")
+        assert status.ctx_state == "loaded"  # still the previous snapshot
+        assert "● Context loaded just now · refresh failed" in str(status.render())
+        assert any(t.startswith("Refresh failed") for t in toasts(app))
         assert app._mgmt_loaded and app._policy_info is not None
         assert app._format_ip("10.2.0.6") == "AzFw.6"  # enrichment still works
 
@@ -236,7 +240,9 @@ async def test_ctrl_r_forces_refresh(mgmt, firewall_id):
         await pilot.pause()
         await pilot.press("ctrl+r")
         await pilot.pause()
-        assert app.query_one("#status", StatusBar).meta == "refresh skipped: no firewall seen yet"
+        status = app.query_one("#status", StatusBar)
+        assert status.ctx_state == "pending"
+        assert "Nothing to refresh yet: no firewall seen in the logs." in toasts(app)
         await _load(app, pilot, firewall_id)
         await pilot.press("ctrl+r")
         await wait_until(pilot, lambda: len(mgmt["calls"]) == 2)
@@ -353,17 +359,18 @@ async def test_flow_trace_rows_get_no_evaluation_tree(structured_record, mgmt, f
         tbl.focus()
         tbl.move_cursor(row=0, animate=False)
         await pilot.pause()
-        status_before = app.query_one("#status", StatusBar).meta
+        status = app.query_one("#status", StatusBar)
+        assert status.ctx_state == "loaded"
         await pilot.press("enter")
         await wait_until(pilot, lambda: isinstance(app.screen, DetailDialog))
         assert not app.screen.has_trace
         # The reason sits in the dialog, as a property of this row; the status
-        # bar keeps the policy and cache state it had before.
+        # bar keeps the Context segment it had before, and no toast is raised.
         note = str(app.screen.query_one("#trace-note", Static).content)
         assert "No rule decision in this log" in note
         assert "FlowTrace records the handshake and flags of a connection, not a rule decision." in note
-        assert app.query_one("#status", StatusBar).meta == status_before
-        assert status_before.startswith("Policy: ")
+        assert (status.ctx_state, status.ctx_detail) == ("loaded", "")
+        assert not any("trace" in t.lower() for t in toasts(app))  # the note is not a toast
 
 
 async def test_detail_without_policy_metadata_has_no_trace(structured_record, mgmt, firewall_id):
@@ -379,7 +386,7 @@ async def test_detail_without_policy_metadata_has_no_trace(structured_record, mg
         tbl.focus()
         tbl.move_cursor(row=0, animate=False)
         await pilot.pause()
-        status_before = status.meta
+        assert status.ctx_state == "pending"
         await pilot.press("enter")
         await pilot.pause()
         # the plain detail dialog still opens — just without the trace column
@@ -388,7 +395,8 @@ async def test_detail_without_policy_metadata_has_no_trace(structured_record, mg
         assert not app.screen.query("#trace-tree")
         note = str(app.screen.query_one("#trace-note", Static).content)
         assert "Policy trace not available" in note and "not loaded yet" in note
-        assert status.meta == status_before
+        assert "It needs the policy context" in note and "metadata" not in note
+        assert status.ctx_state == "pending"  # the note is the dialog's, the bar is untouched
 
 
 def test_trace_note_tells_not_loaded_from_no_policy(structured_record):
@@ -404,6 +412,7 @@ def test_trace_note_tells_not_loaded_from_no_policy(structured_record):
     note = app._trace_note(row)
     assert "Policy trace not available" in note and "not loaded yet" not in note
     assert "carries no policy" in note and "classic rules" in note
+    assert "metadata" not in note  # the UI word for the ARM data is "policy context"
 
 
 async def test_trace_screen_shows_logged_match_and_closes(structured_record, mgmt, firewall_id):

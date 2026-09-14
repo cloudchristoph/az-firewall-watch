@@ -65,7 +65,7 @@ in `tests/fixtures/ipv6/` and `tests/test_ipv6_samples.py` runs all 138 of them
 through parser, flow builder, filters and labels. The same messages also carry a
 `Policy:` sentence the legacy network-rule parser used to skip; it is read now.
 
-## Open: lab verification
+## Lab verification
 
 The lab firewall `fw-hub-gwc` is dual-stack since 2026-09-07 21:12 UTC (hub VNet
 `fd10:2::/48`, `AzureFirewallSubnet` `fd10:2:0:1::/64`, public IPv6

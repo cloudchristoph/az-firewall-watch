@@ -299,8 +299,10 @@ def test_every_structured_category_maps_to_display_name(structured_record, categ
 
 
 # ── IPv6 (dual-stack firewall) ───────────────────────────────────────────────
-# Structured records carry addresses as plain strings, so IPv6 passes through
-# unchanged; these pin that down for every category the preview can emit it in.
+# Structured records carry addresses as strings that the parser normalises
+# (brackets off, IPv6 compressed); a compressed input must come out unchanged.
+# These pin that down for every category the parser handles IPv6 in, although
+# the preview only emits it for NetworkRule and DnsQuery.
 
 V6_SRC = "fd10:2:0:2::10"
 V6_DST = "2606:4700::6810:84e5"

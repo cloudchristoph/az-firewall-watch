@@ -28,9 +28,19 @@ def test_legacy_network_rule_deny_without_rule_info(legacy_record):
     ))
     assert row.protocol == "UDP"
     assert row.action == "Deny"
-    assert row.policy == "Default Action"   # no rule named: same label the structured ActionReason carries
+    assert row.policy == "Default Action"   # deny without a rule: same label the structured ActionReason carries
     assert row.rule_name == "" and row.fw_policy == ""
     assert row.targetport == "123"
+
+
+def test_legacy_network_rule_allow_without_rule_info_is_not_explained(legacy_record):
+    """Only a rule-less deny is the default action; anything else stays unexplained."""
+    row = parse_record(legacy_record(
+        "AzureFirewallNetworkRule", "AzureFirewallNetworkRuleLog",
+        "UDP request from 10.1.1.1:5000 to 10.2.2.2:123. Action: Allow.",
+    ))
+    assert row.action == "Allow"
+    assert row.policy == ""
 
 
 def test_legacy_application_rule_with_policy(legacy_record):

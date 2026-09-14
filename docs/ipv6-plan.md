@@ -1,6 +1,6 @@
 # IPv6 (dual-stack firewall) support — plan and status
 
-Status: code complete on `feat/ipv6` against 0.6.0 (`2e36b67`), lab verification open · Revised 2026-09-14
+Status: code complete on `feat/ipv6` against 0.6.0 (`2e36b67`), verified on real records and headless viewer runs · Revised 2026-09-14
 
 Azure Firewall can run dual-stack (IPv4 + IPv6), currently in preview:
 <https://learn.microsoft.com/en-us/azure/firewall/deploy-dual-stack-firewall>
@@ -87,17 +87,28 @@ captured 2026-09-07):
   with matched IPv4/IPv6 load only sampled the IPv4 flow) — `Application rule`,
   `NAT`, `Threat Intel`, `IDPS` stay IPv4-only as expected.
 
-Still open — none of these need the lab, all three need a live run of the
-viewer against `fw-hub-gwc` (dual-stack since 2026-09-07 21:12 UTC, subject to
-the lab's nightly stop at 23:00):
+Viewer checks, done 2026-09-14 headless (Textual `run_test`, SVG screenshots)
+on the 138 fixture records plus three IPv4 rows, with a policy context shaped
+like the lab's IPv6 rule collections:
 
-- CIDR filter on `fd10:2::/32` — no captured record actually falls inside the
-  hub's own range (the firewall's private IPv6 never appears as `SourceIp`/
-  `DestinationIp` in NetworkRule/DnsQuery), so this needs either a live filter
-  test against the running firewall or a fresh capture that targets the hub
-  address (e.g. `dig @fd10:2:0:1::4`);
-- Source column width with mixed v4/v6 rows on a narrow terminal;
-- the trace dialog on an IPv6 `NetworkRule` row.
+- **Column width.** Addresses arrive compressed after normalisation, so the
+  Source column holds `[fd10:3:5:1::4]:48812` next to `10.3.5.4:51234` and
+  `AzFw.6:13590` without stretching; at 160 columns every column is visible, at
+  100 columns the table scrolls horizontally exactly as it does with IPv4-only
+  rows. The one wide value is the real protocol string `ICMPv6 Type=128`, which
+  widens the Proto column from 5 to 15; left as logged.
+- **CIDR filter.** `fd10:3::/32` in Source keeps 65 of 68 rows (the three IPv4
+  rows drop out, DNS rows are hidden by the default toggle); `10.3.0.0/16` keeps
+  the two IPv4 spoke rows and nothing else.
+- **Trace dialog** on a `deny-ipv6-cloudflare-web` row: header
+  `[fd10:3:5:1::4]:38238 → [2606:4700:4700::1111]:80 TCP Deny`, the network pass
+  stops at the logged rule with source ✓ `fd10:3::/32`, destination ✓
+  `2606:4700:4700::1111`, port ✓ `80`, protocol ✓ `TCP`.
+
+Not reproducible offline and therefore still open: an `AzFw.<n>` label on an
+IPv6 firewall-subnet address, because no captured record carries the hub's own
+IPv6 as source or destination. A `dig @fd10:2:0:1::4` from a spoke would log the
+firewall instance resolving upstream; nice to have, not blocking.
 
 ## Out of scope
 

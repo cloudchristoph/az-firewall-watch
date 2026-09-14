@@ -28,7 +28,8 @@ def test_legacy_network_rule_deny_without_rule_info(legacy_record):
     ))
     assert row.protocol == "UDP"
     assert row.action == "Deny"
-    assert row.policy == ""
+    assert row.policy == "Default Action"   # no rule named: same label the structured ActionReason carries
+    assert row.rule_name == "" and row.fw_policy == ""
     assert row.targetport == "123"
 
 

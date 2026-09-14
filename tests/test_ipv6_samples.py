@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import ipaddress
 import json
+from collections import Counter
 from pathlib import Path
 
 import pytest
@@ -72,13 +73,24 @@ def test_dns_records_keep_the_compressed_client_address(name):
         assert row.action == "NOERROR"
 
 
-def test_structured_and_legacy_agree_on_the_same_flow():
-    """The two Event Hubs saw the same packets; after parsing, both formats say the same thing."""
-    structured = {(r.sourceip, r.srcport, r.targetip, r.targetport, r.action) for r in rows("AZFWNetworkRule.jsonl")}
-    legacy = {(r.sourceip, r.srcport, r.targetip, r.targetport, r.action) for r in rows("AzureFirewallNetworkRule.jsonl")}
-    assert structured & legacy, "no overlapping flow between the two captures"
-    for key in structured & legacy:
-        assert key[0].startswith(SPOKES_PREFIX) or key[2].startswith(SPOKES_PREFIX)
+def _flow_key(r: FirewallDataRow) -> tuple:
+    # the fractional seconds differ between the two hubs' records of one event; the second does not
+    return (r.time[:19], r.protocol, r.sourceip, r.srcport, r.targetip, r.targetport, r.action, r.policy, r.rule_name)
+
+
+@pytest.mark.parametrize("structured_name, legacy_name", [
+    ("AZFWNetworkRule.jsonl", "AzureFirewallNetworkRule.jsonl"),
+    ("AZFWDnsQuery.jsonl", "AzureFirewallDnsProxy.jsonl"),
+])
+def test_structured_and_legacy_captures_are_the_same_events(structured_name, legacy_name):
+    """Both Event Hubs received every one of these events; after parsing, the two formats
+    must produce the same rows, record for record, addresses, ports, action and rule path
+    included. A multiset comparison, so a dropped or altered row on either side fails."""
+    structured = Counter(_flow_key(r) for r in rows(structured_name))
+    legacy = Counter(_flow_key(r) for r in rows(legacy_name))
+    assert sum(structured.values()) == sum(legacy.values())
+    assert structured == legacy, (structured - legacy, legacy - structured)
+    assert all(k[2].startswith(SPOKES_PREFIX) or k[4].startswith(SPOKES_PREFIX) for k in structured)
 
 
 def test_rule_paths_match_between_formats():
@@ -90,11 +102,12 @@ def test_rule_paths_match_between_formats():
     assert all(r.fw_policy == "fwp-hub-premium-gwc" for r in rows("AzureFirewallNetworkRule.jsonl") if r.rule_name)
 
 
-def test_default_deny_records_have_no_rule_but_an_action_reason():
-    defaults = [r for r in rows("AZFWNetworkRule.jsonl") if not r.rule_name]
-    assert defaults
+@pytest.mark.parametrize("name", ["AZFWNetworkRule.jsonl", "AzureFirewallNetworkRule.jsonl"])
+def test_default_deny_records_have_no_rule_but_say_default_action(name):
+    defaults = [r for r in rows(name) if not r.rule_name]
+    assert len(defaults) == 12
     for r in defaults:
-        assert r.action == "Deny" and r.policy  # ActionReason lands in the rule-info column
+        assert r.action == "Deny" and r.policy == "Default Action"   # structured: ActionReason; legacy: inferred
 
 
 def test_icmpv6_records_parse_with_type_and_port_zero():

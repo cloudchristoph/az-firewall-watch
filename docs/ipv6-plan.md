@@ -16,13 +16,14 @@ against a real dual-stack firewall.
 | --- | --- | --- |
 | Network rules | yes | `AZFWNetworkRule`, legacy `AzureFirewallNetworkRuleLog` |
 | DNS proxy | yes | `AZFWDnsQuery`, legacy `AzureFirewallDnsProxyLog` |
-| Flow trace / fat flow | unknown, probably | `AZFWFlowTrace`, `AZFWFatFlow` |
+| Flow trace / fat flow | **no** (confirmed 2026-09-07: 0 IPv6 in 424 FlowTrace rows, a matched IPv4/IPv6 fat-flow test sampled only IPv4) | none |
 | Application rules, DNAT | **no** | none |
 | Threat Intel, IDPS, IP Groups | **no** | none |
 
-So the realistic scope is NetworkRule, DnsQuery, FlowTrace, FatFlow with IPv6
-`SourceIp` / `DestinationIp`. Outbound traffic is SNATed to the firewall's IPv6
-address unless the destination is ULA (`fc00::/7`).
+So the scope is NetworkRule and DnsQuery with IPv6 `SourceIp` /
+`DestinationIp`, in both log formats; the parser handles IPv6 in FlowTrace and
+FatFlow rows too, but the preview does not produce them. Outbound traffic is
+SNATed to the firewall's IPv6 address unless the destination is ULA (`fc00::/7`).
 
 ## Findings and where they were fixed
 

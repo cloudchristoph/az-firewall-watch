@@ -433,6 +433,11 @@ def _parse_legacy(record: dict, op_name: str, time: str) -> FirewallDataRow:
                     rule_name = val
 
             policy = "»".join(filter(None, [policy_name, rcg, rc, rule_name]))
+            if not policy:
+                # No rule named at all: the firewall applied the default action. The
+                # structured format says so in ActionReason ("Default Action"); the
+                # legacy message just stops after "Action: Deny.." — same row, same label.
+                policy = "Default Action"
             return FirewallDataRow(
                 rowid=_next_id(),
                 time=time,

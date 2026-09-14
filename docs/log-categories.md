@@ -39,9 +39,12 @@ Hub does not carry.
 
 > [!NOTE]
 > **IPv6.** On a dual-stack firewall (preview) IPv6 addresses appear in
-> `NetworkRule`, `DnsQuery`, `FlowTrace` and `FatFlow` rows, in both log formats.
-> Application, DNAT, IDPS and Threat Intelligence rules do not support IPv6 yet,
-> so those categories stay IPv4. Sources render as `[address]:port`.
+> `NetworkRule` and `DnsQuery` rows, in both log formats. `FlowTrace` and
+> `FatFlow` stay IPv4-only in the preview (observed: no IPv6 flow was ever
+> traced or sampled), and Application, DNAT, IDPS and Threat Intelligence rules
+> do not support IPv6 yet, so those categories stay IPv4 as well. Sources render
+> as `[address]:port`, and every address is shown in its compressed form
+> regardless of how the firewall spelled it.
 
 ## Enabling flow trace and fat flow
 

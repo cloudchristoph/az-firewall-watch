@@ -3,6 +3,7 @@ from __future__ import annotations
 import ipaddress
 import re
 from datetime import datetime, timezone
+from functools import lru_cache
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -151,8 +152,14 @@ def format_endpoint(address: str, port: str) -> str:
     return f"[{address}]:{port}" if _is_ipv6(address) else f"{address}:{port}"
 
 
+@lru_cache(maxsize=4096)
 def parse_address(value: str) -> ipaddress.IPv4Address | ipaddress.IPv6Address | None:
-    """``ipaddress.ip_address`` that answers ``None`` instead of raising."""
+    """``ipaddress.ip_address`` that answers ``None`` instead of raising.
+
+    Cached: the filters call this once per retained row on every keystroke and
+    the parser once per address field, and a busy firewall repeats the same few
+    hundred addresses all day. Address objects are immutable, so sharing is safe.
+    """
     if not value or value == "-":
         return None
     try:
@@ -161,11 +168,13 @@ def parse_address(value: str) -> ipaddress.IPv4Address | ipaddress.IPv6Address |
         return None
 
 
+@lru_cache(maxsize=256)
 def parse_network(value: str) -> ipaddress.IPv4Network | ipaddress.IPv6Network | None:
     """``ipaddress.ip_network(strict=False)`` that answers ``None`` instead of raising.
 
     Host bits are tolerated (``10.0.0.7/8`` is ``10.0.0.0/8``) because that is
-    what people type into a filter box.
+    what people type into a filter box. Cached so a CIDR filter is parsed once
+    per keystroke, not once per row.
     """
     if not value:
         return None

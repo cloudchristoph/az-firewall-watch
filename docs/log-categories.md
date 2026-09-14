@@ -38,13 +38,15 @@ Hub does not carry.
 > `client → server` regardless of which way the logged packet went.
 
 > [!NOTE]
-> **IPv6.** On a dual-stack firewall (preview) IPv6 addresses appear in
-> `NetworkRule` and `DnsQuery` rows, in both log formats. `FlowTrace` and
-> `FatFlow` stay IPv4-only in the preview (observed: no IPv6 flow was ever
-> traced or sampled), and Application, DNAT, IDPS and Threat Intelligence rules
-> do not support IPv6 yet, so those categories stay IPv4 as well. Sources render
-> as `[address]:port`, and every address is shown in its compressed form
-> regardless of how the firewall spelled it.
+> **IPv6.** Azure Firewall can run dual-stack (preview). Of its features only
+> network rules and the DNS proxy support IPv6 there; application rules, DNAT,
+> IDPS, Threat Intelligence and IP groups do not yet. In the logs that means
+> IPv6 addresses appear in `NetworkRule` and `DnsQuery` rows, in both log
+> formats, while `FlowTrace` and `FatFlow` stay IPv4-only in the preview
+> (observed: no IPv6 flow was ever traced or sampled) and the other categories
+> stay IPv4 by design. The firewall writes the same address bracketed and
+> expanded in one category and compressed in another; the viewer shows every
+> address in its compressed form, and sources render as `[address]:port`.
 
 ## Enabling flow trace and fat flow
 

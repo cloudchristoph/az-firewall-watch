@@ -37,14 +37,19 @@ address unless the destination is ULA (`fc00::/7`).
 | 7 | No IPv6 tests for the structured parser and only range tests for the trace. | **this branch** | `tests/test_fw_parser_structured.py`, `tests/test_trace.py` |
 | 8 | Docs did not mention dual-stack or the filter syntax. | **this branch** | README, `docs/using-the-viewer.md`, `docs/log-categories.md`, CHANGELOG |
 
-## Legacy spelling: still unverified
+## Legacy spelling: confirmed
 
-`split_endpoint` accepts both `[fd00::1]:1234` and the bare `fd00::1:1234`.
-Which one Azure writes in `properties.msg` for a dual-stack firewall is not
-documented and has not been observed yet. The bare form is ambiguous on its own
-(`fd00::1:1234` is also a complete address), so the parser prefers the port
-reading because every TCP/UDP legacy endpoint carries a port. If lab records
-show a third spelling, the fix is confined to `split_endpoint` and its tests.
+`split_endpoint` accepts both `[fd00::1]:1234` and the bare `fd00::1:1234`; which
+one Azure actually writes in `properties.msg` for a dual-stack firewall was
+undocumented. 63 legacy records captured against `fw-hub-gwc` on 2026-09-07
+(CC-AzureLab, `firewall-mon-app/samples/ipv6/README.md`) settle it: Azure always
+writes the bracketed form, `[addr]:port`, never the bare one. The address itself
+is spelled differently per category — `AzureFirewallNetworkRuleLog` writes it
+**fully expanded** (`[fd10:0003:0005:0001:0000:0000:0000:0004]:38238`),
+`AzureFirewallDnsProxyLog` **compressed** (`[fd10:3:5:1::4]:34791`); ICMPv6
+records carry no real port and write `:0`. No parser change needed — the
+bracketed branch was already there and is now the only one exercised in
+practice.
 
 ## Open: lab verification
 
@@ -53,22 +58,34 @@ The lab firewall `fw-hub-gwc` is dual-stack since 2026-09-07 21:12 UTC (hub VNet
 `pip-fw-hub-gwc-ipv6-001`). No provider feature registration was needed
 (`Microsoft.Network/AFWEnableIPv6` is NotRegistered and the update succeeded).
 
-Still needed from the lab, handled in the CC-AzureLab repo:
+Done, in the CC-AzureLab repo (`firewall-mon-app/samples/ipv6/README.md`,
+captured 2026-09-07):
 
 - dual-stack spokes with a `::/0` route to the firewall's private IPv6 address,
   IPv6 network rules (allow and a targeted deny) and DNS proxy over IPv6, so
   that Allow, Deny and default-action records exist;
 - raw JSON records from **both** Event Hubs (`firewall-logs`,
-  `firewall-logs-legacy`) with IPv6 addresses: `AZFWNetworkRule`, `AZFWDnsQuery`,
-  `AZFWFlowTrace`, `AZFWFatFlow`, and the legacy `AzureFirewallNetworkRuleLog`
-  and `AzureFirewallDnsProxyLog`, exact strings, to be checked into `tests/` as
-  fixtures;
-- a note on which categories actually emit IPv6 (FlowTrace and FatFlow are
-  unconfirmed).
+  `firewall-logs-legacy`): `AZFWNetworkRule` and `AZFWDnsQuery` carry IPv6, both
+  structured and legacy (65 + 4 records each side); **not** yet copied into this
+  repo's `tests/` as fixtures — `test_fw_parser_structured.py` still uses
+  synthetic addresses (`fd10:2:0:2::10` etc.), not the captured strings;
+- which categories actually emit IPv6: `AZFWNetworkRule` and `AZFWDnsQuery` do;
+  `AZFWFlowTrace` and `AZFWFatFlow` confirmed **do not** in the preview (424
+  IPv4 flow-trace records in a 45 min window, 0 IPv6; a controlled fat-flow test
+  with matched IPv4/IPv6 load only sampled the IPv4 flow) — `Application rule`,
+  `NAT`, `Threat Intel`, `IDPS` stay IPv4-only as expected.
 
-Then: run the viewer against the lab, check the Source column width with mixed
-v4/v6 rows on a narrow terminal, the detail dialog, a CIDR filter, and the trace
-on an IPv6 `NetworkRule` row, and fix whatever the records contradict.
+Still open — none of these need the lab, all three need a live run of the
+viewer against `fw-hub-gwc` (dual-stack since 2026-09-07 21:12 UTC, subject to
+the lab's nightly stop at 23:00):
+
+- CIDR filter on `fd10:2::/32` — no captured record actually falls inside the
+  hub's own range (the firewall's private IPv6 never appears as `SourceIp`/
+  `DestinationIp` in NetworkRule/DnsQuery), so this needs either a live filter
+  test against the running firewall or a fresh capture that targets the hub
+  address (e.g. `dig @fd10:2:0:1::4`);
+- Source column width with mixed v4/v6 rows on a narrow terminal;
+- the trace dialog on an IPv6 `NetworkRule` row.
 
 ## Out of scope
 

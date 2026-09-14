@@ -7,11 +7,17 @@ from __future__ import annotations
 import pytest
 
 from fw_parser import parse_record
+from tests.test_views import no_update_check, wait_until  # noqa: F401  (no_update_check is a pytest fixture)
 from viewer.arm import ArmError
 from viewer.azure_resources import FirewallInfo, FirewallPolicyInfo, fetch_policy
 from viewer.trace import MATCH, MISS, NA, UNKNOWN, Flow, evaluate_rule
 from viewer.views.detail_screen import DetailDialog
 from viewer.views.firewall import FirewallView, _explicit_proxy_rows, _note, _row
+
+# The detail-dialog test runs the real app; without this the start-up update check
+# reaches GitHub and, whenever a newer release exists, pushes an UpdateDialog that
+# swallows the Enter meant for the log table.
+pytestmark = pytest.mark.usefixtures("no_update_check")
 
 SUB = "/subscriptions/25ca1d83-3de5-46c7-9941-fb98c2ea026e"
 POLICY_ID = f"{SUB}/resourceGroups/rg/providers/Microsoft.Network/firewallPolicies/fwp-hub"
@@ -419,10 +425,7 @@ async def test_detail_dialog_shows_explicit_proxy_fields(structured_record, fire
         await pilot.pause()
         await pilot.press("enter")
 
-        for _ in range(20):
-            if isinstance(app.screen, DetailDialog):
-                break
-            await pilot.pause(0.05)
+        await wait_until(pilot, lambda: isinstance(app.screen, DetailDialog))
         assert isinstance(app.screen, DetailDialog)
         text = _text(app.screen)
         assert "Expl. proxy" in text and "yes" in text

@@ -8,6 +8,8 @@ from dataclasses import asdict, dataclass, field, is_dataclass
 from pathlib import Path
 from typing import Any
 
+from platformdirs import user_cache_dir
+
 from .azure_resources import (
     DiagnosticSetting,
     FirewallInfo,
@@ -52,17 +54,28 @@ class CachedSnapshot:
         return self.age_seconds() < ttl
 
 
+def cache_dir() -> Path:
+    """The per-user cache directory the platform reserves for exactly this:
+    ``~/Library/Caches/az-firewall-watch`` on macOS, ``~/.cache/az-firewall-watch``
+    on Linux (XDG), ``%LOCALAPPDATA%\\az-firewall-watch\\Cache`` on Windows.
+    Private to the user, left alone by iCloud and OneDrive, and recognised
+    as a cache by the tools that clean one. The file can carry inserted
+    header values, so it belongs neither next to the binary nor in a temp
+    directory that is world-readable on some systems."""
+    return Path(user_cache_dir("az-firewall-watch", appauthor=False))
+
+
 def cache_path() -> Path:
-    """Resolve the cache file path. Prefer ``~/.az-firewall-watch/`` and fall
-    back to ``BASE_DIR`` if the home directory is not writable."""
+    """Resolve the cache file path; falls back to ``BASE_DIR`` if the cache
+    directory cannot be created."""
     try:
-        home = Path.home() / ".az-firewall-watch"
-        home.mkdir(parents=True, exist_ok=True)
+        directory = cache_dir()
+        directory.mkdir(parents=True, exist_ok=True)
         try:
-            os.chmod(home, 0o700)  # the file is 0600; keep the directory private too
+            os.chmod(directory, 0o700)  # the file is 0600; keep the directory private too
         except OSError:
             pass
-        return home / "cache.json"
+        return directory / "cache.json"
     except OSError:
         return BASE_DIR / ".azfw-cache.json"
 

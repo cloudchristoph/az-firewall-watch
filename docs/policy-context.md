@@ -203,17 +203,24 @@ If the `Microsoft.Maintenance` provider is not registered in the subscription
 there is simply no assignment to read, and the tab says *no customer-controlled
 window*.
 
-Without ARM access at all nothing breaks: the status bar says
-`○ Context unavailable · no ARM access`, the extra tabs stay empty and the viewer
-behaves exactly as it does with policy context switched off. The glyph is the
+Without ARM access nothing breaks: the status bar says
+`○ Context unavailable · see Firewall tab`, the Firewall tab shows the exact
+error in place of its blocks (a refused token, a missing Reader role, an
+unreachable host, a failed certificate check), the Policy and IP Groups tabs
+step aside until a load succeeds, and `Ctrl` + `R` tries again. The glyph is the
 quiet one on purpose: the context is optional, so missing it is a state, not an
-error.
+error. The error text is also the status bar's tooltip.
 
 ## Caching and staying current
 
-Metadata is cached for **one hour** in `~/.az-firewall-watch/cache.json` (file mode
-`0600`, directory `0700`). If your home directory is not writable, the cache falls
-back to `.azfw-cache.json` next to the binary. The file carries a version, so a
+The policy context is cached for **one hour** in the cache directory your
+operating system reserves per user: `~/Library/Caches/az-firewall-watch/` on
+macOS, `~/.cache/az-firewall-watch/` on Linux (`$XDG_CACHE_HOME` when set),
+`%LOCALAPPDATA%\az-firewall-watch\Cache\` on Windows; the file is `cache.json`
+(mode `0600`, directory `0700`). If that directory cannot be created, the cache
+falls back to `.azfw-cache.json` next to the binary. Releases before 0.6.1 wrote
+`~/.az-firewall-watch/cache.json`; that directory is no longer read and can be
+deleted. The file carries a version, so a
 release that reads more from ARM discards the old cache and fetches once on
 first start rather than showing you a half-filled tab.
 

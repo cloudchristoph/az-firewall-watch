@@ -199,7 +199,7 @@ class PolicyContextScreen(ModalScreen[bool | None]):
                 "This means, in addition to the log stream:\n"
                 "  • read-only ARM requests (Reader role on firewall, policy, IP groups)\n"
                 "  • a token from the Azure CLI as fallback (az account get-access-token)\n"
-                "  • a metadata cache in ~/.az-firewall-watch/cache.json (1 h, mode 0600)\n\n"
+                "  • a cache in your user cache directory, az-firewall-watch/cache.json (1 h, mode 0600)\n\n"
                 "Nothing is written to Azure. Saved to .env as POLICY_CONTEXT=on|off.",
                 classes="wiz-info",
             )

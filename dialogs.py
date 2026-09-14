@@ -178,7 +178,8 @@ class PolicyContextNoticeDialog(ModalScreen[bool]):
                 "Beyond reading the Event Hub, this viewer will:\n"
                 "• read the firewall, its policy and IP groups via Azure Resource Manager (Reader role)\n"
                 "• use a token from the Azure CLI as fallback (az account get-access-token)\n"
-                "• cache that context for one hour in ~/.az-firewall-watch/cache.json\n"
+                "• cache that context for one hour in your user cache directory\n"
+                "  (Library/Caches on macOS, .cache on Linux, %LOCALAPPDATA% on Windows)\n"
                 "\n"
                 "Nothing is written to Azure. In return you get the Firewall, Policy and "
                 "IP Groups tabs, enriched rows and the evaluation trace.",
@@ -249,6 +250,7 @@ class StatusBar(Static):
     ctx_state: reactive[str] = reactive("off")
     # off | pending | loading | loaded | refreshing | unavailable
     ctx_detail: reactive[str] = reactive("")  # "new rule x", "refresh failed"
+    ctx_error: reactive[str] = reactive("")   # last ARM error text: tooltip only, the Firewall tab shows it whole
     ctx_fetched_at: reactive[float | None] = reactive(None)  # time.time() the snapshot was fetched
 
     IDLE_AFTER = 60.0  # seconds without a record before "receiving" turns into "idle"
@@ -339,7 +341,17 @@ class StatusBar(Static):
         self.set_class(paused, "paused")
 
     def watch_eh_error(self, error: str) -> None:
-        self.tooltip = error or None
+        self._update_tooltip()
+
+    def watch_ctx_error(self, error: str) -> None:
+        self._update_tooltip()
+
+    def _update_tooltip(self) -> None:
+        errors = [(label, text) for label, text in (("Event Hub", self.eh_error), ("Context", self.ctx_error)) if text]
+        if len(errors) > 1:
+            self.tooltip = "\n".join(f"{label}: {text}" for label, text in errors)   # both: say which is which
+        else:
+            self.tooltip = errors[0][1] if errors else None
 
     def on_click(self) -> None:
         self.app.action_toggle_pause()  # type: ignore[attr-defined]

@@ -139,7 +139,7 @@ def _apprule_snapshot(*, sku_tier: str = "Premium", terminate_tls: bool = False,
 def _install_snapshot(monkeypatch, snapshot: cache.CachedSnapshot) -> dict:
     state = {"snapshot": snapshot, "calls": []}
 
-    async def _load_fn(firewall_id, *, force=False):
+    async def _load_fn(firewall_id, *, force=False, errors=None):
         state["calls"].append((firewall_id, force))
         return state["snapshot"]
 

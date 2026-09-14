@@ -38,7 +38,7 @@ def has_entra_config(env_file: Path) -> bool:
 
 _POLICY_CONTEXT_COMMENT = (
     "# POLICY_CONTEXT=on reads the firewall, its policy and IP groups via Azure Resource Manager\n"
-    "# (Reader role), may use an Azure CLI token, and caches the result in ~/.az-firewall-watch.\n"
+    "# (Reader role), may use an Azure CLI token, and caches the result in your user cache directory.\n"
 )
 
 

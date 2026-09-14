@@ -416,6 +416,10 @@ class FirewallView(Vertical):
         padding: 1 1 1 1;
         text-style: bold;
     }
+    FirewallView > #fw-error {
+        height: auto;
+        padding: 0 1 1 1;
+    }
     FirewallView > #fw-grid {
         grid-size: 2 2;
         grid-gutter: 1 2;
@@ -444,6 +448,7 @@ class FirewallView(Vertical):
 
     def compose(self) -> ComposeResult:
         yield Static("Waiting for first firewall event…", id="fw-title", markup=True)
+        yield Static("", id="fw-error", markup=True)
         with Grid(id="fw-grid"):
             with Vertical(classes="panel", id="panel-instance"):
                 yield Static("", id="fw-instance", markup=True)
@@ -462,6 +467,21 @@ class FirewallView(Vertical):
             self.query_one(pid, Vertical).border_title = title
         self.query_one("#fw-network", DataTable).add_columns("Private IP", "Public IP", "Configuration")
         self.query_one("#fw-grid", Grid).display = False
+        self.query_one("#fw-error", Static).display = False
+
+    def render_unavailable(self, reason: str) -> None:
+        """The policy context is on but could not be read: say exactly why,
+        in place of the blocks. The tab stays so the reason has a place."""
+        self.query_one("#fw-title", Static).update("[b]Policy context could not be loaded[/b]")
+        self.query_one("#fw-grid", Grid).display = False
+        error = self.query_one("#fw-error", Static)
+        error.update(
+            f"[yellow]{escape(reason)}[/]\n\n"
+            "[dim]The firewall is read from Azure Resource Manager with your Azure identity "
+            "(DefaultAzureCredential, then the az CLI). Check that you are signed in and hold Reader on the "
+            "firewall; Ctrl+R tries again. The Policy and IP Groups tabs come back once this succeeds.[/]"
+        )
+        error.display = True
 
     def render_data(
         self,
@@ -477,6 +497,7 @@ class FirewallView(Vertical):
     ) -> None:
         title = self.query_one("#fw-title", Static)
         grid = self.query_one("#fw-grid", Grid)
+        self.query_one("#fw-error", Static).display = False
         if firewall is None:
             title.update("Waiting for first firewall event…")
             grid.display = False

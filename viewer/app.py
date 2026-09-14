@@ -301,8 +301,11 @@ class FirewallLogApp(App[None]):
     async def _load_mgmt(self, firewall_id: str, *, force: bool = False) -> None:
         """Background fetch of firewall / policy / IP-groups metadata."""
         status = self.query_one("#status", StatusBar)
-        snap = await load_management_data(firewall_id, force=force)
+        errors: list[str] = []
+        snap = await load_management_data(firewall_id, force=force, errors=errors)
         if snap is None:
+            reason = errors[0] if errors else "no ARM access"
+            status.ctx_error = reason
             # Keep whatever was loaded before (still valid policy data) but say
             # so; only report "unavailable" when there is nothing to show.
             if self._mgmt_loaded:
@@ -310,8 +313,14 @@ class FirewallLogApp(App[None]):
                 self.notify("Refresh failed. The previous policy context stays on screen.",
                             title="Policy context", severity="warning")
             else:
-                status.ctx_state, status.ctx_detail = "unavailable", "no ARM access"
+                # The Firewall tab carries the exact reason; the two tabs that
+                # would only show placeholders step aside until a load succeeds.
+                status.ctx_state, status.ctx_detail = "unavailable", "see Firewall tab"
+                self.query_one("#firewall-view", FirewallView).render_unavailable(reason)
+                self._set_context_tabs(False)
             return
+        status.ctx_error = ""
+        self._set_context_tabs(True)
         self._fw_info = snap.firewall
         self._policy_info = snap.policy
         self._ip_groups = snap.ip_groups
@@ -375,6 +384,18 @@ class FirewallLogApp(App[None]):
                     (r.rule_collection_group, r.rule_collection, r.rule_name) not in self._known_rules:
                 self._refresh_policy_context(f"new rule {r.rule_name}")
                 return
+
+    def _set_context_tabs(self, shown: bool) -> None:
+        """Policy and IP Groups tabs: shown once the context is loaded, hidden
+        while it is unavailable (the Firewall tab stays and says why)."""
+        tabs = self.query_one("#main-tabs", TabbedContent)
+        for pane in ("tab-policy", "tab-ipgroups"):
+            if shown:
+                tabs.show_tab(pane)
+            else:
+                tabs.hide_tab(pane)
+                if tabs.active == pane:
+                    tabs.active = "tab-firewall"
 
     def _refresh_context_views(self) -> None:
         """Refresh Firewall / Policy / IP Groups tabs from current state."""

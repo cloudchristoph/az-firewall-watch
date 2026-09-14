@@ -8,6 +8,8 @@ from typing import TYPE_CHECKING
 
 from dialogs import UpdateDialog
 
+from .management import arm_ssl_context
+
 if TYPE_CHECKING:
     from .app import FirewallLogApp
 
@@ -30,7 +32,8 @@ async def check_for_update(app: FirewallLogApp, current_version: str) -> None:
             _RELEASES_URL,
             headers={"User-Agent": f"az-firewall-watch/{current_version}"},
         )
-        with urllib.request.urlopen(req, timeout=5) as resp:  # noqa: S310
+        # certifi's bundle: a frozen binary has no system CA store (see management.arm_ssl_context)
+        with urllib.request.urlopen(req, timeout=5, context=arm_ssl_context()) as resp:  # noqa: S310
             return json.loads(resp.read())
 
     try:

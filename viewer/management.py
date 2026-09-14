@@ -6,10 +6,12 @@ app stays focused on UI.
 from __future__ import annotations
 
 import asyncio
+import ssl
 import time
 from typing import Any
 
 import aiohttp
+import certifi
 
 from .arm import ArmClient, ArmError
 from .azure_resources import (
@@ -29,11 +31,26 @@ from .azure_resources import (
 from .cache import CachedSnapshot, invalidate, load, save
 
 
-async def load_management_data(firewall_id: str, *, force: bool = False) -> CachedSnapshot | None:
+def arm_ssl_context() -> ssl.SSLContext:
+    """The TLS context for ARM calls, trusting certifi's CA bundle.
+
+    A frozen binary ships its own OpenSSL whose default certificate paths
+    point at the build machine, so the system store is empty there and every
+    HTTPS call fails verification. The Event Hub client and azure-identity
+    use certifi on their own; aiohttp does not, hence this context. The
+    0.6.0 binary showed exactly that: Event Hub connected, ARM "no access".
+    """
+    return ssl.create_default_context(cafile=certifi.where())
+
+
+async def load_management_data(firewall_id: str, *, force: bool = False,
+                               errors: list[str] | None = None) -> CachedSnapshot | None:
     """Return a cached or freshly-fetched snapshot for ``firewall_id``.
 
-    Returns ``None`` if no credential is available or ARM is unreachable.
-    On cache hit (and not ``force``), returns immediately without ARM calls.
+    Returns ``None`` if no credential is available or ARM is unreachable; the
+    reason goes into ``errors`` when the caller passes a list, so the
+    interface can say what failed instead of "no access". On cache hit (and
+    not ``force``), returns immediately without ARM calls.
     """
     if not force:
         cached = load(firewall_id)
@@ -54,11 +71,13 @@ async def load_management_data(firewall_id: str, *, force: bool = False) -> Cach
         credential = None
 
     try:
-        async with aiohttp.ClientSession() as session:
+        async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(ssl=arm_ssl_context())) as session:
             arm = ArmClient(credential, session)
             try:
                 firewall = await fetch_firewall(arm, firewall_id)
-            except ArmError:
+            except ArmError as exc:
+                if errors is not None:
+                    errors.append(str(exc))
                 return None
 
             subnet_task = asyncio.create_task(fetch_subnets(arm, firewall.subnet_ids))

@@ -19,10 +19,16 @@ GROUPS = {"/g": IpGroupInfo(id="/g", name="grp", location="gwc", ip_addresses=["
 
 
 class FakeSession:
+    def __init__(self, **kw: Any) -> None:
+        self.kw = kw   # the real session gets a connector with certifi's TLS context
+
     async def __aenter__(self):
         return self
 
     async def __aexit__(self, *_exc):
+        connector = self.kw.get("connector")
+        if connector is not None:
+            await connector.close()
         return False
 
 
@@ -161,6 +167,26 @@ async def test_firewall_fetch_failure_returns_none_and_closes_credential(world):
     assert await mgmt.load_management_data(FW_ID) is None
     assert world["saved"] == []
     assert FakeCredential.instances[0].closed
+
+
+async def test_firewall_fetch_failure_names_its_reason(world):
+    """The caller gets the ArmError text, so the interface can say what failed
+    (a TLS verification failure, a 403, an unreachable host) instead of the
+    bare "no ARM access" the 0.6.0 binary showed."""
+    world["firewall"] = ArmError(0, "Transport", "Cannot connect to host management.azure.com:443 ssl:True "
+                                 "[SSLCertVerificationError: certificate verify failed]")
+    errors: list[str] = []
+    assert await mgmt.load_management_data(FW_ID, errors=errors) is None
+    assert len(errors) == 1 and "certificate verify failed" in errors[0] and "Transport" in errors[0]
+
+
+def test_arm_ssl_context_trusts_certifi(monkeypatch):
+    """A frozen binary has no system CA store; the ARM context must carry
+    certifi's bundle on its own, not rely on OpenSSL's default paths."""
+    monkeypatch.setenv("SSL_CERT_FILE", "/dev/null")
+    monkeypatch.setenv("SSL_CERT_DIR", "/nonexistent")
+    ctx = mgmt.arm_ssl_context()
+    assert ctx.cert_store_stats()["x509_ca"] > 100
 
 
 async def test_policy_failure_is_tolerated(world):

@@ -424,7 +424,7 @@ async def test_ip_groups_render_one_per_line(structured_record, monkeypatch):
     }
     snap = CachedSnapshot(firewall=fw, policy=policy, ip_groups=groups, subnet_cidrs=[], fetched_at=time.time())
 
-    async def _load_fake(firewall_id, *, force=False):
+    async def _load_fake(firewall_id, *, force=False, errors=None):
         return snap
 
     monkeypatch.setattr(app_module, "load_management_data", _load_fake)

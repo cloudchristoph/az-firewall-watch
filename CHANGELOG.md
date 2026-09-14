@@ -8,7 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-Nothing yet.
+### Fixed
+
+- **The release binary could not reach Azure Resource Manager.** The 0.6.0 binary connected to the Event Hub and then reported *Context unavailable · no ARM access* on the very account that works from source. A frozen binary ships its own OpenSSL, whose default certificate paths point at the build machine, so its system CA store is empty; the Event Hub client and azure-identity bring certifi's bundle themselves, the ARM calls went through aiohttp with the system context and failed every certificate check. ARM calls and the release check now use a TLS context built on certifi. Found by Christoph on the first run of the binary, reproduced from source with an empty CA store.
+- **The reason for an unavailable context is shown, not swallowed.** *no ARM access* covered a TLS failure, a missing Reader role and an unreachable host alike. The Firewall tab now shows the exact error in place of its blocks, with what to check and that `Ctrl` + `R` retries; the status bar says *see Firewall tab* and carries the error as its tooltip.
+
+### Changed
+
+- **The cache moved to the operating system's per-user cache directory.** `~/Library/Caches/az-firewall-watch/` on macOS, `~/.cache/az-firewall-watch/` on Linux, `%LOCALAPPDATA%\az-firewall-watch\Cache\` on Windows (via `platformdirs`), same file name and modes as before. That is the directory the platform reserves for exactly this: private to the user, left alone by iCloud and OneDrive, recognised as a cache by the tools that clean one. Next to the binary was never an option (Downloads and Program Files are shared and often read-only, and the file can carry inserted header values), a temp directory is cleaned at the system's whim. `~/.az-firewall-watch/` from earlier releases is no longer read and can be deleted.
+- **Policy and IP Groups tabs hide while the context is unavailable.** They only ever showed placeholders in that state. They come back the moment a load succeeds.
 
 ## [0.6.0] - 2026-09-13
 

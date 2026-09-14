@@ -184,19 +184,38 @@ def test_hydrate_tolerates_missing_optional_fields(cache_file):
     assert loaded.subnet_cidrs == [] and loaded.ip_groups == {}
 
 
+def test_cache_dir_is_the_platform_cache_directory(monkeypatch):
+    """platformdirs picks the per-user cache directory; no author segment,
+    the app name alone (``.../az-firewall-watch``)."""
+    seen = {}
+
+    def _user_cache_dir(appname, appauthor=None, **kw):
+        seen.update(appname=appname, appauthor=appauthor)
+        return "/tmp/somewhere/az-firewall-watch"
+
+    monkeypatch.setattr(cache, "user_cache_dir", _user_cache_dir)
+    assert cache.cache_dir() == cache.Path("/tmp/somewhere/az-firewall-watch")
+    assert seen == {"appname": "az-firewall-watch", "appauthor": False}
+
+
+def test_cache_dir_is_not_the_old_dotfile_in_home():
+    """0.6.0 wrote ~/.az-firewall-watch; the OS cache directory is elsewhere."""
+    assert cache.cache_dir() != cache.Path.home() / ".az-firewall-watch"
+    assert cache.cache_dir().name == "az-firewall-watch" or "az-firewall-watch" in str(cache.cache_dir())
+
+
 @pytest.mark.skipif(sys.platform == "win32", reason="POSIX permissions")
 def test_cache_directory_is_private(monkeypatch, tmp_path):
-    monkeypatch.setattr(cache.Path, "home", staticmethod(lambda: tmp_path))
+    monkeypatch.setattr(cache, "user_cache_dir", lambda *a, **kw: str(tmp_path / "Caches" / "az-firewall-watch"))
     path = cache.cache_path()
-    assert path == tmp_path / ".az-firewall-watch" / "cache.json"
+    assert path == tmp_path / "Caches" / "az-firewall-watch" / "cache.json"
     assert stat.S_IMODE(os.stat(path.parent).st_mode) == 0o700
 
 
-def test_cache_path_falls_back_when_home_unwritable(monkeypatch, tmp_path):
-    class _Home:
-        def __truediv__(self, _other):
-            raise OSError("read-only home")
+def test_cache_path_falls_back_when_cache_dir_unwritable(monkeypatch, tmp_path):
+    def _unwritable(*_a, **_kw):
+        raise OSError("read-only")
 
-    monkeypatch.setattr(cache.Path, "home", staticmethod(lambda: _Home()))
+    monkeypatch.setattr(cache, "user_cache_dir", _unwritable)
     monkeypatch.setattr(cache, "BASE_DIR", tmp_path)
     assert cache.cache_path() == tmp_path / ".azfw-cache.json"

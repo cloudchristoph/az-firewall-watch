@@ -31,7 +31,7 @@ def _fake_urlopen(payload: Any, *, raise_exc: Exception | None = None):
     """Return a urlopen replacement that yields *payload* (or raises)."""
     calls: list[dict] = []
 
-    def _urlopen(req, timeout=None):
+    def _urlopen(req, timeout=None, context=None):
         calls.append({"url": req.full_url, "headers": dict(req.header_items()), "timeout": timeout})
         if raise_exc is not None:
             raise raise_exc

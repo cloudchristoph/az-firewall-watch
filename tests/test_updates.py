@@ -48,8 +48,11 @@ async def _dialog_ready(app, pilot) -> None:
     """The dialog is pushed before its buttons are composed; on a slow runner
     (Windows CI) a fixed pause landed in between. Wait for the button."""
     for _ in range(100):
-        if isinstance(app.screen, UpdateDialog) and app.screen.query("#btn-open"):
-            return
+        if isinstance(app.screen, UpdateDialog):
+            buttons = app.screen.query("#btn-open")
+            if buttons and buttons.first().region.width > 0:   # composed and laid out: a click can land
+                await pilot.pause()
+                return
         await pilot.pause(0.05)
     raise AssertionError("UpdateDialog with its buttons did not appear")
 
@@ -199,7 +202,7 @@ class TestUpdateDialogInApp:
     async def test_dialog_appears_on_startup_and_escape_dismisses(self):
         app = FirewallLogApp()
         async with app.run_test(size=(120, 40)) as pilot:
-            await pilot.pause(0.3)
+            await _dialog_ready(app, pilot)
             assert isinstance(app.screen, UpdateDialog)
             rendered = " ".join(str(s.content) for s in app.screen.query(Static))
             assert "99.0.0" in rendered
@@ -237,7 +240,7 @@ class TestUpdateDialogInApp:
         monkeypatch.setattr("webbrowser.open", _boom)
         app = FirewallLogApp()
         async with app.run_test(size=(120, 40)) as pilot:
-            await pilot.pause(0.3)
+            await _dialog_ready(app, pilot)
             await pilot.click("#btn-open")
             await pilot.pause()
             assert not isinstance(app.screen, UpdateDialog)

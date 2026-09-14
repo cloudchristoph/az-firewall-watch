@@ -175,6 +175,24 @@ def parse_network(value: str) -> ipaddress.IPv4Network | ipaddress.IPv6Network |
         return None
 
 
+def normalise_address(value: str) -> str:
+    """One spelling per address: brackets off, IPv6 compressed, everything else untouched.
+
+    A dual-stack firewall writes the same address three ways: structured
+    ``AZFWNetworkRule`` rows carry ``[fd10:0003:0005:0001:0000:0000:0000:0004]``
+    (bracketed and expanded), legacy network-rule messages the same without
+    brackets once ``split_endpoint`` is through, and ``AZFWDnsQuery`` rows the
+    compressed ``fd10:3:5:1::4``. Parsing all of them to ``fd10:3:5:1::4`` keeps
+    the table, the filters, the ``AzFw.<n>`` labels and the trace on one form.
+    FQDNs, ``-`` and anything that is not an address come back unchanged.
+    """
+    text = (value or "").strip()
+    if text.startswith("[") and text.endswith("]"):
+        text = text[1:-1]
+    addr = parse_address(text)
+    return addr.compressed if addr is not None else value
+
+
 def address_matches(needle: str, value: str) -> bool:
     """Filter semantics for the Source and Dest / FQDN inputs.
 

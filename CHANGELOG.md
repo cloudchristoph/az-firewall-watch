@@ -11,7 +11,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - **CIDR and IPv6-aware address filters.** The Source and Dest / FQDN filters accept a prefix (`10.3.0.0/16`, `fd10:2::/32`) and keep only rows whose address lies inside it, for IPv4 and IPv6; a CIDR never matches an FQDN or the other address family. A full IPv6 address matches in any spelling (`fd10::10` finds `fd10:0:0:0:0:0:0:10`), and a fragment such as `::10` is compared against the compressed form as well as the logged text. Plain substrings behave as before. This closes the *IPv6 is parsed and matched, but not filtered* limitation from 0.6.0.
+- **Real IPv6 records as test fixtures.** `tests/fixtures/ipv6/` holds 138 records captured from the dual-stack lab firewall's two Event Hubs, strings verbatim, and `tests/test_ipv6_samples.py` runs every one of them through the parser, the flow builder, the filters and the instance labels.
 - **IPv6 coverage for the structured parser and the trace.** Tests pin down that `AZFWNetworkRule`, `AZFWDnsQuery`, `AZFWFlowTrace` and `AZFWFatFlow` rows with IPv6 addresses parse unchanged, and that the trace matches IPv6 flows against IPv6 prefixes in rules and IP groups, reports a flow of the other address family as a clean miss, sends an IPv6 destination through the address check rather than the FQDN branch, and answers *n/a* for an address it cannot parse. The dual-stack plan and its remaining lab verification live in `docs/ipv6-plan.md`.
+
+### Fixed
+
+- **Structured `AZFWNetworkRule` rows with IPv6 addresses were unusable.** A dual-stack firewall writes `SourceIp` and `DestinationIp` there as `[fd10:0003:0005:0001:0000:0000:0000:0004]`, bracketed and fully expanded, while `AZFWDnsQuery` writes the same address as `fd10:3:5:1::4`. The parser passed the brackets through, so the destination failed the address check and the trace evaluated the row's `targetFqdns` instead of its address ranges (a confident wrong verdict), a CIDR filter never matched, the `AzFw.<n>` label never appeared, and the table showed a 41-character string. Every address the parser emits is now normalised to one spelling: brackets off, IPv6 compressed, IPv4 and FQDNs untouched. Legacy messages get the same treatment, so both Event Hubs describe one flow with one string. Found with real records; the legacy spelling question is settled at the same time: Azure always brackets IPv6 in `properties.msg`.
+- **Legacy network-rule messages from dual-stack firewalls carry a `Policy:` sentence** that the parser ignored, so the rule path lacked the policy name that the structured format has. It is read now, and the rule info of both formats is identical.
 
 ## [0.6.0] - 2026-09-13
 

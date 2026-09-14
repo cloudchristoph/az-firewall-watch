@@ -36,6 +36,8 @@ address unless the destination is ULA (`fc00::/7`).
 | 6 | Filters compared substrings only: no CIDR, no match across compressed and expanded IPv6 spellings. | **this branch** | `helpers.address_matches`, `FirewallLogApp._matches` |
 | 7 | No IPv6 tests for the structured parser and only range tests for the trace. | **this branch** | `tests/test_fw_parser_structured.py`, `tests/test_trace.py` |
 | 8 | Docs did not mention dual-stack or the filter syntax. | **this branch** | README, `docs/using-the-viewer.md`, `docs/log-categories.md`, CHANGELOG |
+| 9 | Structured `AZFWNetworkRule` rows carry IPv6 bracketed and expanded; the brackets reached the flow builder, the filters and the labels. | **this branch** | `helpers.normalise_address`, `fw_parser._ip` / `_endpoint`, fixtures in `tests/fixtures/ipv6/` |
+| 10 | Legacy network-rule messages from dual-stack firewalls carry `Policy:`, which the parser skipped. | **this branch** | `fw_parser._parse_legacy` |
 
 ## Legacy spelling: confirmed
 
@@ -47,9 +49,20 @@ writes the bracketed form, `[addr]:port`, never the bare one. The address itself
 is spelled differently per category — `AzureFirewallNetworkRuleLog` writes it
 **fully expanded** (`[fd10:0003:0005:0001:0000:0000:0000:0004]:38238`),
 `AzureFirewallDnsProxyLog` **compressed** (`[fd10:3:5:1::4]:34791`); ICMPv6
-records carry no real port and write `:0`. No parser change needed — the
-bracketed branch was already there and is now the only one exercised in
-practice.
+records carry no real port and write `:0`. The legacy parser needed no change
+for that: the bracketed branch was already there and is now the only one
+exercised in practice.
+
+The **structured** format did need one. `AZFWNetworkRule` writes `SourceIp` and
+`DestinationIp` as `[fd10:0003:0005:0001:0000:0000:0000:0004]`, bracketed and
+fully expanded, and the parser passed that through unchanged: the destination
+failed the address parse, the trace took the FQDN branch, CIDR filters and
+`AzFw.<n>` labels never matched. `helpers.normalise_address` now strips the
+brackets and compresses every IPv6 address the parser emits, structured and
+legacy alike, so one flow has one spelling everywhere. The captured records live
+in `tests/fixtures/ipv6/` and `tests/test_ipv6_samples.py` runs all 138 of them
+through parser, flow builder, filters and labels. The same messages also carry a
+`Policy:` sentence the legacy network-rule parser used to skip; it is read now.
 
 ## Open: lab verification
 
@@ -66,9 +79,8 @@ captured 2026-09-07):
   that Allow, Deny and default-action records exist;
 - raw JSON records from **both** Event Hubs (`firewall-logs`,
   `firewall-logs-legacy`): `AZFWNetworkRule` and `AZFWDnsQuery` carry IPv6, both
-  structured and legacy (65 + 4 records each side); **not** yet copied into this
-  repo's `tests/` as fixtures — `test_fw_parser_structured.py` still uses
-  synthetic addresses (`fd10:2:0:2::10` etc.), not the captured strings;
+  structured and legacy (65 + 4 records each side), copied verbatim into
+  `tests/fixtures/ipv6/` and exercised by `tests/test_ipv6_samples.py`;
 - which categories actually emit IPv6: `AZFWNetworkRule` and `AZFWDnsQuery` do;
   `AZFWFlowTrace` and `AZFWFatFlow` confirmed **do not** in the preview (424
   IPv4 flow-trace records in a 45 min window, 0 IPv6; a controlled fat-flow test

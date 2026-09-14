@@ -39,8 +39,15 @@ def arm_ssl_context() -> ssl.SSLContext:
     HTTPS call fails verification. The Event Hub client and azure-identity
     use certifi on their own; aiohttp does not, hence this context. The
     0.6.0 binary showed exactly that: Event Hub connected, ARM "no access".
+    The system's own roots are loaded on top wherever they exist, so a
+    corporate proxy with a private CA in the machine's store keeps working.
     """
-    return ssl.create_default_context(cafile=certifi.where())
+    context = ssl.create_default_context(cafile=certifi.where())
+    try:
+        context.load_default_certs()
+    except OSError:
+        pass   # no system store (the frozen binary's case): certifi alone
+    return context
 
 
 async def load_management_data(firewall_id: str, *, force: bool = False,

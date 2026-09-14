@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import io
 import json
+import ssl
 import urllib.error
 from typing import Any
 
@@ -32,7 +33,8 @@ def _fake_urlopen(payload: Any, *, raise_exc: Exception | None = None):
     calls: list[dict] = []
 
     def _urlopen(req, timeout=None, context=None):
-        calls.append({"url": req.full_url, "headers": dict(req.header_items()), "timeout": timeout})
+        calls.append({"url": req.full_url, "headers": dict(req.header_items()), "timeout": timeout,
+                      "context": context})
         if raise_exc is not None:
             raise raise_exc
         body = payload if isinstance(payload, (bytes, bytearray)) else json.dumps(payload).encode()
@@ -40,6 +42,16 @@ def _fake_urlopen(payload: Any, *, raise_exc: Exception | None = None):
 
     _urlopen.calls = calls  # type: ignore[attr-defined]
     return _urlopen
+
+
+async def _dialog_ready(app, pilot) -> None:
+    """The dialog is pushed before its buttons are composed; on a slow runner
+    (Windows CI) a fixed pause landed in between. Wait for the button."""
+    for _ in range(100):
+        if isinstance(app.screen, UpdateDialog) and app.screen.query("#btn-open"):
+            return
+        await pilot.pause(0.05)
+    raise AssertionError("UpdateDialog with its buttons did not appear")
 
 
 class _RecordingApp:
@@ -109,6 +121,8 @@ async def test_request_targets_latest_release_with_user_agent(monkeypatch):
     assert call["url"] == "https://api.github.com/repos/cloudchristoph/az-firewall-watch/releases/latest"
     assert call["headers"].get("User-agent") == "az-firewall-watch/0.3.0"
     assert call["timeout"] == 5
+    # certifi's roots travel with the request: a frozen binary has no system store
+    assert isinstance(call["context"], ssl.SSLContext) and call["context"].cert_store_stats()["x509_ca"] > 100
 
 
 @pytest.mark.parametrize("tag", ["v0.3.0", "0.3.0", "v0.2.9", "v0.1.0"])
@@ -199,8 +213,7 @@ class TestUpdateDialogInApp:
         monkeypatch.setattr("webbrowser.open", lambda url: opened.append(url) or True)
         app = FirewallLogApp()
         async with app.run_test(size=(120, 40)) as pilot:
-            await pilot.pause(0.3)
-            assert isinstance(app.screen, UpdateDialog)
+            await _dialog_ready(app, pilot)
             await pilot.click("#btn-open")
             await pilot.pause()
             assert opened == ["https://example.test/rel"]
@@ -211,7 +224,7 @@ class TestUpdateDialogInApp:
         monkeypatch.setattr("webbrowser.open", lambda url: opened.append(url) or True)
         app = FirewallLogApp()
         async with app.run_test(size=(120, 40)) as pilot:
-            await pilot.pause(0.3)
+            await _dialog_ready(app, pilot)
             await pilot.click("#btn-dismiss")
             await pilot.pause()
             assert opened == []

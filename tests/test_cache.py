@@ -200,8 +200,10 @@ def test_cache_dir_is_the_platform_cache_directory(monkeypatch):
 
 def test_cache_dir_is_not_the_old_dotfile_in_home():
     """0.6.0 wrote ~/.az-firewall-watch; the OS cache directory is elsewhere."""
-    assert cache.cache_dir() != cache.Path.home() / ".az-firewall-watch"
-    assert cache.cache_dir().name == "az-firewall-watch" or "az-firewall-watch" in str(cache.cache_dir())
+    directory = cache.cache_dir()
+    assert directory != cache.Path.home() / ".az-firewall-watch"
+    assert "az-firewall-watch" in directory.parts          # .../az-firewall-watch or .../az-firewall-watch/Cache
+    assert directory.is_absolute()
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="POSIX permissions")

@@ -1,6 +1,7 @@
 """Orchestration of cache + ARM fetches (viewer/management.py) with everything faked."""
 from __future__ import annotations
 
+import ssl
 import time
 from typing import Any
 
@@ -19,8 +20,11 @@ GROUPS = {"/g": IpGroupInfo(id="/g", name="grp", location="gwc", ip_addresses=["
 
 
 class FakeSession:
+    instances: list[FakeSession] = []
+
     def __init__(self, **kw: Any) -> None:
         self.kw = kw   # the real session gets a connector with certifi's TLS context
+        FakeSession.instances.append(self)
 
     async def __aenter__(self):
         return self
@@ -178,6 +182,16 @@ async def test_firewall_fetch_failure_names_its_reason(world):
     errors: list[str] = []
     assert await mgmt.load_management_data(FW_ID, errors=errors) is None
     assert len(errors) == 1 and "certificate verify failed" in errors[0] and "Transport" in errors[0]
+
+
+async def test_arm_session_carries_the_certifi_context(world):
+    """The fix for the 0.6.0 binary is the connector on the session; a bare
+    ClientSession() would pass every other test and fail again in the bundle."""
+    FakeSession.instances.clear()
+    assert await mgmt.load_management_data(FW_ID) is not None
+    connector = FakeSession.instances[-1].kw["connector"]
+    context = connector._ssl
+    assert isinstance(context, ssl.SSLContext) and context.cert_store_stats()["x509_ca"] > 100
 
 
 def test_arm_ssl_context_trusts_certifi(monkeypatch):

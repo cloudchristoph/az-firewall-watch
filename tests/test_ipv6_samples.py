@@ -122,27 +122,41 @@ def test_icmpv6_records_parse_with_type_and_port_zero():
 
 # ── downstream: flow, filters, labels ────────────────────────────────────────
 
-def test_flow_from_structured_ipv6_row_is_an_address_flow():
+ALL_FILES = ("AZFWNetworkRule.jsonl", "AzureFirewallNetworkRule.jsonl", "AZFWDnsQuery.jsonl", "AzureFirewallDnsProxy.jsonl")
+
+
+@pytest.mark.parametrize("name", ALL_FILES)
+def test_every_record_becomes_an_address_flow(name):
     """Before normalisation the bracketed destination failed the address parse and the trace
-    ran the FQDN branch: a confident wrong verdict on every IPv6 NetworkRule row."""
-    for row in rows("AZFWNetworkRule.jsonl"):
+    ran the FQDN branch: a confident wrong verdict on every IPv6 NetworkRule row. DNS rows
+    carry the queried name as destination and must end up in ``dst_fqdn`` instead."""
+    for row in rows(name):
         flow = FirewallLogApp._flow_from_row(row)
-        assert flow.dst_fqdn == "" and _is_address(flow.dst_ip), row.targetip
-        assert _is_address(flow.src_ip)
+        assert _is_address(flow.src_ip), row.sourceip
+        if row.category == "DnsQuery":
+            assert flow.dst_ip == "" and flow.dst_fqdn == row.targetip
+        else:
+            assert flow.dst_fqdn == "" and _is_address(flow.dst_ip), row.targetip
 
 
-def test_cidr_filter_selects_the_spoke_prefix():
-    for name in ("AZFWNetworkRule.jsonl", "AzureFirewallNetworkRule.jsonl", "AZFWDnsQuery.jsonl"):
-        for row in rows(name):
-            assert address_matches("fd10:3::/32", row.sourceip), row.sourceip   # every source is a spoke
-            assert not address_matches("fd10:2::/32", row.sourceip)            # the hub's own range
-            if row.sourceip == SPOKE:
-                assert address_matches(SPOKE_EXPANDED, row.sourceip)           # typed the long way
+@pytest.mark.parametrize("name", ALL_FILES)
+def test_cidr_filter_selects_the_spoke_prefix_on_every_record(name):
+    for row in rows(name):
+        assert address_matches("fd10:3::/32", row.sourceip), row.sourceip   # every source is a spoke
+        assert not address_matches("fd10:2::/32", row.sourceip)            # the hub's own range
+        assert address_matches(row.sourceip, row.sourceip)                  # typed as displayed
+        if row.sourceip == SPOKE:
+            assert address_matches(SPOKE_EXPANDED, row.sourceip)           # typed the long way
 
 
-def test_firewall_subnet_label_works_on_the_normalised_address():
-    row = next(r for r in rows("AZFWNetworkRule.jsonl") if r.sourceip == SPOKE)
-    assert resolve_fw_instance(row.sourceip, ["fd10:3:5:1::/64"]) == "AzFw.4"
+@pytest.mark.parametrize("name", ALL_FILES)
+def test_instance_labels_resolve_on_every_normalised_source(name):
+    """With the spoke subnet posing as a firewall subnet, every source must get a label from
+    the parsed address (``AzFw.4`` for ``…::4``); brackets or expanded groups would break it."""
+    for row in rows(name):
+        subnet = row.sourceip.rsplit(":", 1)[0] + "::/64" if "::" not in row.sourceip else row.sourceip.rsplit("::", 1)[0] + "::/64"
+        assert resolve_fw_instance(row.sourceip, [subnet]) == "AzFw.4", (row.sourceip, subnet)
+        assert resolve_fw_instance(row.sourceip, ["fd10:2:0:1::/64"]) is None
 
 
 @pytest.mark.parametrize("raw, expected", [

@@ -8,6 +8,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [0.6.1] - 2026-09-14
+
 ### Fixed
 
 - **The release binary could not reach Azure Resource Manager.** The 0.6.0 binary connected to the Event Hub and then reported *Context unavailable · no ARM access* on the very account that works from source. A frozen binary ships its own OpenSSL, whose default certificate paths point at the build machine, so its system CA store is empty; the Event Hub client and azure-identity bring certifi's bundle themselves, the ARM calls went through aiohttp with the system context and failed every certificate check. ARM calls and the release check now use a TLS context built on certifi. Found by Christoph on the first run of the binary, reproduced from source with an empty CA store.
@@ -258,7 +262,8 @@ This release adds passwordless Entra ID authentication, better Azure Firewall lo
 
 [Full diff](https://github.com/cloudchristoph/az-firewall-watch/commits/v0.1.0)
 
-[Unreleased]: https://github.com/cloudchristoph/az-firewall-watch/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/cloudchristoph/az-firewall-watch/compare/v0.6.1...HEAD
+[0.6.1]: https://github.com/cloudchristoph/az-firewall-watch/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/cloudchristoph/az-firewall-watch/compare/v0.5.1...v0.6.0
 [0.5.1]: https://github.com/cloudchristoph/az-firewall-watch/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/cloudchristoph/az-firewall-watch/compare/v0.4.1...v0.5.0

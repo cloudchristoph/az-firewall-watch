@@ -75,7 +75,7 @@ def mgmt(monkeypatch):
     """Replace load_management_data with a controllable fake; returns its state."""
     state = {"snapshot": make_snapshot(), "calls": []}
 
-    async def _load(firewall_id, *, force=False):
+    async def _load(firewall_id, *, force=False, errors=None):
         state["calls"].append((firewall_id, force))
         return state["snapshot"]
 
@@ -200,11 +200,53 @@ async def test_metadata_unavailable_is_reported_without_touching_status(firewall
         before = status.eh_state
         app.request_mgmt_load(firewall_id)
         await wait_until(pilot, lambda: status.ctx_state == "unavailable")
-        assert status.ctx_detail == "no ARM access"
-        assert "○ Context unavailable · no ARM access" in str(status.render())
+        assert status.ctx_detail == "see Firewall tab"
+        assert "○ Context unavailable · see Firewall tab" in str(status.render())
         assert status.eh_state == before
         assert not any(t.startswith("Refresh failed") for t in toasts(app))  # missing optional data is a state, not an alert
         assert not app._mgmt_loaded
+
+
+async def test_context_unavailable_names_the_reason_on_the_firewall_tab_and_hides_the_other_two(firewall_id, monkeypatch):
+    """0.6.0's binary said "no ARM access" for a TLS verification failure and
+    left three empty tabs. The Firewall tab now carries the exact error, the
+    Policy and IP Groups tabs step aside until a load succeeds."""
+    reason = ("ARM 0 Transport: Cannot connect to host management.azure.com:443 ssl:True "
+              "[SSLCertVerificationError: certificate verify failed: unable to get local issuer certificate]")
+    outcomes = [None, make_snapshot()]
+
+    async def _load(_fw, *, force=False, errors=None):
+        snap = outcomes.pop(0)
+        if snap is None and errors is not None:
+            errors.append(reason)
+        return snap
+
+    monkeypatch.setattr(app_module, "load_management_data", _load)
+    app = FirewallLogApp()
+    async with app.run_test(size=(160, 45)) as pilot:
+        await pilot.pause()
+        status = app.query_one("#status", StatusBar)
+        tabs = app.query_one("#main-tabs", TabbedContent)
+        app.request_mgmt_load(firewall_id)
+        await wait_until(pilot, lambda: status.ctx_state == "unavailable")
+        await pilot.pause()
+        # the test app has no Event Hub credentials, so the tooltip carries both errors, labelled
+        assert status.ctx_error == reason and f"Context: {reason}" in (status.tooltip or "")
+        view = app.query_one("#firewall-view", FirewallView)
+        text = _text(view)
+        assert "Policy context could not be loaded" in text and "certificate verify failed" in text
+        assert "Reader" in text and "Ctrl+R" in text
+        assert not view.query_one("#fw-grid").display and view.query_one("#fw-error").display
+        assert tabs.get_tab("tab-policy").display is False and tabs.get_tab("tab-ipgroups").display is False
+        assert tabs.get_tab("tab-firewall").display is True
+
+        app.action_refresh_context()                       # Ctrl+R: the second load succeeds
+        await wait_until(pilot, lambda: status.ctx_state == "loaded")
+        await pilot.pause()
+        assert status.ctx_error == "" and reason not in (status.tooltip or "")
+        assert tabs.get_tab("tab-policy").display is True and tabs.get_tab("tab-ipgroups").display is True
+        assert not view.query_one("#fw-error").display and view.query_one("#fw-grid").display
+        assert "fw-hub-gwc" in _text(view)
 
 
 async def test_failed_refresh_keeps_previous_metadata(structured_record, mgmt, firewall_id):

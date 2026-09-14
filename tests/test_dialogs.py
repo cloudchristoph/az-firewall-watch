@@ -305,6 +305,9 @@ def test_status_bar_event_hub_segment_variants():
     bar.eh_state, bar.eh_detail = "unconfigured", "no credentials in .env"
     assert "✖ EH not configured · no credentials in .env" in str(bar.render())
     bar.eh_error = "boom"
+    bar.ctx_error = "ARM 0 Transport: certificate verify failed"
+    assert bar.tooltip == "Event Hub: boom\nContext: ARM 0 Transport: certificate verify failed"
+    bar.ctx_error = ""
     assert bar.tooltip == "boom"
     bar.eh_error = ""
     assert bar.tooltip is None

@@ -141,10 +141,16 @@ FW = FirewallInfo(id=FW_ID, name="fw", subscription_id="s", resource_group="rg",
 
 
 class FakeSession:
+    def __init__(self, **kw) -> None:
+        self.kw = kw   # the real session gets a connector with certifi's TLS context
+
     async def __aenter__(self):
         return self
 
     async def __aexit__(self, *_exc):
+        connector = self.kw.get("connector")
+        if connector is not None:
+            await connector.close()
         return False
 
 

@@ -104,7 +104,7 @@ def test_set_env_value_creates_missing_file(tmp_path: Path):
 def arm_calls(monkeypatch):
     calls: list[str] = []
 
-    async def _load(firewall_id, *, force=False):
+    async def _load(firewall_id, *, force=False, errors=None):
         calls.append(firewall_id)
         return None
 

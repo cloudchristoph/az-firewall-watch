@@ -19,6 +19,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Structured `AZFWNetworkRule` rows with IPv6 addresses were unusable.** A dual-stack firewall writes `SourceIp` and `DestinationIp` there as `[fd10:0003:0005:0001:0000:0000:0000:0004]`, bracketed and fully expanded, while `AZFWDnsQuery` writes the same address as `fd10:3:5:1::4`. The parser passed the brackets through, so the destination failed the address check and the trace evaluated the row's `targetFqdns` instead of its address ranges (a confident wrong verdict), a CIDR filter never matched, the `AzFw.<n>` label never appeared, and the table showed a 41-character string. Every address the parser emits is now normalised to one spelling: brackets off, IPv6 compressed, IPv4 and FQDNs untouched. Legacy messages get the same treatment, and a legacy network-rule deny without any rule now says *Default Action* like its structured twin, so both Event Hubs describe one flow with one string; the fixture test compares the two captures record for record. Found with real records; the legacy spelling question is settled at the same time: Azure always brackets IPv6 in `properties.msg`.
 - **Legacy network-rule messages from dual-stack firewalls carry a `Policy:` sentence** that the parser ignored, so the rule path lacked the policy name that the structured format has. It is read now, and the rule info of both formats is identical.
 
+## [0.6.1] - 2026-09-14
+
+### Fixed
+
+- **The release binary could not reach Azure Resource Manager.** The 0.6.0 binary connected to the Event Hub and then reported *Context unavailable · no ARM access* on the very account that works from source. A frozen binary ships its own OpenSSL, whose default certificate paths point at the build machine, so its system CA store is empty; the Event Hub client and azure-identity bring certifi's bundle themselves, the ARM calls went through aiohttp with the system context and failed every certificate check. ARM calls and the release check now use a TLS context built on certifi. Found by Christoph on the first run of the binary, reproduced from source with an empty CA store.
+- **The reason for an unavailable context is shown, not swallowed.** *no ARM access* covered a TLS failure, a missing Reader role and an unreachable host alike. The Firewall tab now shows the exact error in place of its blocks, with what to check and that `Ctrl` + `R` retries; the status bar says *see Firewall tab* and carries the error as its tooltip.
+
+### Changed
+
+- **The cache moved to the operating system's per-user cache directory.** `~/Library/Caches/az-firewall-watch/` on macOS, `~/.cache/az-firewall-watch/` on Linux, `%LOCALAPPDATA%\az-firewall-watch\Cache\` on Windows (via `platformdirs`), same file name and modes as before. That is the directory the platform reserves for exactly this: private to the user, left alone by iCloud and OneDrive, recognised as a cache by the tools that clean one. Next to the binary was never an option (Downloads and Program Files are shared and often read-only, and the file can carry inserted header values), a temp directory is cleaned at the system's whim. `~/.az-firewall-watch/` from earlier releases is no longer read and can be deleted.
+- **Policy and IP Groups tabs hide while the context is unavailable.** They only ever showed placeholders in that state. They come back the moment a load succeeds.
+
 ## [0.6.0] - 2026-09-13
 
 0.5.1 took back the verdicts the trace had no grounds for. This release goes after the next category: places where the viewer knew something and said nothing. Almost every item below is one more field from an ARM call the viewer already makes, read into the Firewall and Policy tabs, and every one of them replaces an answer that looked complete and was not. Nothing here writes to Azure, and nothing needs more than Reader; where Azure only offers a POST action for a piece of information, the tab says the information is not readable from here rather than fetching it.
@@ -259,7 +271,8 @@ This release adds passwordless Entra ID authentication, better Azure Firewall lo
 
 [Full diff](https://github.com/cloudchristoph/az-firewall-watch/commits/v0.1.0)
 
-[Unreleased]: https://github.com/cloudchristoph/az-firewall-watch/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/cloudchristoph/az-firewall-watch/compare/v0.6.1...HEAD
+[0.6.1]: https://github.com/cloudchristoph/az-firewall-watch/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/cloudchristoph/az-firewall-watch/compare/v0.5.1...v0.6.0
 [0.5.1]: https://github.com/cloudchristoph/az-firewall-watch/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/cloudchristoph/az-firewall-watch/compare/v0.4.1...v0.5.0

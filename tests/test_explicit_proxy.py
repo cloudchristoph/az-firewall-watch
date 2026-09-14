@@ -7,6 +7,7 @@ from __future__ import annotations
 import pytest
 
 from fw_parser import parse_record
+from tests.test_views import wait_until
 from viewer.arm import ArmError
 from viewer.azure_resources import FirewallInfo, FirewallPolicyInfo, fetch_policy
 from viewer.trace import MATCH, MISS, NA, UNKNOWN, Flow, evaluate_rule
@@ -419,10 +420,7 @@ async def test_detail_dialog_shows_explicit_proxy_fields(structured_record, fire
         await pilot.pause()
         await pilot.press("enter")
 
-        for _ in range(20):
-            if isinstance(app.screen, DetailDialog):
-                break
-            await pilot.pause(0.05)
+        await wait_until(pilot, lambda: isinstance(app.screen, DetailDialog))
         assert isinstance(app.screen, DetailDialog)
         text = _text(app.screen)
         assert "Expl. proxy" in text and "yes" in text

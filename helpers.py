@@ -3,6 +3,7 @@ from __future__ import annotations
 import ipaddress
 import re
 from datetime import datetime, timezone
+from functools import lru_cache
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -149,6 +150,89 @@ def format_endpoint(address: str, port: str) -> str:
     if not port or port == "-":
         return address
     return f"[{address}]:{port}" if _is_ipv6(address) else f"{address}:{port}"
+
+
+@lru_cache(maxsize=4096)
+def parse_address(value: str) -> ipaddress.IPv4Address | ipaddress.IPv6Address | None:
+    """``ipaddress.ip_address`` that answers ``None`` instead of raising.
+
+    Cached: the filters call this once per retained row on every keystroke and
+    the parser once per address field, and a busy firewall repeats the same few
+    hundred addresses all day. Address objects are immutable, so sharing is safe.
+    """
+    if not value or value == "-":
+        return None
+    try:
+        return ipaddress.ip_address(value.strip())
+    except ValueError:
+        return None
+
+
+@lru_cache(maxsize=256)
+def parse_network(value: str) -> ipaddress.IPv4Network | ipaddress.IPv6Network | None:
+    """``ipaddress.ip_network(strict=False)`` that answers ``None`` instead of raising.
+
+    Host bits are tolerated (``10.0.0.7/8`` is ``10.0.0.0/8``) because that is
+    what people type into a filter box. Cached so a CIDR filter is parsed once
+    per keystroke, not once per row.
+    """
+    if not value:
+        return None
+    try:
+        return ipaddress.ip_network(value.strip(), strict=False)
+    except ValueError:
+        return None
+
+
+def normalise_address(value: str) -> str:
+    """One spelling per address: brackets off, IPv6 compressed, everything else untouched.
+
+    A dual-stack firewall writes the same address three ways: structured
+    ``AZFWNetworkRule`` rows carry ``[fd10:0003:0005:0001:0000:0000:0000:0004]``
+    (bracketed and expanded), legacy network-rule messages the same without
+    brackets once ``split_endpoint`` is through, and ``AZFWDnsQuery`` rows the
+    compressed ``fd10:3:5:1::4``. Parsing all of them to ``fd10:3:5:1::4`` keeps
+    the table, the filters, the ``AzFw.<n>`` labels and the trace on one form.
+    FQDNs, ``-`` and anything that is not an address come back unchanged.
+    """
+    text = (value or "").strip()
+    if text.startswith("[") and text.endswith("]"):
+        text = text[1:-1]
+    addr = parse_address(text)
+    return addr.compressed if addr is not None else value
+
+
+def address_matches(needle: str, value: str) -> bool:
+    """Filter semantics for the Source and Dest / FQDN inputs.
+
+    ``needle`` is what the user typed, already lower-cased by the caller:
+
+    * a CIDR (``10.3.0.0/16``, ``fd10:2::/32``) matches every address inside it
+      and nothing else — never an FQDN, never the other address family;
+    * a full address matches the same address in any spelling
+      (``fd10::10`` finds ``fd10:0:0:0:0:0:0:10``);
+    * anything else is a substring match against the value as logged and,
+      for IPv6, against its compressed form (``::10`` finds
+      ``fd10:0:0:2:0:0:0:10``).
+
+    Substring matching stays, so ``10.0.1.4`` still finds ``10.0.1.44`` as it
+    always did; a CIDR is the precise tool.
+    """
+    if not needle:
+        return True
+    haystack = (value or "").lower()
+    if "/" in needle:
+        net = parse_network(needle)
+        if net is None:
+            return needle in haystack   # not a CIDR after all: plain text
+        addr = parse_address(haystack)
+        return addr is not None and addr.version == net.version and addr in net
+    if needle in haystack:
+        return True
+    addr = parse_address(haystack)
+    if addr is None:
+        return False
+    return parse_address(needle) == addr or needle in addr.compressed
 
 
 def _parse_eventhub_endpoint(conn_str: str) -> tuple[str, str]:

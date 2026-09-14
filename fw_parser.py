@@ -13,7 +13,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
-from helpers import split_endpoint
+from helpers import normalise_address, split_endpoint
 
 _counter = 0
 
@@ -147,6 +147,19 @@ def _port(props: dict, key: str) -> str:
     return _s(props, key) or "-"
 
 
+def _ip(props: dict, key: str) -> str:
+    """Address fields: a dual-stack firewall logs IPv6 as ``[fd10:0003:…:0004]`` in
+    ``AZFWNetworkRule`` and as ``fd10:3:5:1::4`` in ``AZFWDnsQuery``; both become the
+    compressed form, IPv4 and empty values pass through."""
+    return normalise_address(_s(props, key))
+
+
+def _endpoint(token: str) -> tuple[str, str]:
+    """``split_endpoint`` plus address normalisation, for legacy ``host:port`` tokens."""
+    host, port = split_endpoint(token)
+    return normalise_address(host), port
+
+
 def _flag(props: dict, key: str) -> str:
     """A tri-state boolean column: 'yes' / 'no' / '' when absent or unreadable.
 
@@ -175,7 +188,7 @@ def _parse_structured(record: dict, category: str, time: str, resource_id: str =
             time=time,
             category="DnsQuery",
             protocol=_s(props, "QueryType"),        # A/AAAA/MX/… → Proto column
-            sourceip=_s(props, "SourceIp"),
+            sourceip=_ip(props, "SourceIp"),
             srcport=_port(props, "SourcePort"),
             targetip=_s(props, "QueryName").rstrip("."),  # hostname without trailing dot, like legacy
             targetport="53",                        # DNS is always port 53
@@ -202,7 +215,7 @@ def _parse_structured(record: dict, category: str, time: str, resource_id: str =
             time=time,
             category="AppRule",
             protocol=_s(props, "Protocol"),
-            sourceip=_s(props, "SourceIp"),
+            sourceip=_ip(props, "SourceIp"),
             srcport=_port(props, "SourcePort"),
             targetip=_s(props, "Fqdn"),
             targetport=_port(props, "DestinationPort"),
@@ -232,9 +245,9 @@ def _parse_structured(record: dict, category: str, time: str, resource_id: str =
             time=time,
             category="NetworkRule",
             protocol=_s(props, "Protocol"),
-            sourceip=_s(props, "SourceIp"),
+            sourceip=_ip(props, "SourceIp"),
             srcport=_port(props, "SourcePort"),
-            targetip=_s(props, "DestinationIp"),
+            targetip=_ip(props, "DestinationIp"),
             targetport=_port(props, "DestinationPort"),
             action=_s(props, "Action"),
             policy=full_policy,
@@ -259,9 +272,9 @@ def _parse_structured(record: dict, category: str, time: str, resource_id: str =
             time=time,
             category="NATRule",
             protocol=_s(props, "Protocol"),
-            sourceip=_s(props, "SourceIp"),
+            sourceip=_ip(props, "SourceIp"),
             srcport=_port(props, "SourcePort"),
-            targetip=_s(props, "TranslatedIp"),
+            targetip=_ip(props, "TranslatedIp"),
             targetport=_port(props, "TranslatedPort"),
             action="DNAT",
             policy=full_policy,
@@ -270,7 +283,7 @@ def _parse_structured(record: dict, category: str, time: str, resource_id: str =
             rule_collection_group=rcg,
             rule_collection=rc,
             rule_name=rule,
-            nat_dst_ip=_s(props, "DestinationIp"),
+            nat_dst_ip=_ip(props, "DestinationIp"),
             nat_dst_port=_port(props, "DestinationPort"),
         )
 
@@ -280,9 +293,9 @@ def _parse_structured(record: dict, category: str, time: str, resource_id: str =
             time=time,
             category="IDPS",
             protocol=_s(props, "Protocol"),
-            sourceip=_s(props, "SourceIp"),
+            sourceip=_ip(props, "SourceIp"),
             srcport=_port(props, "SourcePort"),
-            targetip=_s(props, "DestinationIp"),
+            targetip=_ip(props, "DestinationIp"),
             targetport=_port(props, "DestinationPort"),
             action=_capitalise(_s(props, "Action")),  # the firewall sends "alert" / "deny"
             # " · " separated so the detail dialog can split it back into fields
@@ -303,9 +316,9 @@ def _parse_structured(record: dict, category: str, time: str, resource_id: str =
             time=time,
             category="ThreatIntel",
             protocol=_s(props, "Protocol"),
-            sourceip=_s(props, "SourceIp"),
+            sourceip=_ip(props, "SourceIp"),
             srcport=_port(props, "SourcePort"),
-            targetip=_s(props, "Fqdn") or _s(props, "DestinationIp"),
+            targetip=_s(props, "Fqdn") or _ip(props, "DestinationIp"),
             targetport=_port(props, "DestinationPort"),
             action=_capitalise(_s(props, "Action")),
             moreinfo=_s(props, "ThreatDescription"),
@@ -356,9 +369,9 @@ def _parse_structured(record: dict, category: str, time: str, resource_id: str =
             time=time,
             category="FlowTrace",
             protocol=_s(props, "Protocol"),
-            sourceip=_s(props, "SourceIp"),
+            sourceip=_ip(props, "SourceIp"),
             srcport=sport,
-            targetip=_s(props, "DestinationIp"),
+            targetip=_ip(props, "DestinationIp"),
             targetport=dport,
             action=flag,
             moreinfo=info,
@@ -377,9 +390,9 @@ def _parse_structured(record: dict, category: str, time: str, resource_id: str =
             time=time,
             category="FatFlow",
             protocol=_s(props, "Protocol"),
-            sourceip=_s(props, "SourceIp"),
+            sourceip=_ip(props, "SourceIp"),
             srcport=sport,
-            targetip=_s(props, "DestinationIp"),
+            targetip=_ip(props, "DestinationIp"),
             targetport=dport,
             action=rate_txt,
             moreinfo=tcp_direction("", sport, dport),  # like FlowTrace: which way this flow's packets go
@@ -399,10 +412,10 @@ def _parse_legacy(record: dict, op_name: str, time: str) -> FirewallDataRow:
             proto, rest = msg.split(" request from ", 1)
             first_sentence = rest.split(". ")[0]  # "src to dst:port"
             src_str, dst_str = first_sentence.split(" to ", 1)
-            src_ip, src_port = split_endpoint(src_str)
-            dst_ip, dst_port = split_endpoint(dst_str)
+            src_ip, src_port = _endpoint(src_str)
+            dst_ip, dst_port = _endpoint(dst_str)
 
-            action = rcg = rc = rule_name = ""
+            action = policy_name = rcg = rc = rule_name = ""
             for sentence in msg.split(". "):
                 kv = sentence.split(": ", 1)
                 if len(kv) < 2:
@@ -410,6 +423,8 @@ def _parse_legacy(record: dict, op_name: str, time: str) -> FirewallDataRow:
                 key, val = kv[0].strip(), kv[1].rstrip(".")
                 if key == "Action":
                     action = val
+                elif key == "Policy":          # written by dual-stack firewalls, absent on older ones
+                    policy_name = val
                 elif key == "Rule Collection Group":
                     rcg = val
                 elif key == "Rule Collection":
@@ -417,7 +432,13 @@ def _parse_legacy(record: dict, op_name: str, time: str) -> FirewallDataRow:
                 elif key == "Rule":
                     rule_name = val
 
-            policy = "»".join(filter(None, [rcg, rc, rule_name]))
+            policy = "»".join(filter(None, [policy_name, rcg, rc, rule_name]))
+            if not policy and action == "Deny":
+                # A deny with no rule named is the firewall's default action. The
+                # structured format says so in ActionReason ("Default Action"); the
+                # legacy message just stops after "Action: Deny.." — same row, same label.
+                # Any other rule-less row is left unexplained rather than guessed at.
+                policy = "Default Action"
             return FirewallDataRow(
                 rowid=_next_id(),
                 time=time,
@@ -431,6 +452,7 @@ def _parse_legacy(record: dict, op_name: str, time: str) -> FirewallDataRow:
                 targetport=dst_port.rstrip("."),
                 action=action or "-",
                 policy=policy,
+                fw_policy=policy_name,
                 rule_collection_group=rcg,
                 rule_collection=rc,
                 rule_name=rule_name,
@@ -440,8 +462,8 @@ def _parse_legacy(record: dict, op_name: str, time: str) -> FirewallDataRow:
             # "TCP request from 1.2.3.4:1234 to 5.6.7.8:3389 was DNAT'ed to 10.1.1.1:3389"
             # [0]=TCP [1]=request [2]=from [3]=src:port [4]=to [5]=fw:port [6]=was [7]=DNAT'ed [8]=to [9]=translated:port
             words = msg.split(" ")
-            src_ip, src_port = split_endpoint(words[3])
-            dst_ip, dst_port = split_endpoint(words[9])
+            src_ip, src_port = _endpoint(words[3])
+            dst_ip, dst_port = _endpoint(words[9])
             return FirewallDataRow(
                 rowid=_next_id(),
                 time=time,
@@ -460,7 +482,7 @@ def _parse_legacy(record: dict, op_name: str, time: str) -> FirewallDataRow:
             _, rest = msg.split(" request from ", 1)
             first_sentence = rest.split(". ")[0]  # "src to fqdn:port"
             src_str, dst_str = first_sentence.split(" to ", 1)
-            src_ip, src_port = split_endpoint(src_str)
+            src_ip, src_port = _endpoint(src_str)
             dst = dst_str.rsplit(":", 1)  # rsplit so FQDNs with dots are preserved
 
             action = policy_name = rcg = rc = rule_name = moreinfo = ""
@@ -534,7 +556,7 @@ def _parse_legacy(record: dict, op_name: str, time: str) -> FirewallDataRow:
             # pos: 0    1        2              3 4     5 6  7            8   9  10    11   12      13            14 15
             # words[12] is always the RCODE (NOERROR / NXDOMAIN / …)
             words = msg.split(" ")
-            src_ip, src_port = split_endpoint(words[2]) if len(words) > 2 else ("-", "-")
+            src_ip, src_port = _endpoint(words[2]) if len(words) > 2 else ("-", "-")
             return FirewallDataRow(
                 rowid=_next_id(),
                 time=time,

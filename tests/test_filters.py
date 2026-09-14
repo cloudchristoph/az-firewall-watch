@@ -173,3 +173,34 @@ def test_info_text_truncates_long_segments():
 
 def test_info_text_empty():
     assert FirewallLogApp._info_text("").plain == ""
+
+
+# ── IPv6 and CIDR in the address filters ─────────────────────────────────────
+
+V6 = "fd10:2:0:2::10"
+V6_EXPANDED = "fd10:2:0:2:0:0:0:10"
+
+
+@pytest.mark.parametrize("key, row_field, value, needle, expected", [
+    ("src", "sourceip", V6, "fd10:2:0:2", True),               # fragment
+    ("src", "sourceip", V6_EXPANDED, V6, True),                # the same address in the other spelling
+    ("src", "sourceip", V6, V6_EXPANDED, True),
+    ("src", "sourceip", V6, "fd10:2::/32", True),              # IPv6 CIDR
+    ("src", "sourceip", V6, "fd10:3::/32", False),
+    ("src", "sourceip", "10.3.5.4", "10.3.0.0/16", True),      # IPv4 CIDR, new for v4 too
+    ("src", "sourceip", "10.3.5.4", "10.4.0.0/16", False),
+    ("src", "sourceip", "10.3.5.4", "fd10::/16", False),       # other family: a plain miss
+    ("dst", "targetip", V6, "fd10::/16", True),
+    ("dst", "targetip", "www.example.com", "10.0.0.0/8", False),  # a CIDR never matches an FQDN
+    ("dst", "targetip", "www.example.com", "example", True),
+    ("dst", "targetip", "", "fd10::/16", False),
+])
+def test_address_filters_accept_cidr_and_any_ipv6_spelling(key, row_field, value, needle, expected):
+    row = make_row(**{row_field: value})
+    assert matches(row, make_filters(**{key: needle})) is expected
+
+
+def test_cidr_filter_combines_with_the_other_filters():
+    row = make_row(sourceip=V6, action="Deny", targetport="22")
+    assert matches(row, make_filters(src="fd10:2::/32", action="deny", port="22"))
+    assert not matches(row, make_filters(src="fd10:2::/32", action="allow"))

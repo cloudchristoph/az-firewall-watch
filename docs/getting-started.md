@@ -70,7 +70,10 @@ Double-click `az-firewall-watch.exe` or run it from PowerShell:
 
 > [!NOTE]
 > **Windows SmartScreen** may warn on first launch. Click **More info → Run anyway**.
-> This is expected for unsigned binaries.
+> The binary is not code-signed yet (see the [code signing policy](code-signing.md)), and
+> SmartScreen builds trust over time, so new releases can show the warning for a while. If a
+> security policy blocks the file, see
+> [Blocked by your organisation's security policy?](#blocked-by-your-organisations-security-policy)
 
 ### macOS
 

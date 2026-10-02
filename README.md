@@ -112,7 +112,8 @@ cd az-firewall-watch
 ```
 
 Platform notes (Gatekeeper, SmartScreen) and the full wizard walkthrough are in
-[Getting started](docs/getting-started.md).
+[Getting started](docs/getting-started.md). The Windows binary's
+[code signing policy](docs/code-signing.md) names who signs it and what it sends.
 
 ## 📚 Documentation
 

@@ -67,7 +67,9 @@ jobs:
       - name: Build binary (Windows)
         if: runner.os == 'Windows'
         run: |
+          python scripts/version_info.py version_info.txt
           pyinstaller `
+            --version-file version_info.txt `
             --onefile `
             --name az-firewall-watch `
             --collect-all textual `
@@ -77,6 +79,40 @@ jobs:
             "--add-data" "fw_parser.py;." `
             "--add-data" "version.txt;." `
             main.py
+
+      # Authenticode signing through the SignPath Foundation (free for open source).
+      # Off until the project is approved: set the repository variable
+      # SIGNPATH_ENABLED=true and the secret SIGNPATH_API_TOKEN, then fill in the
+      # organization id below. Every signing request needs a manual approval in SignPath.
+      - name: Upload unsigned Windows binary
+        id: upload-unsigned
+        if: runner.os == 'Windows' && vars.SIGNPATH_ENABLED == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: az-firewall-watch-unsigned
+          path: dist/az-firewall-watch.exe
+          if-no-files-found: error
+
+      - name: Sign Windows binary (SignPath)
+        if: runner.os == 'Windows' && vars.SIGNPATH_ENABLED == 'true'
+        uses: signpath/github-action-submit-signing-request@v3
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: az-firewall-watch
+          signing-policy-slug: release-signing
+          github-artifact-id: ${{ steps.upload-unsigned.outputs.artifact-id }}
+          wait-for-completion: true
+          output-artifact-directory: signed
+
+      - name: Replace binary with the signed one
+        if: runner.os == 'Windows' && vars.SIGNPATH_ENABLED == 'true'
+        shell: pwsh
+        run: |
+          Copy-Item signed/az-firewall-watch.exe dist/az-firewall-watch.exe -Force
+          $sig = Get-AuthenticodeSignature dist/az-firewall-watch.exe
+          if ($sig.Status -ne 'Valid') { throw "Signature check failed: $($sig.Status)" }
+          $sig.SignerCertificate.Subject
 
       - name: Package artifact
         shell: bash

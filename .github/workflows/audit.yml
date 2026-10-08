@@ -2,7 +2,7 @@ name: Dependency audit
 
 on:
   schedule:
-    - cron: "17 5 * * 1" # Mondays, catches advisories published since the last release
+    - cron: "0 6 * * 1" # Mondays 07:00 CET (08:00 CEST in summer), catches advisories published since the last release
   pull_request:
     paths:
       - "requirements*.txt"

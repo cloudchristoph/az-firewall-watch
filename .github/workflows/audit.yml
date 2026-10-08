@@ -20,8 +20,9 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
-      # Audit what a fresh install resolves to, including transitive packages (urllib3, pyjwt, ...)
-      - name: Install dependencies
-        run: pip install -r requirements.txt -r requirements-build.txt pip-audit
+      - name: Install pip-audit
+        run: pip install pip-audit
+      # -r resolves the declared files (transitive packages included) in an isolated env,
+      # so pip-audit and bootstrap packages of this runner are not part of the audit
       - name: pip-audit
-        run: pip-audit
+        run: pip-audit -r requirements.txt -r requirements-build.txt

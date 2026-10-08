@@ -1,0 +1,27 @@
+name: Dependency audit
+
+on:
+  schedule:
+    - cron: "17 5 * * 1" # Mondays, catches advisories published since the last release
+  pull_request:
+    paths:
+      - "requirements*.txt"
+      - ".github/workflows/audit.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  pip-audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      # Audit what a fresh install resolves to, including transitive packages (urllib3, pyjwt, ...)
+      - name: Install dependencies
+        run: pip install -r requirements.txt -r requirements-build.txt pip-audit
+      - name: pip-audit
+        run: pip-audit

@@ -2,8 +2,7 @@ name: Tests
 
 on:
   push:
-    branches: ["**"]
-    tags-ignore: ["v*"]
+    branches: [main] # feature branches are covered by their pull request
   pull_request:
 
 permissions:

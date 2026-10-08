@@ -1,0 +1,28 @@
+name: Dependency audit
+
+on:
+  schedule:
+    - cron: "0 6 * * 1" # Mondays 07:00 CET (08:00 CEST in summer), catches advisories published since the last release
+  pull_request:
+    paths:
+      - "requirements*.txt"
+      - ".github/workflows/audit.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  pip-audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Install pip-audit
+        run: pip install pip-audit
+      # -r resolves the declared files (transitive packages included) in an isolated env,
+      # so pip-audit and bootstrap packages of this runner are not part of the audit
+      - name: pip-audit
+        run: pip-audit -r requirements.txt -r requirements-build.txt

@@ -76,6 +76,28 @@ As soon as either `EVENT_HUB_CONNECTION_STRING` or
 > When both `EVENT_HUB_NAMESPACE`/`EVENT_HUB_NAME` and
 > `EVENT_HUB_CONNECTION_STRING` are set, Entra ID is preferred.
 
+## MCP server
+
+The [MCP server](mcp-server.md) reads the same `.env` as the viewer, so the
+variables above apply to it too. The variables below are its own. Each one can
+also be given on the command line, and the command line wins (see
+[the MCP server's options](mcp-server.md#command-line-options)).
+
+<!-- markdownlint-disable MD060 -->
+| Variable               | Description                                                                                                  | Default     |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------ | ----------- |
+| `AZFW_FIREWALL_ID`     | Azure Firewall resource id (`/subscriptions/<sub>/resourceGroups/<rg>/providers/Microsoft.Network/azureFirewalls/<name>`). Loads the policy context at start instead of waiting for the first log record | n/a         |
+| `AZFW_MCP_BUFFER_SIZE` | Log rows kept in memory, between 100 and 1000000                                                              | `20000`     |
+| `AZFW_MCP_TRANSPORT`   | `stdio` (the client starts the server and talks to it over standard input and output) or `http` (streamable HTTP on `AZFW_MCP_HOST` and `AZFW_MCP_PORT`, path `/mcp`, no authentication) | `stdio`     |
+| `AZFW_MCP_HOST`        | Address the HTTP transport listens on                                                                         | `127.0.0.1` |
+| `AZFW_MCP_PORT`        | Port the HTTP transport listens on, 1 to 65535                                                                | `8765`      |
+| `AZFW_MCP_LOG_LEVEL`   | Log level on standard error: `DEBUG`, `INFO`, `WARNING`, `ERROR` or `CRITICAL`                                | `INFO`      |
+<!-- markdownlint-enable MD060 -->
+
+The server and the viewer can run side by side only with separate consumer
+groups. Give the server its own `EVENT_HUB_CONSUMER_GROUP`, as described in
+[Use your own consumer group](mcp-server.md#use-your-own-consumer-group).
+
 ## Command-line options
 
 | Option                | Effect                                                                        |
@@ -83,6 +105,7 @@ As soon as either `EVENT_HUB_CONNECTION_STRING` or
 | `--reconfigure`       | Re-run the setup wizard even though `.env` is already configured               |
 | `--policy-context`    | Force policy context **on** for this run, ignoring `POLICY_CONTEXT` in `.env`  |
 | `--no-policy-context` | Force it **off** for this run: no ARM requests, no cache, Logs tab only       |
+| `--mcp`               | Start the [MCP server](mcp-server.md) instead of the viewer. Every other option is passed to the server |
 
 Command-line flags win over `.env` and are never written back, so they affect a
 single run. Either policy-context flag also counts as an explicit answer, so the

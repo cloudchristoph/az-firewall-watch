@@ -18,3 +18,5 @@ dist/
 
 # Local tests
 debug/
+# Project map (local)
+.project-map/

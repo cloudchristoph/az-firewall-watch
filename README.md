@@ -26,6 +26,9 @@ Built by [CloudChristoph](https://github.com/cloudchristoph).
   Resource Manager, with log rows enriched by what the policy says.
 - **Evaluation trace**: press `Enter` on a row to see the path that flow took
   through the policy, collection by collection, up to the rule that matched.
+- **MCP server** for AI agents: the same log stream, policy context and
+  evaluation trace as typed, read-only tools for Claude Desktop, Claude Code or any
+  other MCP client, started with `--mcp`.
 - **Setup wizard** that finds or deploys the Event Hub, wires up Diagnostic
   Settings and writes your `.env`.
 - **Single binary** for Windows, macOS and Linux, with no Python install required.
@@ -98,6 +101,23 @@ cd az-firewall-watch
 Platform notes (Gatekeeper, SmartScreen) and the full wizard walkthrough are in
 [Getting started](docs/getting-started.md).
 
+## 🤖 MCP server
+
+The same binary can run headless as an [MCP](https://modelcontextprotocol.io) server,
+so an AI agent can query the live logs, the policy and the evaluation trace. It
+reads your existing `.env`, only ever reads from Azure, and talks over stdio.
+Point your client at it (Claude Desktop shown, put the binary and its `.env` in
+the same folder):
+
+```json
+{ "mcpServers": { "az-firewall-watch": {
+    "command": "/path/to/az-firewall-watch", "args": ["--mcp"] } } }
+```
+
+For Claude Code: `claude mcp add az-firewall-watch -- /path/to/az-firewall-watch --mcp`.
+Tools, resources, prompts and the consumer-group advice for running it next to the
+viewer are in [MCP server](docs/mcp-server.md).
+
 ## 📚 Documentation
 
 | Page | What's in it |
@@ -106,6 +126,7 @@ Platform notes (Gatekeeper, SmartScreen) and the full wizard walkthrough are in
 | [Using the viewer](docs/using-the-viewer.md) | Log table, filters and presets, row details, key bindings, status bar |
 | [Policy context](docs/policy-context.md) | Firewall / Policy / IP Groups tabs, evaluation trace, permissions, cache, on-off switch |
 | [Configuration](docs/configuration.md) | `.env` without the wizard, environment variables, command-line options, required Azure roles |
+| [MCP server](docs/mcp-server.md) | Run it for AI agents: client configuration, tools, resources and prompts, security notes |
 | [Log categories](docs/log-categories.md) | Which Azure categories are parsed, and how to enable flow trace and fat flow |
 | [Event Hub](docs/event-hub.md) | How logs get to the hub, diagnostic settings, retention and cost |
 | [Development](docs/development.md) | Building the binary, running the test suite, project layout |

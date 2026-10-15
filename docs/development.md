@@ -15,7 +15,7 @@ launch `main.py`. Python 3.10 or newer is required.
 
 | Path                | What lives there                                                                  |
 | ------------------- | --------------------------------------------------------------------------------- |
-| `main.py`           | Entry point: loads `.env`, runs the wizard when needed, starts the app             |
+| `main.py`           | Entry point: loads `.env`, runs the wizard when needed, starts the app; with `--mcp` it starts the MCP server instead |
 | `fw_parser.py`      | Log parsing for the structured and legacy formats                                  |
 | `dialogs.py`        | Shared modal dialogs (connecting, error, update, policy-context notice) and the status bar |
 | `viewer/`           | The TUI: `app.py`, `streaming.py` (Event Hub worker), `config.py`, `updates.py`    |
@@ -26,7 +26,9 @@ launch `main.py`. Python 3.10 or newer is required.
 | `viewer/enrichment.py` | Ties log rows to the metadata: IP-group membership, the logged rule's definition, `AzFw.<octet>` rendering |
 | `viewer/trace.py`   | Policy evaluation trace, the logic behind the detail dialog's tree              |
 | `viewer/cache.py`   | On-disk metadata cache                                                             |
+| `viewer/eventhub.py` | Event Hub settings and connection rules without any UI, shared with the MCP server (`streaming.py` keeps its own copies for now) |
 | `setup/`            | The setup wizard: `screens.py`, `operations.py` (Azure CLI), `services.py`         |
+| `mcp_server/`       | The [MCP server](mcp-server.md): headless stream and buffer, filters, policy context, tools, resources and prompts. Nothing in it imports Textual |
 | `tests/`            | pytest suite; `tests/live/` holds the optional live integration tests              |
 
 ## Building the binary
@@ -77,8 +79,9 @@ pytest
 The suite covers the log parser (structured and legacy formats), the filter logic,
 rendering helpers, the Event Hub streaming worker (against a fake client), the
 GitHub update check, the ARM client and policy context (against canned ARM
-payloads), and headless runs of both the viewer and the whole setup wizard via
-Textual's test pilot with the Azure CLI mocked out.
+payloads), the MCP server (`tests/test_mcp_*.py` and `tests/test_main_mcp.py`),
+and headless runs of both the viewer and the whole setup wizard via Textual's
+test pilot with the Azure CLI mocked out.
 
 **No Azure connection is required.** The same suite runs in CI on every push and
 pull request: Linux on Python 3.10, 3.12 and 3.13, plus Windows and macOS on 3.12.
@@ -91,6 +94,15 @@ While working on one area, run just that part:
 pytest tests/test_trace.py        # one file
 pytest -k "trace and not live"    # by name
 pytest tests/test_views.py -x     # stop at the first failure
+```
+
+The MCP server has one test file per area, `tests/test_mcp_<area>.py`, plus
+`tests/test_main_mcp.py` for the `--mcp` switch of `main.py`. They drive the
+server through the SDK's in-memory client, so they need no Azure access:
+
+```bash
+pytest tests/test_mcp_tools_logs.py   # the log tools
+pytest tests/test_mcp_*.py tests/test_main_mcp.py
 ```
 
 ### Live integration tests
@@ -112,6 +124,17 @@ reader; without it the tests use `$Default`.
 
 Your identity needs **Reader** on the firewall, its policy and IP groups, and the
 **Azure Event Hubs Data Receiver** role on the hub.
+
+`tests/live/test_live_mcp.py` starts the [MCP server](mcp-server.md) in memory
+against the same hub and firewall and checks the whole path through the tools:
+the stream connects, rows arrive, the policy context loads and names the firewall,
+and a real deny (if the hub has one) gets an evaluation trace. It uses the same
+`AZFW_LIVE_*` variables; the two `AZFW_LIVE_EVENTHUB_*` variables are required,
+and `AZFW_LIVE_FIREWALL_ID` adds the policy checks. The server reads from the
+start of the hub's retention. Its consumer group is `$Default` unless
+`AZFW_LIVE_CONSUMER_GROUP` names another one, so close the viewer or give the
+test its own group, or the rows are split between the two readers. The command
+above runs this test too.
 
 ### Live wizard runs
 

@@ -399,7 +399,8 @@ async def run_stream(app: FirewallLogApp) -> None:
 
             delay = _BACKOFF[attempt - 1]
             status.eh_state = "retrying"
-            app.notify(f"Connection error: {exc}", title="Event Hub", severity="warning")
+            if attempt == 1:
+                app.notify(f"Connection error: {exc}", title="Event Hub", severity="warning")
             for remaining in range(delay, 0, -1):
                 status.eh_detail = f"attempt {attempt}/{_MAX_ATTEMPTS} in {remaining}s"
                 await asyncio.sleep(1)

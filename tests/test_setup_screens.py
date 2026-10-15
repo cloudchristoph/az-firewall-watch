@@ -959,3 +959,105 @@ class TestDeployNew:
             assert not app._exit
             assert not any(isinstance(c, tuple) and c[0] == "deploy" for c in fake_ops["calls"])
         assert not env_file.exists()
+
+
+async def test_welcome_tab_focuses_next_before_quit(env_file):
+    app = WizardApp(env_file)
+    async with app.run_test(size=(100, 40)) as pilot:
+        await pilot.pause()
+        app.screen.query_one("#welcome-radio").focus()
+        await pilot.press("tab")
+        assert app.focused.id == "btn-next"
+        await pilot.press("tab")
+        assert app.focused.id == "btn-quit"
+
+
+@pytest.mark.parametrize("screen_type,input_id,values", [
+    (PasteConnectionScreen, "inp-conn", {"inp-conn": CONN}),
+    (EnterExistingHubScreen, "inp-ns", {"inp-ns": "ns.servicebus.windows.net", "inp-hub": "logs"}),
+    (EnterExistingHubScreen, "inp-hub", {"inp-ns": "ns.servicebus.windows.net", "inp-hub": "logs"}),
+])
+async def test_input_enter_validates_then_continues(env_file, screen_type, input_id, values):
+    app = WizardApp(env_file)
+    async with app.run_test(size=(100, 40)) as pilot:
+        await app.push_screen(screen_type())
+        await pilot.pause()
+        app.screen.query_one(f"#{input_id}", Input).focus()
+        await pilot.press("enter")
+        assert app.screen.query_one("#lbl-error", Label).display
+        assert not env_file.exists()
+        for field, value in values.items():
+            app.screen.query_one(f"#{field}", Input).value = value
+        await pilot.press("enter")
+        await wait_until(pilot, lambda: isinstance(app.screen, PolicyContextScreen))
+        assert not env_file.exists()
+        await pilot.click("#btn-next")
+        await wait_until(pilot, lambda: app._exit)
+    assert env_file.exists()
+
+
+async def test_disabled_save_cannot_be_submitted(env_file):
+    app = WizardApp(env_file)
+    async with app.run_test(size=(100, 40)) as pilot:
+        await app.push_screen(PasteConnectionScreen())
+        await pilot.pause()
+        field = app.screen.query_one("#inp-conn", Input)
+        field.value = CONN
+        field.focus()
+        app.screen.query_one("#btn-save", Button).disabled = True
+        await pilot.press("enter")
+        await pilot.pause()
+        assert isinstance(app.screen, PasteConnectionScreen)
+        assert not env_file.exists()
+
+
+async def test_deploy_input_enter_requires_validation_and_confirmation(env_file, fake_ops):
+    app = WizardApp(env_file)
+    async with app.run_test(size=(100, 50)) as pilot:
+        await TestDeployNew()._to_naming(app, pilot)
+        screen = app.screen
+        field = screen.query_one("#inp-rg", Input)
+        field.value = ""
+        field.focus()
+        await pilot.press("enter")
+        assert "All fields are required" in _visible_error(screen, "#lbl-naming-error")
+        field.value = "rg-test"
+        screen.query_one("#btn-next-naming", Button).disabled = True
+        await pilot.press("enter")
+        assert app.screen is screen
+        screen.query_one("#btn-next-naming", Button).disabled = False
+        screen.query_one("#inp-diag-name", Input).focus()
+        await pilot.press("enter")
+        await wait_until(pilot, lambda: isinstance(app.screen, AuthMethodScreen))
+        await pilot.click("#btn-next")
+        await _pass_policy_context(app, pilot)
+        await wait_until(pilot, lambda: app.screen is screen)
+        assert screen.query_one(ContentSwitcher).current == "step-summary"
+        field.post_message(Input.Submitted(field, field.value))
+        await pilot.pause()
+        assert screen.query_one(ContentSwitcher).current == "step-summary"
+        assert not any(isinstance(call, tuple) and call[0] == "deploy" for call in fake_ops["calls"])
+        await pilot.click("#btn-deploy")
+        await wait_until(pilot, lambda: app._exit)
+    assert env_file.exists()
+
+
+@pytest.mark.parametrize("platform", ["nt", "posix"])
+async def test_policy_context_shows_literal_resolved_cache_path(env_file, monkeypatch, platform):
+    from types import SimpleNamespace
+
+    path = Path("/cache/[red]/custom-cache.json")
+    monkeypatch.setattr(screens, "cache_path", lambda: path)
+    monkeypatch.setattr(screens, "os", SimpleNamespace(name=platform))
+    app = WizardApp(env_file)
+    async with app.run_test(size=(100, 50)) as pilot:
+        await app.push_screen(PolicyContextScreen())
+        await pilot.pause()
+        info = app.screen.query_one(".wiz-info", Static)
+        assert str(path) in str(info.content)
+        assert str(path) in info.render().plain
+        if platform == "nt":
+            assert "Windows access permissions apply" in str(info.content)
+            assert "0600" not in str(info.content)
+        else:
+            assert "file mode 0600 requested on write" in str(info.content)

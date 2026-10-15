@@ -19,7 +19,17 @@ Download the binary for your platform from the
 
 ### Windows
 
-Double-click `az-firewall-watch.exe` or run it from PowerShell:
+We recommend **Windows Terminal** for running Azure Firewall Watch. It is the
+default terminal application starting with Windows 11 22H2, unless you or your
+organization have changed the setting. PowerShell and Command Prompt can both
+run inside Windows Terminal.
+
+In the classic **Windows Console Host (conhost)**, button borders may appear as
+missing-glyph boxes. If you see this, open the app in Windows Terminal. You can
+also select it under **Windows Terminal → Settings → Startup → Default terminal
+application**. See [Microsoft's Windows Terminal setup guide](https://learn.microsoft.com/en-us/windows/terminal/install#set-your-default-terminal-application).
+
+Double-click `az-firewall-watch.exe` or open PowerShell in Windows Terminal and run:
 
 ```powershell
 .\az-firewall-watch.exe

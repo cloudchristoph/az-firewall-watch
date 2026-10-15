@@ -85,7 +85,7 @@ class WelcomeScreen(Screen):
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         if event.button.id == "btn-quit":
-            self.app.exit()
+            self.app.exit(False)
             return
         if event.button.id == "btn-next":
             radio = self.query_one("#welcome-radio", _SafeRadioSet)
@@ -289,7 +289,7 @@ class PasteConnectionScreen(_WizardScreen):
         if policy_context is None:
             return
         write_env(self._wizard_app.env_file, raw, policy_context=policy_context)
-        self.app.exit()
+        self.app.exit(True)
 
 
 class EnterExistingHubScreen(_WizardScreen):
@@ -356,7 +356,7 @@ class EnterExistingHubScreen(_WizardScreen):
         if policy_context is None:
             return
         write_env_entra(self._wizard_app.env_file, ns, hub, policy_context=policy_context)
-        self.app.exit()
+        self.app.exit(True)
 
 
 class PickExistingScreen(_WizardScreen):
@@ -449,7 +449,7 @@ class PickExistingScreen(_WizardScreen):
 
         if auth_method == "entra":
             write_env_entra(self._wizard_app.env_file, f"{ns}.servicebus.windows.net", eh, policy_context=policy_context)
-            self.app.exit()
+            self.app.exit(True)
             return
 
         rule_name = "az-firewall-watch-listen"
@@ -471,7 +471,7 @@ class PickExistingScreen(_WizardScreen):
             log.write("[green]✓[/] Writing .env…")
             write_env(self._wizard_app.env_file, conn_str, policy_context=policy_context)
             log.write("[green]✓[/] Done!")
-            self.app.exit()
+            self.app.exit(True)
         except Exception as exc:
             self._show_error(f"Failed to configure auth rule: {cli_error_text(exc)}")
 
@@ -769,7 +769,7 @@ class DeployNewScreen(_WizardScreen):
             else:
                 write_env(self._wizard_app.env_file, conn_str, policy_context=self._policy_context)
             log.write("[green]✓[/] .env written — setup complete!")
-            self.app.exit()
+            self.app.exit(True)
         except Exception as exc:
             log.write(f"[red]✗[/] Deployment failed: {cli_error_text(exc)}")
             self.query_one("#progress-spinner", LoadingIndicator).display = False

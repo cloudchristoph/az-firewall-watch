@@ -44,13 +44,14 @@ async def _token_from_az_cli() -> _Token | None:
 
     Returns ``None`` when the Azure CLI is not installed or not logged in.
     """
-    if shutil.which("az") is None:
+    az = shutil.which("az") or shutil.which("az.cmd")
+    if az is None:
         return None
 
     def _run() -> _Token | None:
         try:
             out = subprocess.run(
-                ["az", "account", "get-access-token", "--resource", _ARM_RESOURCE, "--output", "json"],
+                [az, "account", "get-access-token", "--resource", _ARM_RESOURCE, "--output", "json"],
                 capture_output=True,
                 text=True,
                 timeout=15,

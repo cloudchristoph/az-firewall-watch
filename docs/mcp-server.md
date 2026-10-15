@@ -255,9 +255,9 @@ path, and `text` searches every column.
 
 | Tool | What it answers | Arguments | Returns |
 | --- | --- | --- | --- |
-| `get_status` | Is the server connected, and what has it seen so far? | none | Server version. Event Hub: `namespace`, `hub`, `consumer_group`, `start_position`, `auth` (`entra` or `sas`), `state`, `last_error`, `connected_since`. Events: `received`, `skipped` (by reason), `per_category`, `last_event_at`, `last_event_age_s`. Buffer: `size`, `capacity`, `first_id`, `last_id`. `firewall_id`, `firewall_name`. Policy context: `state`, `age_s`, `reason` |
-| `query_logs` | Which rows in the buffer match? | `category`, `action`, `source`, `destination`, `protocol`, `dst_port`, `src_port`, `rule`, `text`, `since`, `until`, `after_id`, `before_id`, `limit` (default 100), `order` (`desc` default, or `asc`), `detail` | `rows`, `matched` (total before `limit`), `returned`, `has_more`, `first_id`, `last_id`, `next_after_id`, `next_before_id` (page back in `desc` order), the `buffer` bounds, and a `filter` echo |
-| `tail_logs` | Wait for new matching rows | The same filter fields, `after_id` (default: the current `last_id`), `timeout_s` (1 to 60, default 20), `limit`, `detail` | `rows` in arrival order, `next_after_id`, `timed_out`. A long poll: it returns as soon as one matching row arrives |
+| `get_status` | Is the server connected, and what has it seen so far? | none | Server version. Event Hub: `namespace`, `hub`, `consumer_group`, `start_position`, `auth` (`entra` or `sas`), `state`, `last_error`, `connected_since`. Events: `received`, `skipped` (by reason), `per_category`, `last_event_at`, `last_event_age_s`, `newest_log_time`, `newest_log_lag_s`, `replaying`. Buffer: `size`, `capacity`, `first_id`, `last_id`. `firewall_id`, `firewall_name`. Policy context: `state`, `age_s`, `reason` |
+| `query_logs` | Which rows in the buffer match? | `category`, `action`, `source`, `destination`, `protocol`, `dst_port`, `src_port`, `rule`, `text`, `since`, `until`, `after_id`, `before_id`, `limit` (default 100), `order` (`desc` default, or `asc`), `detail` | `rows`, `matched` (total before `limit`), `returned`, `has_more`, `first_id`, `last_id`, `next_after_id`, `next_before_id` (page back in `desc` order), the `buffer` bounds, and a `filter` echo. A `note` while the server is still replaying the hub's retention |
+| `tail_logs` | Wait for new matching rows | The same filter fields, `after_id` (default: the current `last_id`), `timeout_s` (1 to 60, default 20), `limit`, `detail` | `rows` in arrival order, `next_after_id`, `timed_out`. A long poll: it returns as soon as one matching row arrives. A `note` while the server is still replaying the hub's retention |
 | `get_log_entry` | Everything about one row | `id` | The row at `raw` detail, plus `enrichment` (`source_fw_instance`, `dest_fw_instance`, `source_ip_groups`, `dest_ip_groups`, `rule_priority`, `rule_action`, `rule_policy`) and `traceable`, with the reason when the row cannot be traced |
 | `clear_logs` | Forget the rows seen so far | none | `cleared`, the number of rows removed from the local buffer |
 
@@ -265,11 +265,11 @@ path, and `text` searches every column.
 
 | Tool | What it answers | Arguments | Returns |
 | --- | --- | --- | --- |
-| `summarize_logs` | What does the traffic look like? | The log filter fields, `since` (default `15m`), `top` (default 10), `bucket` (`1m` default, from `10s` to `1h`) | `window` (from, to, rows), `by_category`, `by_action`, `top_sources`, `top_destinations`, `top_rules`, `top_denied_destinations`, `top_dst_ports`, `denied_without_rule` (denies by the default action), `timeline` (per bucket: count and denies) |
+| `summarize_logs` | What does the traffic look like? | The log filter fields, `since` (default `15m`), `top` (default 10), `bucket` (`1m` default, from `10s` to `1h`) | `window` (from, to, rows), `by_category`, `by_action`, `top_sources`, `top_destinations`, `top_rules`, `top_denied_destinations`, `top_dst_ports`, `denied_without_rule` (denies by the default action), `timeline` (per bucket: count and denies). A `note` while the server is still replaying the hub's retention |
 | `explain_log_entry` | Why did this row end the way it did? | `id`, `full_tree` (default `false`) | The row, an `outcome` sentence, `matched_rule` with its path and priorities, `nearest_misses` (up to 3, each with the failing criterion), and the `trace`: passes, collections, rules, checks, each `match`, `miss`, `unknown` or `n/a`. Folded by default like the detail dialog |
 | `trace_flow` | What would happen to this flow? | `protocol`, `source`, `destination` (IP address or FQDN), `dst_port`, `explicit_proxy`, `tls_inspected`, `destination_ip` (the resolved address of an FQDN destination, so network and DNAT rules can be evaluated too), `full_tree` | The same trace shape for a flow you describe, the rule that `would_match`, `unevaluable_rules`, `caveats`, and a `verdict`: `allow`, `deny`, `dnat` or `unknown`. Service tags, FQDN tags, web categories and IP groups that could not be read are `unknown`, and so is a verdict that depends on them |
 | `lookup_address` | What does the firewall know about this address? | `address` (IP address or CIDR), `limit` (default 100) | `fw_instance` label when it lies inside a firewall subnet, the `ip_groups` that contain it, the `rules` whose source or destination cover it (path, kind, action), and `recent` log counts as source and as destination over the last 15 minutes |
-| `get_log_coverage` | Does the Event Hub carry every category it should? | none | Per diagnostic setting: its target and categories. For the connected hub: `forwarded` categories, `observed` categories with counts, `forwarded_not_seen`, `seen_not_forwarded`. The switches in the firewall's `additionalProperties` that explain gaps (fat flow logging, DNS flow trace) |
+| `get_log_coverage` | Does the Event Hub carry every category it should? | none | Per diagnostic setting: its target and categories. For the connected hub: `forwarded` categories, `observed` categories with counts, `forwarded_not_seen`, `seen_not_forwarded`. The switches in the firewall's `additionalProperties` that explain gaps (fat flow logging, DNS flow trace). A `note` while the server is still replaying the hub's retention |
 
 `trace_flow` and `explain_log_entry` follow the same rules as the viewer's
 evaluation trace: Threat Intelligence first, then DNAT, Network and Application
@@ -387,6 +387,18 @@ If `state` is `connected` but `received` stays at 0, the start position is proba
 `latest` and nothing has been logged since; set `EVENT_HUB_START_POSITION=earliest`
 to replay the hub's retention first, and check `skipped` for records the parser
 could not use.
+
+**The first answers after the start are empty or too small, then grow.**
+With `EVENT_HUB_START_POSITION=earliest` the hub replays up to its whole retention
+right after the connect, tens of thousands of rows in the first ten to thirty
+seconds on a busy firewall. While that runs, `get_status` reports
+`events.replaying: true` with `newest_log_lag_s` (how far the newest buffered log
+is behind now), and `query_logs`, `tail_logs`, `summarize_logs` and
+`get_log_coverage` carry a `note` that says the counts are still growing. The
+note disappears once the burst is over and the newest log is within three
+minutes of now (Azure's diagnostics pipeline itself delivers a row about a
+minute after the event); an agent that sees it should call again shortly rather
+than conclude that the firewall is quiet.
 
 **The server exits at start with code 2.**
 No Event Hub is configured in the `.env` it found. Check that the file is next to

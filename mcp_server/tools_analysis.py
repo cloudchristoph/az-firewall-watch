@@ -37,7 +37,7 @@ from viewer.trace import (
 
 from .buffer import BufferedRow
 from .filters import LogFilter, parse_duration
-from .serialize import iso_utc, row_to_dict, rule_path
+from .serialize import iso_utc, row_to_dict, rule_path, with_replay_note
 from .serialize_trace import (
     flow_to_dict,
     hypothetical_trace,
@@ -656,7 +656,8 @@ def register(server: MCPServer) -> None:
             "denied_without_rule (denies that no rule decided: the default action, with their reasons and top "
             "flows) and timeline (one entry per bucket with count and denies). The filters are the ones of "
             "query_logs and combine with AND. Start here to see what is happening, then query_logs or "
-            "explain_log_entry for single rows."),
+            "explain_log_entry for single rows. While the server is still replaying the hub's retention after "
+            "its start, the answer carries a 'note' and the counts are not final yet."),
         annotations=READ_ONLY,
     )
     async def summarize_logs(
@@ -683,7 +684,8 @@ def register(server: MCPServer) -> None:
         seconds = parse_duration(bucket or DEFAULT_BUCKET)
         if seconds is None or not MIN_BUCKET_S <= seconds <= MAX_BUCKET_S:
             raise ToolError(f"bucket must be a duration from 10s to 1h (for example 10s, 1m, 5m, 1h), got {bucket!r}.")
-        return summarize(state, flt, top=_clamp(top, 1, MAX_TOP), bucket_s=int(seconds), now=now)
+        return with_replay_note(state, summarize(state, flt, top=_clamp(top, 1, MAX_TOP), bucket_s=int(seconds),
+                                                 now=now))
 
     @server.tool(
         name="explain_log_entry",
@@ -791,11 +793,14 @@ def register(server: MCPServer) -> None:
             "ThreatIntel on a quiet firewall), seen_not_forwarded (rows arrived although no setting for this hub "
             "forwards them: another setting feeds the hub, or the settings are outdated) and hints that explain "
             "gaps (fat flow logging or DNS flow trace switched off, DNS proxy off, FlowTrace never seen, no "
-            "setting targets this hub). Without the policy context only observed is answered, plus the reason."),
+            "setting targets this hub). Without the policy context only observed is answered, plus the reason. "
+            "A 'note' in the answer means the server is still replaying the hub's retention, so observed and "
+            "forwarded_not_seen are not final yet."),
         annotations=READ_ONLY,
     )
     async def get_log_coverage(ctx: Context[Any, Any]) -> dict[str, Any]:
-        return coverage(get_state(ctx))
+        state = get_state(ctx)
+        return with_replay_note(state, coverage(state))
 
 
 __all__ = ["register", "summarize", "explain", "lookup", "coverage", "build_flow", "trace_hypothetical"]

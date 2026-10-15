@@ -98,6 +98,22 @@ def seed(state, structured_record) -> Seeder:
     return Seeder(state, structured_record)
 
 
+def start_replay(state: AppState, structured_record, *, rows: int = 300) -> None:
+    """Put the stream where it is a second after connecting with start position earliest.
+
+    Connected a moment ago, the clock frozen, and a burst of old rows handled
+    just now: the worker reports ``replaying`` until the clock moves on.
+    """
+    stream = state.stream
+    now = time.time()
+    stream.clock = lambda: now
+    stream.state = "connected"
+    stream.connected_since = now - 1
+    rec = structured_record("AZFWNetworkRule", time="2026-09-05T08:00:00Z", Protocol="TCP", SourceIp="10.0.0.7",
+                            SourcePort=1, DestinationIp="10.1.0.1", DestinationPort=443, Action="Allow")
+    stream.handle_body(json.dumps({"records": [rec] * rows}))
+
+
 async def call(state: AppState, name: str, args: dict[str, Any] | None = None) -> dict[str, Any]:
     async with Client(build_server(state.config, state=state)) as client:
         result = await client.call_tool(name, args or {})
@@ -132,6 +148,9 @@ async def test_tools_carry_annotations_and_argument_docs(state):
     assert "ctx" not in props
     assert "detail" in tools["tail_logs"].input_schema["properties"]
     assert all(t.description for t in tools.values())
+    assert "replaying" in tools["get_status"].description
+    for name in ("query_logs", "tail_logs"):
+        assert "'note'" in tools[name].description and "replaying" in tools[name].description
 
 
 # ── get_status ───────────────────────────────────────────────────────────────
@@ -153,6 +172,18 @@ async def test_get_status_shape(state, seed, firewall_id):
     assert status["firewall_id"] == firewall_id and status["firewall_name"] == "fw-hub"
     assert status["policy_context"]["state"] == "off"
     assert status["server"]["name"] == "az-firewall-watch" and status["server"]["version"]
+
+
+async def test_get_status_reports_the_replay(state, seed, structured_record):
+    empty = (await call(state, "get_status"))["events"]
+    assert empty["replaying"] is False and empty["newest_log_lag_s"] is None
+    seed.network(time="2026-09-05T08:00:00Z")
+    quiet = (await call(state, "get_status"))["events"]
+    assert quiet["replaying"] is False and quiet["newest_log_lag_s"] > 3600
+    start_replay(state, structured_record)
+    busy = (await call(state, "get_status"))["events"]
+    assert busy["replaying"] is True and busy["newest_log_lag_s"] > 3600
+    assert busy["received"] == 301
 
 
 async def test_get_status_never_returns_the_sas_key():
@@ -276,6 +307,22 @@ async def test_query_rejects_bad_arguments_readably(state, args, message):
     assert message in await call_error(state, "query_logs", args)
 
 
+async def test_query_notes_the_replay_and_drops_the_note_afterwards(state, seed, structured_record):
+    seed.network()
+    before = await call(state, "query_logs")
+    assert "note" not in before
+    start_replay(state, structured_record)
+    during = await call(state, "query_logs", {"source": "10.0.0.1"})
+    assert during["matched"] == 1
+    assert during["note"].startswith("The server is still replaying the hub's retention (newest buffered log is ")
+    assert "behind now)" in during["note"] and "get_status" in during["note"]
+    # The burst is over and the connection has aged past the warm-up: the note goes away.
+    state.stream.clock = lambda: time.time() + 31
+    state.stream.settings = EventHubSettings(fq_namespace="lab-ns.servicebus.windows.net", hub_name="firewall-logs")
+    after = await call(state, "query_logs")
+    assert "note" not in after and after["matched"] == 301
+
+
 # ── tail_logs ────────────────────────────────────────────────────────────────
 
 async def test_tail_returns_when_a_row_arrives(state, seed):
@@ -312,6 +359,14 @@ async def test_tail_times_out_and_moves_the_cursor(state, seed):
     seed.network(action="Allow")
     out = await call(state, "tail_logs", {"after_id": 0, "action": "deny", "timeout_s": 0})   # clamped to 1 s
     assert out == {**out, "rows": [], "returned": 0, "timed_out": True, "next_after_id": 1}
+
+
+async def test_tail_carries_the_note_while_replaying(state, seed, structured_record):
+    start_replay(state, structured_record)
+    out = await call(state, "tail_logs", {"after_id": 0, "limit": 5})
+    assert out["returned"] == 5 and "still replaying" in out["note"]
+    quiet = await call(state, "tail_logs", {"timeout_s": 1})
+    assert quiet["timed_out"] is True and "still replaying" in quiet["note"]
 
 
 async def test_tail_with_after_id_returns_buffered_rows_at_once(state, seed):

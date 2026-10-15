@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import time
 from collections.abc import Callable
 from typing import Any
 
@@ -399,3 +400,87 @@ async def test_stop_while_connecting_sets_stopped(fake_client, monkeypatch):
     assert worker.state == "connecting"
     await worker.stop()
     assert worker.state == "stopped"
+
+
+# ── warm-up: replaying the hub's retention ───────────────────────────────────
+
+EARLIEST = SAS
+LATEST = EventHubSettings(connection_string=SAS_CONN, consumer_group="mcp", start_position_raw="latest")
+
+
+def old_records(firewall_id: str, n: int, time: str = "2026-09-05T08:00:00Z") -> list[dict]:
+    """``n`` rows that all carry the same log time, so the lag is a known number."""
+    return [dict(records(firewall_id, 1)[0], time=time) for _ in range(n)]
+
+
+def connected_worker(settings: EventHubSettings, now: float, *, since: float) -> StreamWorker:
+    """A worker as it looks after a successful connect, with a frozen clock."""
+    worker = make_worker(settings)
+    worker.clock = lambda: now
+    worker.state = "connected"
+    worker.connected_since = now - since
+    return worker
+
+
+def test_not_replaying_before_the_connect_or_after_a_failure(firewall_id):
+    worker = make_worker(EARLIEST)
+    assert worker.replaying is False and worker.newest_log_lag_s is None
+    worker.state = "failed"
+    worker.handle_body(json.dumps({"records": old_records(firewall_id, 300)}))
+    assert worker.replaying is False
+
+
+def test_replaying_during_the_initial_burst_ends_with_the_rate_or_the_age(firewall_id):
+    now = 1_800_000_000.0
+    worker = connected_worker(LATEST, now, since=1)
+    worker.handle_body(json.dumps({"records": old_records(firewall_id, 150)}))
+    assert worker.rows_in_last(2) == 150
+    assert worker.replaying is False           # live traffic can look like this
+    worker.handle_body(json.dumps({"records": old_records(firewall_id, 100)}))
+    assert worker.rows_in_last(2) == 250 and worker.replaying is True
+    # The burst stops: nothing in the last two seconds, the connection is still young.
+    worker.clock = lambda: now + 3
+    assert worker.rows_in_last(2) == 0 and worker.replaying is False
+    # Rows pour in again, but the connection is older than the warm-up: a busy
+    # firewall at steady state, not a replay (start position latest, so no lag check).
+    worker.clock = lambda: now + 31
+    worker.handle_body(json.dumps({"records": old_records(firewall_id, 500)}))
+    assert worker.replaying is False
+
+
+def test_replaying_by_lag_only_while_rows_arrive_and_only_with_an_old_start_position(firewall_id):
+    now = 1_800_000_000.0
+    worker = connected_worker(EARLIEST, now, since=40)
+    # One old row a moment ago: the tail of the replay, well below the rate threshold.
+    worker.handle_body(json.dumps({"records": old_records(firewall_id, 1, time="2026-09-05T08:00:00Z")}))
+    assert worker.newest_log_lag_s is not None and worker.newest_log_lag_s > 3600
+    assert worker.replaying is True
+    # A ten-second pause is how the hub switches partitions mid-replay; the flag holds.
+    worker.clock = lambda: now + 10
+    assert worker.replaying is True
+    # Half a minute of silence: a quiet hub whose newest log happens to be old is not replaying.
+    worker.clock = lambda: now + 30
+    assert worker.replaying is False
+    # A row from the last three minutes arrives: Azure's pipeline latency, not a replay.
+    worker.clock = lambda: now + 31
+    fresh = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now + 31 - 90))
+    worker.handle_body(json.dumps({"records": old_records(firewall_id, 1, time=fresh)}))
+    assert worker.newest_log_lag_s == pytest.approx(90, abs=1)
+    assert worker.replaying is False
+
+
+def test_lag_is_ignored_with_start_position_latest(firewall_id):
+    now = 1_800_000_000.0
+    worker = connected_worker(LATEST, now, since=40)
+    worker.handle_body(json.dumps({"records": old_records(firewall_id, 1)}))
+    assert worker.newest_log_lag_s is not None and worker.newest_log_lag_s > 3600
+    assert worker.replaying is False
+
+
+def test_arrival_window_is_pruned(firewall_id):
+    now = 1_800_000_000.0
+    worker = connected_worker(EARLIEST, now, since=1)
+    worker.handle_body(json.dumps({"records": old_records(firewall_id, 10)}))
+    worker.clock = lambda: now + 25
+    worker.handle_body(json.dumps({"records": old_records(firewall_id, 1)}))
+    assert len(worker._arrivals) == 1 and worker.rows_in_last(60) == 1

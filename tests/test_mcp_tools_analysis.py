@@ -11,7 +11,7 @@ from mcp.client.client import Client
 from mcp_server.context import ContextHolder
 from mcp_server.server import build_server
 from mcp_server.state import AppState
-from tests.test_mcp_tools_logs import Seeder, call, call_error, make_state
+from tests.test_mcp_tools_logs import Seeder, call, call_error, make_state, start_replay
 from tests.test_trace import app, nat, net, policy, rc, rcg
 from viewer.azure_resources import DiagnosticSetting, FirewallInfo, IpGroupInfo
 from viewer.cache import CachedSnapshot
@@ -107,6 +107,8 @@ async def test_analysis_tools_are_listed_read_only_and_documented():
     assert props["since"]["default"] == "15m" and props["bucket"]["default"] == "1m"
     assert set(tools["trace_flow"].input_schema["required"]) == {"protocol", "source", "destination"}
     assert "unknown" in tools["trace_flow"].description
+    for name in ("summarize_logs", "get_log_coverage"):
+        assert "'note'" in tools[name].description and "replaying" in tools[name].description
 
 
 # ── summarize_logs ───────────────────────────────────────────────────────────
@@ -205,6 +207,16 @@ async def test_summary_says_when_the_window_reaches_beyond_the_buffer(state, see
     empty = await call(state, "summarize_logs")
     assert empty["window"]["rows"] == 0 and empty["window"]["buffer_oldest"] is None
     assert empty["timeline"] == [] and empty["denied_without_rule"]["count"] == 0
+
+
+async def test_summary_notes_the_replay_next_to_the_window_note(state, seed, structured_record):
+    seed.network(time=iso(-120))
+    assert "note" not in await call(state, "summarize_logs")
+    start_replay(state, structured_record)
+    out = await call(state, "summarize_logs", {"since": "15m"})
+    assert out["note"].startswith("The server is still replaying the hub's retention")
+    # The window's own note about the buffer not reaching back is a different thing and stays.
+    assert "may be missing" in out["window"]["note"]
 
 
 async def test_summary_works_without_policy_context(state, seed):
@@ -685,6 +697,17 @@ async def test_coverage_hub_match_ignores_case_and_all_logs_forwards_everything(
     out = await call(state, "get_log_coverage")
     assert len(out["forwarded"]) == 9 and out["seen_not_forwarded"] == []
     assert "fat_flow_logging_off" not in {h["code"] for h in out["hints"]}      # the switch is on
+
+
+async def test_coverage_notes_the_replay_with_and_without_context(state, structured_record, firewall_id):
+    assert "note" not in await call(state, "get_log_coverage")
+    start_replay(state, structured_record)
+    unavailable = await call(state, "get_log_coverage")
+    assert unavailable["available"] is False and "still replaying" in unavailable["note"]
+    loaded, _seed = loaded_state(structured_record, firewall_id, diagnostics=[HUB_SETTING])
+    start_replay(loaded, structured_record)
+    out = await call(loaded, "get_log_coverage")
+    assert out["observed"] == {"NetworkRule": 300} and "still replaying" in out["note"]
 
 
 async def test_coverage_other_namespace_does_not_count(structured_record, firewall_id):

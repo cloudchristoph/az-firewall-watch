@@ -21,7 +21,7 @@ from viewer.trace import no_decision_reason
 
 from .buffer import BufferedRow
 from .filters import LogFilter
-from .serialize import check_detail, row_to_dict, status_to_dict
+from .serialize import check_detail, row_to_dict, status_to_dict, with_replay_note
 from .state import AppState, get_state
 
 DEFAULT_LIMIT = 100
@@ -113,8 +113,10 @@ def register(server: MCPServer) -> None:
             "Health of the log stream and the server. Answers: is the Event Hub connected (state connecting, "
             "verifying, connected, reconnecting, failed, stopped; last_error), how many records arrived "
             "(received, skipped by reason, per_category), how old the newest event is (last_event_age_s in "
-            "seconds), the buffer bounds (first_id, last_id, size, capacity), the firewall the logs come from "
-            "and the policy context state. Call it first when an answer looks empty."),
+            "seconds), whether the stream is still replaying the hub's retention after the start (replaying, "
+            "with newest_log_lag_s: how far the newest buffered log is behind now), the buffer bounds (first_id, "
+            "last_id, size, capacity), the firewall the logs come from and the policy context state. Call it "
+            "first when an answer looks empty."),
         annotations=READ_ONLY,
     )
     async def get_status(ctx: Context[Any, Any]) -> dict[str, Any]:
@@ -129,7 +131,8 @@ def register(server: MCPServer) -> None:
             "newest first by default, 'matched' (total before the limit), 'returned', 'has_more' and cursors. "
             "Paging: with order='desc' pass next_before_id as before_id for older rows; with order='asc' pass "
             "next_after_id as after_id. To fetch only rows newer than a previous answer, pass its next_after_id "
-            "as after_id. Row ids are stable for the life of the server."),
+            "as after_id. Row ids are stable for the life of the server. While the server is still replaying "
+            "the hub's retention after its start, the answer carries a 'note' and the counts are not final yet."),
         annotations=READ_ONLY,
     )
     async def query_logs(
@@ -167,7 +170,7 @@ def register(server: MCPServer) -> None:
             matches.reverse()
         selected = matches[:count]
         has_more = len(matches) > count
-        return {
+        return with_replay_note(state, {
             "rows": [row_to_dict(item, level) for item in selected],
             "matched": len(matches),
             "returned": len(selected),
@@ -179,7 +182,7 @@ def register(server: MCPServer) -> None:
             "next_before_id": selected[-1].id if (direction == "desc" and has_more) else None,
             "buffer": _buffer_bounds(state),
             "filter": flt.echo(),
-        }
+        })
 
     @server.tool(
         name="tail_logs",
@@ -188,7 +191,8 @@ def register(server: MCPServer) -> None:
             "Long-poll for new rows: returns as soon as at least one row newer than after_id matches the filters, "
             "or after timeout_s seconds with timed_out=true and no rows. Rows come oldest first. Loop by passing "
             "next_after_id back as after_id; without after_id the tail starts at the newest row now (only rows "
-            "that arrive after the call). Same filters as query_logs."),
+            "that arrive after the call). Same filters as query_logs. A 'note' in the answer means the server is "
+            "still replaying the hub's retention, so the rows may be old ones being caught up on."),
         annotations=READ_ONLY_LIVE,
     )
     async def tail_logs(
@@ -223,14 +227,14 @@ def register(server: MCPServer) -> None:
         # A full page may leave matches behind: continue right after it. Otherwise
         # everything up to the newest row has been looked at.
         next_after = rows[-1].id if len(rows) >= count else max(cursor, state.buffer.last_id)
-        return {
+        return with_replay_note(state, {
             "rows": [row_to_dict(item, level) for item in rows],
             "returned": len(rows),
             "timed_out": not rows,
             "next_after_id": next_after,
             "buffer": _buffer_bounds(state),
             "filter": flt.echo(),
-        }
+        })
 
     @server.tool(
         name="get_log_entry",

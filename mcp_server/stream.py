@@ -13,6 +13,7 @@ import asyncio
 import json
 import logging
 import time
+from collections import deque
 from collections.abc import Callable, Sequence
 from typing import Any
 
@@ -25,6 +26,26 @@ from .buffer import MALFORMED_REASON, BufferedRow, LogBuffer
 log = logging.getLogger(__name__)
 
 STATES = ("connecting", "verifying", "connected", "reconnecting", "failed", "stopped")
+
+# Warm-up detection. With EVENT_HUB_START_POSITION=earliest the hub replays up
+# to its whole retention right after the connect (tens of thousands of rows in
+# the first seconds on a busy firewall). A client that asks during that burst
+# sees a partial buffer, so the worker reports ``replaying`` while either
+# holds: the connection is young and rows pour in faster than live traffic
+# ever does, or the newest log is still far behind the wall clock while rows
+# keep arriving (the tail of the replay, where the rate has already dropped).
+WARMUP_S = 30.0              # a connection younger than this may still be in the initial burst
+RATE_WINDOW_S = 2.0          # rows are counted over this sliding window
+RATE_THRESHOLD = 200         # more rows than this per window is a replay, not live traffic
+# Azure's diagnostics pipeline delivers a row a minute or two after the event
+# (measured on the lab hub: about 60 s), so a lag below three minutes is normal
+# live operation and must not look like a replay.
+LAG_THRESHOLD_S = 180.0
+# The lag only counts while rows still arrive: a quiet hub whose newest log is
+# old is not replaying. The window is generous because a replay pauses for up
+# to ten seconds between partitions (seen live), and a short gap must not drop
+# the flag with hours of retention still to come.
+ARRIVAL_WINDOW_S = 20.0
 
 
 class StreamWorker:
@@ -59,6 +80,12 @@ class StreamWorker:
         self.firewall_id: str | None = None
         self.configuration_error = False
         self._task: asyncio.Task[None] | None = None
+        # The clock is an attribute so a test can freeze it; it feeds the
+        # connection age and the receive-rate window.
+        self.clock: Callable[[], float] = time.time
+        # (wall clock, accepted rows) per handled body, pruned to the longest
+        # window the warm-up check looks at.
+        self._arrivals: deque[tuple[float, int]] = deque()
 
     # ── lifecycle ────────────────────────────────────────────────────────────
     def start(self) -> asyncio.Task[None]:
@@ -151,7 +178,7 @@ class StreamWorker:
                     except Exception as exc:   # the ARM check is best-effort, as in the TUI
                         log.info("Data-plane role check skipped: %s", exc)
                 self.state = "connected"
-                self.connected_since = time.time()
+                self.connected_since = self.clock()
                 self.last_error = None
                 self.attempt = 0
                 log.info("Connected to Event Hub %s/%s (consumer group %s)",
@@ -200,9 +227,49 @@ class StreamWorker:
                 self.buffer.count_skip(row.category[len("SKIP:"):])
                 continue
             accepted.append(self.buffer.append(row, rec))
+        self._note_arrival(len(accepted))
         if accepted and self.on_rows is not None:
             self.on_rows(accepted)
         return accepted
+
+    # ── warm-up (retention replay) ───────────────────────────────────────────
+    def _note_arrival(self, rows: int) -> None:
+        now = self.clock()
+        self._arrivals.append((now, rows))
+        horizon = now - max(RATE_WINDOW_S, ARRIVAL_WINDOW_S)
+        while self._arrivals and self._arrivals[0][0] < horizon:
+            self._arrivals.popleft()
+
+    def rows_in_last(self, seconds: float, now: float | None = None) -> int:
+        """Accepted rows handled in the last ``seconds`` (at most the pruning horizon)."""
+        now = self.clock() if now is None else now
+        cutoff = now - seconds
+        return sum(n for t, n in self._arrivals if t >= cutoff)
+
+    @property
+    def newest_log_lag_s(self) -> float | None:
+        """How far the newest buffered log time is behind the wall clock, ``None`` before the first row."""
+        newest = self.buffer.last_log_time
+        if newest is None:
+            return None
+        return max(0.0, self.clock() - newest)
+
+    @property
+    def replaying(self) -> bool:
+        """Whether the stream is still catching up on the hub's retention (see the module constants).
+
+        Only a connected stream replays: a worker that is still connecting has
+        nothing in the buffer yet, and a failed one will not fill it any further.
+        """
+        if self.state != "connected" or self.connected_since is None:
+            return False
+        now = self.clock()
+        if now - self.connected_since < WARMUP_S and self.rows_in_last(RATE_WINDOW_S, now) > RATE_THRESHOLD:
+            return True
+        if self.settings.start_position == "@latest":
+            return False
+        lag = self.newest_log_lag_s
+        return lag is not None and lag > LAG_THRESHOLD_S and self.rows_in_last(ARRIVAL_WINDOW_S, now) > 0
 
 
 __all__ = ["StreamWorker", "STATES"]

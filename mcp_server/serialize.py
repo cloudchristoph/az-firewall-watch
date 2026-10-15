@@ -138,6 +138,8 @@ def status_to_dict(state: AppState, *, version: str) -> dict[str, Any]:
             "last_event_at": iso_utc(buf.last_event_at),
             "last_event_age_s": round(now - buf.last_event_at, 1) if buf.last_event_at is not None else None,
             "newest_log_time": iso_utc(buf.last_log_time),
+            "newest_log_lag_s": _round_lag(stream.newest_log_lag_s),
+            "replaying": stream.replaying,
         },
         "buffer": {"size": buf.size, "capacity": buf.capacity, "first_id": buf.first_id,
                    "last_id": buf.last_id or None},
@@ -145,6 +147,46 @@ def status_to_dict(state: AppState, *, version: str) -> dict[str, Any]:
         "firewall_name": firewall_name,
         "policy_context": state.context.status(),
     }
+
+
+def _round_lag(lag: float | None) -> float | None:
+    return None if lag is None else round(lag, 1)
+
+
+def format_lag(seconds: float) -> str:
+    """``5h 12m``, ``3m 20s`` or ``45s``: a lag an agent can repeat to a person."""
+    total = int(seconds)
+    hours, rest = divmod(total, 3600)
+    minutes, secs = divmod(rest, 60)
+    if hours:
+        return f"{hours}h {minutes:02d}m"
+    if minutes:
+        return f"{minutes}m {secs:02d}s"
+    return f"{secs}s"
+
+
+def replay_note(state: AppState) -> str | None:
+    """The sentence the log tools add while the stream still replays the hub's retention, else ``None``.
+
+    An agent that gets an empty or short answer right after the server started
+    would otherwise conclude that the firewall is quiet; the note says that the
+    counts are still growing and where to look.
+    """
+    stream = state.stream
+    if not stream.replaying:
+        return None
+    lag = stream.newest_log_lag_s
+    behind = f" (newest buffered log is {format_lag(lag)} behind now)" if lag is not None else ""
+    return (f"The server is still replaying the hub's retention{behind}; counts will grow for a few more "
+            "seconds. Call again shortly or check get_status (events.replaying).")
+
+
+def with_replay_note(state: AppState, answer: dict[str, Any]) -> dict[str, Any]:
+    """``answer`` with a top-level ``note`` while replaying; the key is absent otherwise."""
+    note = replay_note(state)
+    if note is not None:
+        answer["note"] = note
+    return answer
 
 
 # ── Phase B: policy, firewall and trace shapes ──────────────────────────────

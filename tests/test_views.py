@@ -75,7 +75,7 @@ def mgmt(monkeypatch):
     """Replace load_management_data with a controllable fake; returns its state."""
     state = {"snapshot": make_snapshot(), "calls": []}
 
-    async def _load(firewall_id, *, force=False, errors=None):
+    async def _load(firewall_id, *, force=False, errors=None, credential=None):
         state["calls"].append((firewall_id, force))
         return state["snapshot"]
 
@@ -215,7 +215,7 @@ async def test_context_unavailable_names_the_reason_on_the_firewall_tab_and_hide
               "[SSLCertVerificationError: certificate verify failed: unable to get local issuer certificate]")
     outcomes = [None, make_snapshot()]
 
-    async def _load(_fw, *, force=False, errors=None):
+    async def _load(_fw, *, force=False, errors=None, credential=None):
         snap = outcomes.pop(0)
         if snap is None and errors is not None:
             errors.append(reason)

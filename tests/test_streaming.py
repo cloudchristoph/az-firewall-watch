@@ -133,8 +133,7 @@ class FakeCredential:
 @pytest.fixture
 def fake_credential(monkeypatch):
     FakeCredential.instances = []
-    import azure.identity.aio as ident
-    monkeypatch.setattr(ident, "DefaultAzureCredential", FakeCredential)
+    monkeypatch.setattr(app_module, "create_credential", FakeCredential)
     return FakeCredential
 
 
@@ -554,7 +553,8 @@ async def test_entra_missing_role_shows_role_hint_without_retry(monkeypatch, fak
         text = _dialog_text(app.screen)
         assert "Data Receiver" in text
         assert "az role assignment create" in text
-        assert fake_credential.instances[0].closed
+        assert not fake_credential.instances[0].closed
+    assert fake_credential.instances[0].closed
 
 
 async def test_entra_arm_check_failure_is_ignored(monkeypatch, fake_client, fake_credential, firewall_id):
@@ -572,7 +572,7 @@ async def test_entra_arm_check_failure_is_ignored(monkeypatch, fake_client, fake
         assert app.query_one("#status", StatusBar).eh_state == "connected"
 
 
-async def test_entra_auth_error_shows_entra_hint_and_closes_credential(monkeypatch, fake_client, fake_credential):
+async def test_entra_auth_error_shows_entra_hint_and_closes_credential_on_shutdown(monkeypatch, fake_client, fake_credential):
     monkeypatch.setenv("EVENT_HUB_NAMESPACE", "lab-ns.servicebus.windows.net")
     monkeypatch.setenv("EVENT_HUB_NAME", "firewall-logs")
     fake_client.script = [{"probe": RuntimeError("403 Forbidden")}]
@@ -581,18 +581,21 @@ async def test_entra_auth_error_shows_entra_hint_and_closes_credential(monkeypat
         await wait_for_dialog(pilot, app, ErrorDialog)
         text = _dialog_text(app.screen)
         assert "Entra ID authentication was rejected" in text
-        assert all(c.closed for c in fake_credential.instances)
+        assert not any(c.closed for c in fake_credential.instances)
+    assert all(c.closed for c in fake_credential.instances)
 
 
-async def test_credentials_are_closed_on_every_transient_failure(monkeypatch, fake_client, fake_credential):
+async def test_one_credential_survives_transient_failures_until_shutdown(monkeypatch, fake_client, fake_credential):
     monkeypatch.setenv("EVENT_HUB_NAMESPACE", "lab-ns.servicebus.windows.net")
     monkeypatch.setenv("EVENT_HUB_NAME", "firewall-logs")
     fake_client.script = [{"probe": ConnectionError("boom")}] * 3
     app = FirewallLogApp()
     async with app.run_test(size=(140, 40)) as pilot:
         await wait_for_dialog(pilot, app, ErrorDialog)
-        assert len(fake_credential.instances) == 3
-        assert all(c.closed for c in fake_credential.instances)
+        assert len(fake_credential.instances) == 1
+        assert all(client.kwargs["credential"] is fake_credential.instances[0] for client in fake_client.instances)
+        assert not any(c.closed for c in fake_credential.instances)
+    assert all(c.closed for c in fake_credential.instances)
 
 
 # ── start position ───────────────────────────────────────────────────────────
@@ -701,3 +704,139 @@ async def test_verify_access_skips_when_namespace_not_resolvable(monkeypatch):
     monkeypatch.setattr("urllib.request.urlopen", fake)
     await streaming._verify_data_plane_access(FakeCredential(), "lab-ns.servicebus.windows.net", "firewall-logs")
     assert len(fake.calls) == 1  # permissions endpoint never called
+
+
+async def test_receive_starts_while_access_check_is_pending(monkeypatch, fake_client, fake_credential, firewall_id):
+    monkeypatch.setenv("EVENT_HUB_NAMESPACE", "lab-ns.servicebus.windows.net")
+    monkeypatch.setenv("EVENT_HUB_NAME", "firewall-logs")
+    started, release, finished = asyncio.Event(), asyncio.Event(), asyncio.Event()
+
+    async def verify(credential, ns, hub):
+        started.set()
+        try:
+            await release.wait()
+        finally:
+            assert not credential.closed
+            finished.set()
+
+    monkeypatch.setattr(streaming, "_verify_data_plane_access", verify)
+    fake_client.script = [{"events": [FakeEvent(_records(firewall_id, 1))]}]
+    app = FirewallLogApp(policy_context=False)
+    async with app.run_test(size=(140, 40)) as pilot:
+        await wait_until(pilot, lambda: started.is_set() and len(app._all_rows) == 1)
+        assert _connected(app)
+        assert not release.is_set()
+    assert finished.is_set()
+    assert fake_client.instances[0].exited
+    assert fake_credential.instances[0].closed
+
+
+async def test_late_missing_role_stops_active_receiver_without_retries(monkeypatch, fake_client, fake_credential):
+    monkeypatch.setenv("EVENT_HUB_NAMESPACE", "lab-ns.servicebus.windows.net")
+    monkeypatch.setenv("EVENT_HUB_NAME", "firewall-logs")
+    release = asyncio.Event()
+
+    async def verify(*args):
+        await release.wait()
+        raise PermissionError("Missing Azure Event Hubs Data Receiver role")
+
+    monkeypatch.setattr(streaming, "_verify_data_plane_access", verify)
+    app = FirewallLogApp(policy_context=False)
+    async with app.run_test(size=(140, 40)) as pilot:
+        await wait_until(pilot, lambda: bool(fake_client.instances) and hasattr(fake_client.instances[0], "on_event"))
+        assert _connected(app)
+        release.set()
+        await wait_for_dialog(pilot, app, ErrorDialog)
+        assert "Data Receiver" in _dialog_text(app.screen)
+        assert app.query_one("#status", StatusBar).eh_state == "failed"
+        assert fake_client.instances[0].exited
+        assert len(fake_client.instances) == 1
+
+
+async def test_reconnect_drains_old_access_check_and_shares_identity_with_arm(
+    monkeypatch, fake_client, fake_credential, firewall_id,
+):
+    monkeypatch.setenv("EVENT_HUB_NAMESPACE", "lab-ns.servicebus.windows.net")
+    monkeypatch.setenv("EVENT_HUB_NAME", "firewall-logs")
+    checks: list[dict] = []
+    arm_credentials = []
+
+    async def verify(credential, *args):
+        if checks:
+            assert checks[-1]["finished"]
+        entry = {"finished": False, "credential": credential}
+        checks.append(entry)
+        try:
+            await asyncio.Event().wait()
+        finally:
+            await asyncio.sleep(0)
+            assert not credential.closed
+            entry["finished"] = True
+
+    async def load(firewall_id, *, credential, **kwargs):
+        arm_credentials.append(credential)
+        return None
+
+    monkeypatch.setattr(streaming, "_verify_data_plane_access", verify)
+    monkeypatch.setattr(app_module, "load_management_data", load)
+    fake_client.script = [
+        {"receive": ConnectionResetError("link detached")},
+        {"events": [FakeEvent(_records(firewall_id, 1))]},
+    ]
+    app = FirewallLogApp()
+    async with app.run_test(size=(140, 40)) as pilot:
+        await wait_until(pilot, lambda: len(checks) == 2 and bool(arm_credentials))
+        credential = fake_credential.instances[0]
+        assert len(fake_credential.instances) == 1
+        assert all(client.kwargs["credential"] is credential for client in fake_client.instances)
+        assert arm_credentials == [credential]
+        assert checks[0]["finished"]
+        assert not checks[1]["finished"]
+        assert not credential.closed
+    assert all(check["finished"] for check in checks)
+    assert credential.closed
+
+
+async def test_shutdown_drains_eh_and_arm_token_borrowers_before_closing(monkeypatch, fake_client, firewall_id):
+    monkeypatch.setenv("EVENT_HUB_NAMESPACE", "lab-ns.servicebus.windows.net")
+    monkeypatch.setenv("EVENT_HUB_NAME", "firewall-logs")
+
+    class GatedCredential:
+        def __init__(self):
+            self.borrowers = 0
+            self.closed = 0
+
+        async def get_token(self, *scopes):
+            self.borrowers += 1
+            try:
+                await asyncio.Event().wait()
+            finally:
+                await asyncio.sleep(0)
+                assert self.closed == 0
+                self.borrowers -= 1
+
+        async def close(self):
+            assert self.borrowers == 0
+            self.closed += 1
+
+    credential = GatedCredential()
+    monkeypatch.setattr(app_module, "create_credential", lambda: credential)
+
+    class TokenClient(FakeClient):
+        async def get_partition_ids(self):
+            await self.kwargs["credential"].get_token("https://eventhubs.azure.net/.default")
+
+    import azure.eventhub.aio as eh_aio
+    monkeypatch.setattr(eh_aio, "EventHubConsumerClient", TokenClient)
+
+    async def load(firewall_id, *, credential, **kwargs):
+        await credential.get_token("https://management.azure.com/.default")
+
+    monkeypatch.setattr(app_module, "load_management_data", load)
+    app = FirewallLogApp()
+    async with app.run_test(size=(140, 40)) as pilot:
+        await wait_until(pilot, lambda: credential.borrowers == 1)
+        app.request_mgmt_load(firewall_id)
+        await wait_until(pilot, lambda: credential.borrowers == 2)
+    assert credential.closed == 1
+    assert credential.borrowers == 0

@@ -1,8 +1,8 @@
 """Azure Event Hub streaming worker for the viewer TUI.
 
 The :func:`run_stream` coroutine connects to the configured Event Hub
-(SAS or Entra ID), verifies data-plane permissions via the ARM
-Permissions API when using Entra ID, then dispatches parsed records
+(SAS or Entra ID), checks data-plane permissions in the background via the ARM
+Permissions API when using Entra ID, and dispatches parsed records
 back into the app's pending queue.
 """
 from __future__ import annotations
@@ -115,6 +115,44 @@ async def _verify_data_plane_access(credential, eh_namespace: str, eh_name: str)
             f"Missing 'Azure Event Hubs Data Receiver' "
             f"(or 'Data Owner') role on hub '{eh_name}' or namespace '{_ns_short}'."
         )
+
+
+async def _receive_with_access_check(client, on_event, position, credential, namespace, hub) -> None:
+    """Receive immediately; stop the receiver if ARM confirms a missing role.
+
+    ARM failures remain best effort. Both tasks are drained before the client
+    is closed or another connection attempt starts, including on cancellation.
+    """
+    if credential is None:
+        await client.receive(on_event=on_event, starting_position=position)
+        return
+
+    async def check_access() -> None:
+        try:
+            await _verify_data_plane_access(credential, namespace, hub)
+        except PermissionError:
+            raise
+        except Exception:
+            pass
+
+    receiver = asyncio.create_task(client.receive(on_event=on_event, starting_position=position))
+    check = asyncio.create_task(check_access())
+    try:
+        done, _ = await asyncio.wait((receiver, check), return_when=asyncio.FIRST_COMPLETED)
+        if check in done:
+            await check
+            await receiver
+        else:
+            # Prefer an already-confirmed permission failure over a simultaneous
+            # disconnect so it cannot start an endless reconnect cycle.
+            if check.done():
+                await check
+            await receiver
+    finally:
+        for task in (receiver, check):
+            if not task.done():
+                task.cancel()
+        await asyncio.gather(receiver, check, return_exceptions=True)
 
 
 def resolve_start_position(value: str | None) -> str:
@@ -258,7 +296,6 @@ async def run_stream(app: FirewallLogApp) -> None:
     _dialog = ConnectingDialog(namespace, hub)
     await _show_splash(app, _dialog)
     _splash_shown = True
-    _credential = None  # track credential for cleanup on error
 
     while connected_once or attempt < _MAX_ATTEMPTS:
         app.sub_title = "Live Log Monitor  |  " + ("reconnecting..." if connected_once else "connecting...")
@@ -268,9 +305,7 @@ async def run_stream(app: FirewallLogApp) -> None:
         try:
             # Build the client — prefer Entra ID when namespace+hub are set.
             if use_entra:
-                from azure.core.pipeline.transport import AsyncioRequestsTransport
-                from azure.identity.aio import DefaultAzureCredential
-                _credential = DefaultAzureCredential(transport=AsyncioRequestsTransport())
+                _credential = app.get_credential()
                 client = EventHubConsumerClient(
                     fully_qualified_namespace=eh_namespace,
                     eventhub_name=eh_name,
@@ -287,83 +322,68 @@ async def run_stream(app: FirewallLogApp) -> None:
                     load_balancing_interval=1,
                     retry_total=0,
                 )
-            try:
-                async with client:
-                    # Probe the connection before starting the long-running receive().
-                    # get_partition_ids() is a one-shot call without an internal reconnect
-                    # loop, so it fails fast and visibly when the string is wrong or the
-                    # namespace is unreachable.
+            async with client:
+                # Probe the connection before starting the long-running receive().
+                # get_partition_ids() is a one-shot call without an internal reconnect
+                # loop, so it fails fast and visibly when the string is wrong or the
+                # namespace is unreachable.
+                try:
+                    await asyncio.wait_for(client.get_partition_ids(), timeout=15)
+                except asyncio.TimeoutError:
+                    raise TimeoutError(
+                        "Event Hub did not respond within 15 s — "
+                        "check connection string and network"
+                    ) from None
+
+                attempt = 0  # reset backoff counter after a successful connect
+                connected_once = True
+                if _splash_shown:
+                    _dialog.show_waiting()
+                status.eh_state, status.eh_detail, status.eh_error = "connected", "", ""
+                app.sub_title = "Live Log Monitor  |  connected"
+
+                async def on_event(_partition_ctx, event) -> None:
+                    nonlocal _splash_shown
+                    if event is None or app._paused or not app.is_running:
+                        return
                     try:
-                        await asyncio.wait_for(client.get_partition_ids(), timeout=15)
-                    except asyncio.TimeoutError:
-                        raise TimeoutError(
-                            "Event Hub did not respond within 15 s — "
-                            "check connection string and network"
-                        ) from None
+                        body = json.loads(event.body_as_str())
+                    except (ValueError, TypeError):
+                        return
+                    has_real = False
+                    for rec in body.get("records", []):
+                        if not app._fw_name_set:
+                            rid: str = rec.get("resourceId", "")
+                            if "/AZUREFIREWALLS/" in rid.upper():
+                                # Diagnostic resourceIds are upper-cased by Azure; the
+                                # real name is lost. Lower-case is right for the usual
+                                # kebab-case firewall names.
+                                app.sub_title = rid.split("/")[-1].lower()
+                                app._fw_name_set = True
+                                app.request_mgmt_load(rid)
+                        row = parse_record(rec)
+                        if row is None:
+                            continue
+                        if "SKIP:" in row.category:
+                            app._skip_pending += 1
+                        else:
+                            app._pending.append(row)
+                            has_real = True
+                    if has_real and _splash_shown:
+                        _splash_shown = False
+                        await _remove_splash(app)
 
-                    # Azure Event Hubs silently accepts AMQP receiver links regardless
-                    # of permissions (authorization is enforced at message delivery,
-                    # not link attach), so an SDK probe cannot detect a missing
-                    # Data Receiver role.  Use ARM Permissions API instead.
-                    if use_entra:
-                        status.eh_state = "verifying"
-                        try:
-                            assert _credential is not None
-                            await _verify_data_plane_access(_credential, eh_namespace, eh_name)
-                        except PermissionError:
-                            raise
-                        except Exception:
-                            pass  # ARM check unavailable — proceed optimistically
-
-                    attempt = 0  # reset backoff counter after a successful connect
-                    connected_once = True
-                    if _splash_shown:
-                        _dialog.show_waiting()
-                    status.eh_state, status.eh_detail, status.eh_error = "connected", "", ""
-                    app.sub_title = "Live Log Monitor  |  connected"
-
-                    async def on_event(_partition_ctx, event) -> None:
-                        nonlocal _splash_shown
-                        if event is None or app._paused:
-                            return
-                        try:
-                            body = json.loads(event.body_as_str())
-                        except (ValueError, TypeError):
-                            return
-                        has_real = False
-                        for rec in body.get("records", []):
-                            if not app._fw_name_set:
-                                rid: str = rec.get("resourceId", "")
-                                if "/AZUREFIREWALLS/" in rid.upper():
-                                    # Diagnostic resourceIds are upper-cased by Azure; the
-                                    # real name is lost. Lower-case is right for the usual
-                                    # kebab-case firewall names.
-                                    app.sub_title = rid.split("/")[-1].lower()
-                                    app._fw_name_set = True
-                                    app.request_mgmt_load(rid)
-                            row = parse_record(rec)
-                            if row is None:
-                                continue
-                            if "SKIP:" in row.category:
-                                app._skip_pending += 1
-                            else:
-                                app._pending.append(row)
-                                has_real = True
-                        if has_real and _splash_shown:
-                            _splash_shown = False
-                            await _remove_splash(app)
-
-                    await client.receive(on_event=on_event, starting_position=position)
-            finally:
-                if _credential:
-                    await _credential.close()
-                    _credential = None
+                await _receive_with_access_check(
+                    client, on_event, position,
+                    _credential if use_entra else None, eh_namespace, eh_name,
+                )
 
         except asyncio.CancelledError:
-            if _splash_shown:
-                _splash_shown = False
-                await _remove_splash(app)
-            status.eh_state, status.eh_detail = "stopped", ""
+            if not app._closing and app.is_running:
+                if _splash_shown:
+                    _splash_shown = False
+                    await _remove_splash(app)
+                status.eh_state, status.eh_detail = "stopped", ""
             return
 
         except Exception as exc:

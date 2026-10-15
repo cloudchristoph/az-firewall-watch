@@ -1,6 +1,7 @@
 """Orchestration of cache + ARM fetches (viewer/management.py) with everything faked."""
 from __future__ import annotations
 
+import asyncio
 import ssl
 import time
 from typing import Any
@@ -121,8 +122,7 @@ def world(monkeypatch):
         monkeypatch.setattr(mgmt, name, fn)
     monkeypatch.setattr(mgmt, "collect_ip_group_ids", lambda policy: ["/g"])
     monkeypatch.setattr(mgmt.aiohttp, "ClientSession", FakeSession)
-    import azure.identity.aio as ident
-    monkeypatch.setattr(ident, "DefaultAzureCredential", FakeCredential)
+    monkeypatch.setattr(mgmt, "create_credential", FakeCredential)
     return state
 
 
@@ -252,12 +252,57 @@ async def test_cache_write_failure_does_not_lose_snapshot(world):
 
 
 async def test_credential_construction_failure_still_fetches(world, monkeypatch):
-    import azure.identity.aio as ident
-
     class _Boom:
         def __init__(self, **_kw):
             raise RuntimeError("no identity libs")
 
-    monkeypatch.setattr(ident, "DefaultAzureCredential", _Boom)
+    monkeypatch.setattr(mgmt, "create_credential", _Boom)
     snap = await mgmt.load_management_data(FW_ID)  # ArmClient handles the az-CLI fallback itself
     assert snap is not None and snap.firewall is FW
+
+
+@pytest.mark.parametrize("failure", [False, True])
+async def test_supplied_credential_is_shared_and_never_closed(world, monkeypatch, failure):
+    credential = FakeCredential()
+    seen = []
+    real_client = mgmt.ArmClient
+
+    def client(identity, session):
+        seen.append(identity)
+        return real_client(identity, session)
+
+    monkeypatch.setattr(mgmt, "ArmClient", client)
+    if failure:
+        world["firewall"] = ArmError(403, "AuthorizationFailed", "denied")
+    result = await mgmt.load_management_data(FW_ID, credential=credential)
+    assert (result is None) is failure
+    assert seen == [credential]
+    assert len(FakeCredential.instances) == 1
+    assert not credential.closed
+
+
+async def test_cancellation_drains_arm_children_before_closing_owned_credential(world, monkeypatch):
+    started, finished = asyncio.Event(), asyncio.Event()
+
+    async def subnets(arm, ids):
+        started.set()
+        try:
+            await asyncio.Event().wait()
+        finally:
+            await asyncio.sleep(0)
+            assert not FakeCredential.instances[0].closed
+            finished.set()
+
+    async def policy(arm, policy_id):
+        await started.wait()
+        await asyncio.Event().wait()
+
+    monkeypatch.setattr(mgmt, "fetch_subnets", subnets)
+    monkeypatch.setattr(mgmt, "fetch_policy", policy)
+    task = asyncio.create_task(mgmt.load_management_data(FW_ID))
+    await started.wait()
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert finished.is_set()
+    assert FakeCredential.instances[0].closed

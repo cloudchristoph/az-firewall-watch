@@ -37,7 +37,9 @@ _MAX_ATTEMPTS = 3
 _RECONNECT_BACKOFF = [2, 5, 10, 30, 60]
 
 
-async def _verify_data_plane_access(credential, eh_namespace: str, eh_name: str) -> None:
+async def _verify_data_plane_access(
+    credential, eh_namespace: str, eh_name: str, *, allowed: Callable[[], bool] | None = None,
+) -> None:
     """Probe ARM Permissions API to check the identity can receive from this hub.
 
     The check runs at the hub's own scope, not the namespace's: permissions
@@ -51,9 +53,14 @@ async def _verify_data_plane_access(credential, eh_namespace: str, eh_name: str)
     """
     import urllib.request as _urllib_req
 
+    if allowed is not None and not allowed():
+        return
+
     _arm_token = (
         await credential.get_token("https://management.azure.com/.default")
     ).token
+    if allowed is not None and not allowed():
+        return
     _arm_auth = {"Authorization": f"Bearer {_arm_token}"}
 
     # 1. Resolve namespace resource ID via Azure Resource Graph.
@@ -73,13 +80,25 @@ async def _verify_data_plane_access(credential, eh_namespace: str, eh_name: str)
         headers={**_arm_auth, "Content-Type": "application/json"},
         method="POST",
     )
+    def read_if_allowed(request):
+        # Executor work may sit queued while the user disables context. An
+        # already running HTTP request cannot be recalled, but no later request
+        # should begin after the decision changes.
+        if allowed is not None and not allowed():
+            return b"{}"
+        return _urllib_req.urlopen(request, timeout=10).read()
+
     _loop = asyncio.get_event_loop()
+    if allowed is not None and not allowed():
+        return
     _rg_resp = json.loads(
         await _loop.run_in_executor(
             None,
-            lambda: _urllib_req.urlopen(_rg_req, timeout=10).read(),
+            lambda: read_if_allowed(_rg_req),
         )
     )
+    if allowed is not None and not allowed():
+        return
     _rg_rows = _rg_resp.get("data") or []
     if not _rg_rows:
         return  # could not resolve — skip the check
@@ -96,14 +115,18 @@ async def _verify_data_plane_access(credential, eh_namespace: str, eh_name: str)
         headers=_arm_auth,
         method="GET",
     )
+    if allowed is not None and not allowed():
+        return
     _data_actions: list[str] = []
     for _entry in json.loads(
         await _loop.run_in_executor(
             None,
-            lambda: _urllib_req.urlopen(_perm_req, timeout=10).read(),
+            lambda: read_if_allowed(_perm_req),
         )
     ).get("value", []):
         _data_actions.extend(_entry.get("dataActions", []))
+    if allowed is not None and not allowed():
+        return
     if not any(
         # RG/subscription-inherited assignments use wildcard form like
         # "Microsoft.EventHub/*/receive/action"
@@ -117,7 +140,7 @@ async def _verify_data_plane_access(credential, eh_namespace: str, eh_name: str)
         )
 
 
-async def _receive_with_access_check(client, on_event, position, credential, namespace, hub) -> None:
+async def _receive_with_access_check(client, on_event, position, credential, namespace, hub, app: FirewallLogApp) -> None:
     """Receive immediately; stop the receiver if ARM confirms a missing role.
 
     ARM failures remain best effort. Both tasks are drained before the client
@@ -128,12 +151,28 @@ async def _receive_with_access_check(client, on_event, position, credential, nam
         return
 
     async def check_access() -> None:
+        if not await app.wait_for_arm_permission():
+            return
+        async def verify_allowed() -> None:
+            # The task may start after a disable action in the same loop turn.
+            if await app.wait_for_arm_permission():
+                await _verify_data_plane_access(credential, namespace, hub, allowed=app.arm_access_allowed)
+
+        verification = asyncio.create_task(verify_allowed())
+        disabled = asyncio.create_task(app.wait_for_arm_disabled())
         try:
-            await _verify_data_plane_access(credential, namespace, hub)
+            done, _ = await asyncio.wait((verification, disabled), return_when=asyncio.FIRST_COMPLETED)
+            if disabled not in done and await app.wait_for_arm_permission():
+                await verification
         except PermissionError:
             raise
         except Exception:
             pass
+        finally:
+            for task in (verification, disabled):
+                if not task.done():
+                    task.cancel()
+            await asyncio.gather(verification, disabled, return_exceptions=True)
 
     receiver = asyncio.create_task(client.receive(on_event=on_event, starting_position=position))
     check = asyncio.create_task(check_access())
@@ -375,7 +414,7 @@ async def run_stream(app: FirewallLogApp) -> None:
 
                 await _receive_with_access_check(
                     client, on_event, position,
-                    _credential if use_entra else None, eh_namespace, eh_name,
+                    _credential if use_entra else None, eh_namespace, eh_name, app,
                 )
 
         except asyncio.CancelledError:

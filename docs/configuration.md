@@ -96,7 +96,7 @@ also be given on the command line, and the command line wins (see
 
 The server and the viewer can run side by side only with separate consumer
 groups. Give the server its own `EVENT_HUB_CONSUMER_GROUP`, as described in
-[Use your own consumer group](mcp-server.md#use-your-own-consumer-group).
+[Running next to the viewer](mcp-server.md#running-next-to-the-viewer).
 
 ## Command-line options
 

@@ -155,16 +155,18 @@ file explicitly:
 A client that starts the server for you also stops it again, so there is nothing
 to run in a terminal.
 
-### Use your own consumer group
+### Running next to the viewer
 
-Check this before you connect a client while the viewer is open.
+The viewer and the MCP server can read the same hub on the same consumer group
+at the same time, and both see every record. The SDK opens its receivers
+without an owner level, so they are not exclusive, and it keeps its partition
+ownership in memory, so one process never takes a partition away from another.
+Event Hubs allows five such readers per partition and consumer group; the sixth
+is refused with a quota error. Verified on the lab hub with two servers started
+together on `$Default`: identical rows, identical counts.
 
-Two readers in the **same** consumer group share the hub's partitions between
-them, and each sees only part of the stream. Run the viewer and the MCP server on
-`$Default` at the same time and both will be missing rows, without any error.
-
-Give the MCP server its own consumer group instead, in the `.env` it reads or in
-its client config:
+A consumer group of its own is only needed when more than five readers share a
+hub. Set it in the `.env` the server reads or in the client config:
 
 ```json
 {
@@ -179,10 +181,9 @@ its client config:
 ```
 
 Create the group on the hub first, for example with
-`az eventhubs eventhub consumer-group create`. Note that the Basic tier has only
+`az eventhubs eventhub consumer-group create`. The Basic tier has only
 `$Default`; several consumer groups need the Standard tier, see
-[what it costs](event-hub.md#-what-it-costs). If the viewer is closed while the
-agent works, `$Default` is fine.
+[what it costs](event-hub.md#-what-it-costs).
 
 ## Using the answers
 

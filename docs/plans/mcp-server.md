@@ -181,9 +181,9 @@ New:
 | `AZFW_MCP_HOST` / `AZFW_MCP_PORT` | `127.0.0.1` / `8765` | HTTP transport only |
 | `AZFW_MCP_LOG_LEVEL` | `INFO` | stderr log level |
 
-Consumer group: a second reader on `$Default` next to the TUI shares the
-partition load and each sees only part of the stream. The docs say to give the
-MCP server its own consumer group when the TUI runs at the same time.
+Consumer group: the plan assumed a second reader on `$Default` would share
+the partitions with the TUI. That was wrong, see the Outcome section: both
+readers receive everything.
 
 Client configuration examples (documented in `docs/mcp-server.md`):
 
@@ -293,3 +293,8 @@ Implemented on the branch as planned, with these deviations:
   real records (2768 rows replayed from retention, a default-action deny
   explained with its nearest misses, a flow with a service-tag rule reported as
   `unknown`, 23 rules found for one address).
+- **Consumer groups:** the plan's advice to give the server its own consumer
+  group was wrong. The SDK opens non-exclusive receivers (no owner level) and
+  keeps partition ownership in memory, so two processes on `$Default` both
+  receive every record; Event Hubs allows five per partition. Verified with two
+  servers started together on the lab hub: identical rows and counts.

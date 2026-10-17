@@ -192,3 +192,23 @@ def test_existing_env_is_private_before_the_secret_lands(tmp_path, monkeypatch):
     write_env(env, _CONN)
     assert seen == [0o600]
     assert env.stat().st_mode & 0o777 == 0o600
+
+
+@_POSIX
+def test_env_is_left_untouched_when_its_mode_cannot_be_tightened(tmp_path, monkeypatch):
+    """No secret goes into a file others can read, and the old .env survives."""
+    import os
+
+    from setup.services import write_env
+
+    env = tmp_path / ".env"
+    env.write_text("EVENT_HUB_CONNECTION_STRING=old\n", encoding="utf-8")
+    env.chmod(0o644)
+
+    def _refuse(fd, mode):
+        raise PermissionError("not allowed")
+
+    monkeypatch.setattr(os, "fchmod", _refuse)
+    with pytest.raises(PermissionError):
+        write_env(env, _CONN)
+    assert env.read_text(encoding="utf-8") == "EVENT_HUB_CONNECTION_STRING=old\n"

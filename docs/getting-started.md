@@ -53,7 +53,9 @@ A Homebrew install keeps `.env` in your config directory instead of next to the
 binary, because `brew upgrade` replaces the versioned install folder:
 `~/Library/Application Support/az-firewall-watch/` on macOS,
 `~/.config/az-firewall-watch/` on Linux. `brew uninstall --zap` deletes it and moves
-the cache to the trash.
+the cache to the trash. If you set `XDG_CONFIG_HOME` or `XDG_CACHE_HOME` on Linux, the
+app uses `az-firewall-watch` below those folders instead, and `--zap` does not see
+them: delete them yourself.
 
 ## Option 2: Download the binary
 
@@ -165,9 +167,11 @@ The usual causes, which only an administrator can change:
 | Smart App Control (Windows 11) | A Smart App Control notification on launch |
 
 **For administrators:** allow the file by its SHA-256 hash, for example as an
-*Allow* file indicator in Microsoft Defender for Endpoint, an ASR exclusion or a
-hash rule. Each release lists the hash of `az-firewall-watch.exe` in its notes and
-all hashes in `SHA256SUMS.txt`. To check a downloaded file:
+*Allow* file indicator in Microsoft Defender for Endpoint or as a hash rule in App
+Control for Business or AppLocker. ASR rules do not take hashes: an ASR exclusion is
+a file or folder path (see the winget path below). Each release lists the hash of
+`az-firewall-watch.exe` in its notes and all hashes in `SHA256SUMS.txt`. To check a
+downloaded file:
 
 ```powershell
 Get-FileHash .\az-firewall-watch.exe -Algorithm SHA256

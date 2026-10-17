@@ -111,7 +111,7 @@ jobs:
       - name: Upload unsigned Windows binary
         id: upload-unsigned
         if: runner.os == 'Windows' && vars.SIGNPATH_ENABLED == 'true' && startsWith(github.ref, 'refs/tags/')
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           # Outside the az-firewall-watch* pattern the release job downloads
           name: unsigned-windows-exe
@@ -157,7 +157,7 @@ jobs:
           fi
 
       - name: Upload binary
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: ${{ matrix.artifact }}
           path: dist/${{ matrix.artifact }}*
@@ -301,7 +301,7 @@ jobs:
           packaging/homebrew/render-cask.sh "$version" dist/az-firewall-watch-macos.tar.gz dist/az-firewall-watch-linux.tar.gz dist/az-firewall-watch-linux-arm64.tar.gz > dist/az-firewall-watch.rb
           packaging/winget/render-manifests.sh "$version" dist/az-firewall-watch.exe dist/winget
 
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: dryrun-packages
           path: |

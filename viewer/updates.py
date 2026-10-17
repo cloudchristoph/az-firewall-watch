@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 
 from dialogs import UpdateDialog
 
+from .config import INSTALL_SOURCE, UPGRADE_COMMANDS
 from .management import arm_ssl_context
 
 if TYPE_CHECKING:
@@ -50,4 +51,4 @@ async def check_for_update(app: FirewallLogApp, current_version: str) -> None:
         # Always push immediately — even over ConnectingDialog.
         # The first-event handler in streaming will surgically remove
         # ConnectingDialog from beneath it without touching UpdateDialog.
-        await app.push_screen(UpdateDialog(tag, release_url))
+        await app.push_screen(UpdateDialog(tag, release_url, UPGRADE_COMMANDS.get(INSTALL_SOURCE or "")))

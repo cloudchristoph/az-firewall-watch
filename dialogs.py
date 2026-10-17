@@ -139,7 +139,7 @@ class ErrorDialog(ModalScreen[None]):
 
 
 class PolicyContextNoticeDialog(ModalScreen[bool]):
-    """One-time notice: policy context is on and reaches beyond the Event Hub.
+    """Ask for consent before policy context reaches beyond the Event Hub.
 
     Dismisses with ``True`` to keep it enabled, ``False`` to switch it off.
     """
@@ -211,7 +211,7 @@ class PolicyContextNoticeDialog(ModalScreen[bool]):
     def on_key(self, event: events.Key) -> None:
         if event.key in ("escape", "q"):
             event.stop()
-            self.dismiss(True)  # closing means "leave it as it is"
+            self.dismiss(False)  # closing without approval leaves ARM access disabled
 
 
 def _ago(seconds: float) -> str:
@@ -386,7 +386,7 @@ class UpdateDialog(ModalScreen[None]):
         color: $success;
         margin-bottom: 1;
     }
-    UpdateDialog > #dialog > #upd-url {
+    UpdateDialog > #dialog > #upd-url, UpdateDialog > #dialog > #upd-cmd {
         margin-bottom: 1;
     }
     UpdateDialog > #dialog > .btn-row {
@@ -397,16 +397,17 @@ class UpdateDialog(ModalScreen[None]):
     }
     """
 
-    def __init__(self, latest: str, url: str) -> None:
+    def __init__(self, latest: str, url: str, upgrade_command: str | None = None) -> None:
         super().__init__()
         self._latest = latest
         self._url = url
+        self._upgrade_command = upgrade_command  # set when a package manager installed the binary
 
     repush_callback = None  # pushed without a result callback; kept for the splash re-push protocol
 
     def recreate(self) -> UpdateDialog:
         """Fresh copy for re-pushing after the connecting splash is removed."""
-        return UpdateDialog(self._latest, self._url)
+        return UpdateDialog(self._latest, self._url, self._upgrade_command)
 
     def compose(self) -> ComposeResult:
         with Static(id="dialog"):
@@ -416,6 +417,8 @@ class UpdateDialog(ModalScreen[None]):
                 markup=True,
             )
             yield Static(f"[dim]{self._url}[/dim]", markup=True, id="upd-url")
+            if self._upgrade_command:
+                yield Static(f"Update with [bold]{self._upgrade_command}[/bold]", markup=True, id="upd-cmd")
             with Horizontal(classes="btn-row"):
                 yield Button("Open in browser", variant="success", id="btn-open")
                 yield Button("Dismiss  (Esc)", variant="default", id="btn-dismiss")

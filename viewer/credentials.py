@@ -13,6 +13,8 @@ class CachedCredential:
         self._credential = credential
         self._tokens: dict[tuple, Any] = {}
         self._pending: dict[tuple, asyncio.Task] = {}
+        # Callers still waiting on each shared acquisition.
+        self._waiters: dict[asyncio.Task, int] = {}
         self._closed = False
         self._close_task: asyncio.Task | None = None
 
@@ -46,7 +48,20 @@ class CachedCredential:
             self._pending[key] = task
             # Retrieve failures even if every waiting caller was cancelled.
             task.add_done_callback(lambda done: None if done.cancelled() else done.exception())
-        return await asyncio.shield(task)
+        self._waiters[task] = self._waiters.get(task, 0) + 1
+        try:
+            return await asyncio.shield(task)
+        finally:
+            remaining = self._waiters.pop(task) - 1
+            if remaining:
+                self._waiters[task] = remaining
+            elif not task.done():
+                # Every caller gave up (revoked ARM access, cancelled worker):
+                # stop the acquisition instead of finishing and caching it.
+                # A later caller starts a fresh one rather than joining this.
+                if self._pending.get(key) is task:
+                    del self._pending[key]
+                task.cancel()
 
     async def _acquire(self, key: tuple, scopes: tuple[str, ...], kwargs: dict[str, Any], cacheable: bool) -> Any:
         try:
@@ -55,7 +70,8 @@ class CachedCredential:
                 self._tokens[key] = token
             return token
         finally:
-            self._pending.pop(key, None)
+            if self._pending.get(key) is asyncio.current_task():
+                del self._pending[key]
 
     async def close(self) -> None:
         """Stop pending acquisitions and close the underlying credential once."""

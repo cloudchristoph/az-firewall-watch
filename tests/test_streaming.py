@@ -8,6 +8,8 @@ from __future__ import annotations
 import asyncio
 import io
 import json
+import threading
+import time
 from collections.abc import Callable
 from typing import Any
 
@@ -1060,16 +1062,51 @@ async def test_queued_arm_http_rechecks_revocation_before_start(monkeypatch):
     calls = []
     loop = asyncio.get_running_loop()
 
-    def run_in_executor(executor, function):
+    def run_in_daemon_thread(function):
         nonlocal permitted
-        permitted = False  # consent revoked while the request was queued
+        permitted = False  # consent revoked before the thread got to run
         result = loop.create_future()
         result.set_result(function())
         return result
 
-    monkeypatch.setattr(loop, "run_in_executor", run_in_executor)
+    monkeypatch.setattr(streaming, "_run_in_daemon_thread", run_in_daemon_thread)
     monkeypatch.setattr("urllib.request.urlopen", lambda *args, **kwargs: calls.append(True))
     await streaming._verify_data_plane_access(
         FakeCredential(), "lab-ns.servicebus.windows.net", "firewall-logs", allowed=lambda: permitted,
     )
     assert calls == []
+
+
+def test_abandoned_arm_request_does_not_hold_up_quitting(monkeypatch):
+    # Default-executor threads are joined by asyncio.run(), so a hanging
+    # urlopen used to keep the process alive until its timeout after quit.
+    started, release = threading.Event(), threading.Event()
+
+    def urlopen(request, **kwargs):
+        started.set()
+        release.wait(30)
+        return _Resp(b"{}")
+
+    async def main():
+        check = asyncio.create_task(streaming._verify_data_plane_access(
+            FakeCredential(), "lab-ns.servicebus.windows.net", "firewall-logs"))
+        while not started.is_set():
+            await asyncio.sleep(0.01)
+        check.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await check
+
+    monkeypatch.setattr("urllib.request.urlopen", urlopen)
+    begin = time.monotonic()
+    try:
+        asyncio.run(main())
+        assert time.monotonic() - begin < 5
+        assert not release.is_set()  # the request was still open at exit
+    finally:
+        release.set()
+
+
+async def test_daemon_thread_delivers_result_and_error():
+    assert await streaming._run_in_daemon_thread(lambda: 42) == 42
+    with pytest.raises(ValueError, match="boom"):
+        await streaming._run_in_daemon_thread(lambda: (_ for _ in ()).throw(ValueError("boom")))

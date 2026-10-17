@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import threading
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
@@ -35,6 +36,41 @@ _MAX_ATTEMPTS = 3
 # After a connection has been established once, a drop is treated as
 # transient: reconnect indefinitely, backing off up to the last delay.
 _RECONNECT_BACKOFF = [2, 5, 10, 30, 60]
+
+
+def _run_in_daemon_thread(function: Callable[[], Any]) -> asyncio.Future:
+    """Run blocking work off the loop without holding up shutdown.
+
+    Threads of the default executor are joined when ``asyncio.run()`` ends, so
+    an abandoned ``urlopen`` there kept the process alive after quitting until
+    its timeout ran out. A cancelled caller stops waiting at once; the daemon
+    thread finishes on its own and its result is dropped.
+    """
+    loop = asyncio.get_running_loop()
+    result: asyncio.Future = loop.create_future()
+
+    def deliver(value: Any, error: BaseException | None) -> None:
+        if result.done():
+            return
+        if error is not None:
+            result.set_exception(error)
+        else:
+            result.set_result(value)
+
+    def run() -> None:
+        value: Any = None
+        error: BaseException | None = None
+        try:
+            value = function()
+        except BaseException as exc:
+            error = exc
+        try:
+            loop.call_soon_threadsafe(deliver, value, error)
+        except RuntimeError:
+            pass  # the loop is closed: nobody is waiting any more
+
+    threading.Thread(target=run, name="eventhub-access-check", daemon=True).start()
+    return result
 
 
 async def _verify_data_plane_access(
@@ -81,21 +117,17 @@ async def _verify_data_plane_access(
         method="POST",
     )
     def read_if_allowed(request):
-        # Executor work may sit queued while the user disables context. An
-        # already running HTTP request cannot be recalled, but no later request
+        # The thread may start after the user disabled context. An already
+        # running HTTP request cannot be recalled, but no later request
         # should begin after the decision changes.
         if allowed is not None and not allowed():
             return b"{}"
         return _urllib_req.urlopen(request, timeout=10).read()
 
-    _loop = asyncio.get_event_loop()
     if allowed is not None and not allowed():
         return
     _rg_resp = json.loads(
-        await _loop.run_in_executor(
-            None,
-            lambda: read_if_allowed(_rg_req),
-        )
+        await _run_in_daemon_thread(lambda: read_if_allowed(_rg_req))
     )
     if allowed is not None and not allowed():
         return
@@ -119,10 +151,7 @@ async def _verify_data_plane_access(
         return
     _data_actions: list[str] = []
     for _entry in json.loads(
-        await _loop.run_in_executor(
-            None,
-            lambda: read_if_allowed(_perm_req),
-        )
+        await _run_in_daemon_thread(lambda: read_if_allowed(_perm_req))
     ).get("value", []):
         _data_actions.extend(_entry.get("dataActions", []))
     if allowed is not None and not allowed():
@@ -145,6 +174,9 @@ async def _receive_with_access_check(client, on_event, position, credential, nam
 
     ARM failures remain best effort. Both tasks are drained before the client
     is closed or another connection attempt starts, including on cancellation.
+    An ARM request already on the wire then completes in its daemon thread
+    (bounded by its timeout, with only a bearer string and no client) and its
+    answer is dropped; it does not hold up quitting.
     """
     if credential is None:
         await client.receive(on_event=on_event, starting_position=position)

@@ -117,6 +117,26 @@ async def test_cancelled_waiter_does_not_cancel_shared_acquisition(credential):
     await cached.close()
 
 
+async def test_last_cancelled_waiter_stops_acquisition(credential):
+    credential.release.clear()
+    cached = CachedCredential(credential)
+    request = asyncio.create_task(cached.get_token("scope"))
+    await credential.started.wait()
+    acquisition = cached._pending[(("scope",), ())]
+    request.cancel()
+    # A caller arriving in the same turn must not join the abandoned acquisition.
+    fresh = asyncio.create_task(cached.get_token("scope"))
+    with pytest.raises(asyncio.CancelledError):
+        await request
+    await asyncio.gather(acquisition, return_exceptions=True)
+    assert acquisition.cancelled()
+    credential.release.set()
+    assert (await fresh).token == "token-2"
+    assert len(credential.calls) == 2
+    assert cached._waiters == {}
+    await cached.close()
+
+
 async def test_close_cancels_acquisition_and_is_idempotent(credential):
     credential.release.clear()
     cached = CachedCredential(credential)

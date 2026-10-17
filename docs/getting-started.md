@@ -83,7 +83,8 @@ app. The setup wizard runs automatically if `.env` is not yet configured.
 
 ## 🧙 The setup wizard
 
-The wizard runs the first time you launch the app, or whenever `.env` is missing.
+The wizard runs whenever no Event Hub credentials are configured, neither in `.env`
+nor in the environment, which is the case on first launch.
 It is a full TUI: pick with the arrow keys, **Next →** moves on, and every screen
 has a **Back** button. `Ctrl` + `Q` quits; on the confirmation dialogs `Escape` or
 `q` dismisses. Re-run the wizard any time with `--reconfigure`.
@@ -100,8 +101,9 @@ Windows:
 .\az-firewall-watch.exe --reconfigure
 ```
 
-The wizard asks three questions, one per step: which Event Hub to use, how to
-authenticate against it, and whether the viewer may read policy context from Azure.
+The wizard asks up to three questions, one per step: which Event Hub to use, how
+to authenticate against it, and whether the viewer may read policy context from
+Azure. The authentication step is skipped where the path already implies it.
 
 ### Step 1: Pick an Event Hub
 
@@ -132,8 +134,8 @@ the hub.
 
 ### Step 2: Authentication method
 
-After picking a hub (Discover, Enter existing, or Deploy new), a follow-up screen
-asks **how** to authenticate against it:
+After picking a hub with Discover or Deploy new, a follow-up screen asks **how**
+to authenticate against it:
 
 - **Entra ID** *(recommended)*: passwordless auth via your Azure CLI login
   (`az login`), managed identity, environment credentials, and so on. Nothing secret is written
@@ -143,7 +145,8 @@ asks **how** to authenticate against it:
   hub; if none exists you are asked to confirm the creation of a new one before
   the connection string is written to `.env`.
 
-The *Paste connection string* path skips this screen, since SAS is already implied.
+The *Enter existing* path skips this screen and always uses Entra ID; the *Paste
+connection string* path skips it too, since SAS is already implied.
 
 > [!CAUTION]
 > SAS keys are powerful secrets that grant access to your Event Hub. If you choose
@@ -169,7 +172,8 @@ decision later.
 
 Once `.env` is written, the viewer starts in the same run, so you do not launch it
 again. From then on, start the app as before. The wizard only runs again when
-`.env` is missing or you pass `--reconfigure`.
+no Event Hub credentials are found (in `.env` or the environment) or you pass
+`--reconfigure`.
 
 Events show up as soon as the firewall sends them. Quit the viewer with `q` or
 `Ctrl` + `Q`.

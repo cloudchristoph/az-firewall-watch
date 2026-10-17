@@ -1,13 +1,14 @@
 """IP Groups metadata tab view."""
 from __future__ import annotations
 
-from rich.markup import escape
 from textual import events
 from textual.app import ComposeResult
 from textual.containers import Horizontal
 from textual.message import Message
 from textual.screen import ModalScreen
 from textual.widgets import Button, DataTable, Static
+
+from helpers import escape_markup, escape_rich_markup
 
 from ..azure_resources import FirewallPolicyInfo, IpGroupInfo
 
@@ -43,9 +44,10 @@ class IpGroupDetailDialog(ModalScreen[None]):
 
     def compose(self) -> ComposeResult:
         with Static(id="dialog"):
-            yield Static(f"[b]{escape(self._group.name)}[/b] ({len(self._group.ip_addresses)} entries)", markup=True)
-            items = "\n".join(self._group.ip_addresses) if self._group.ip_addresses else "(empty)"
-            yield Static(escape(items), id="items", markup=True)
+            yield Static(f"[b]{escape_markup(self._group.name)}[/b] ({len(self._group.ip_addresses)} entries)", markup=True)
+            # Escaped entry by entry: escape_markup turns a newline into U+FFFD.
+            items = "\n".join(escape_markup(a) for a in self._group.ip_addresses) if self._group.ip_addresses else "(empty)"
+            yield Static(items, id="items", markup=True)
             yield Button("Close", variant="primary", id="btn-close")
 
     def on_button_pressed(self, _event: Button.Pressed) -> None:
@@ -136,9 +138,10 @@ class IpGroupsView(Static):
             t.add_row("No IP groups loaded", "-", "-", "-", key="__empty__")
             return
         for gid, g in sorted(groups.items(), key=lambda it: it[1].name.lower()):
+            # str cells of a DataTable are Rich markup.
             t.add_row(
-                g.name,
-                g.location or "-",
+                escape_rich_markup(g.name),
+                escape_rich_markup(g.location) or "-",
                 str(len(g.ip_addresses)),
                 str(usage_by_id.get(gid, 0)),
                 key=gid,
@@ -162,17 +165,17 @@ class IpGroupsView(Static):
             return
 
         details = self.query_one("#ipg-details", Static)
-        values = "\n".join(group.ip_addresses[:20]) if group.ip_addresses else "(empty)"
+        values = "\n".join(escape_markup(a) for a in group.ip_addresses[:20]) if group.ip_addresses else "(empty)"
         if len(group.ip_addresses) > 20:
             values += "\n…"
         details.update("\n".join([
-            f"[b]{escape(group.name)}[/b]",
+            f"[b]{escape_markup(group.name)}[/b]",
             "",
-            f"[dim]Location[/]    {escape(group.location) or '-'}",
+            f"[dim]Location[/]    {escape_markup(group.location) or '-'}",
             f"[dim]Entries[/]     {len(group.ip_addresses)}",
             "",
             "[dim]Values[/]",
-            escape(values),
+            values,
         ]))
 
         self._render_related_rules(group_id=key)
@@ -205,9 +208,9 @@ class IpGroupsView(Static):
                         "rule": r.name,
                     }
                     table.add_row(
-                        g.name,
-                        rc.name,
-                        r.name,
+                        escape_rich_markup(g.name),
+                        escape_rich_markup(rc.name),
+                        escape_rich_markup(r.name),
                         "/".join(directions),
                         key=rule_ref,
                     )

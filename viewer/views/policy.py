@@ -1,13 +1,14 @@
 """Policy metadata tab view."""
 from __future__ import annotations
 
-from rich.markup import escape
 from textual import events
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal
 from textual.widgets import Static, Tree
 from textual.widgets.tree import TreeNode
+
+from helpers import escape_markup, escape_rich_markup
 
 from ..azure_resources import FirewallPolicyInfo, IpGroupInfo, Rule, RuleCollection
 
@@ -92,7 +93,7 @@ class PolicyView(Static):
 
         self._policy_sku_tier = policy.sku_tier
 
-        tree.root.set_label(escape(
+        tree.root.set_label(escape_rich_markup(
             f"{policy.name}  (SKU: {policy.sku_tier or '-'}, ThreatIntel: {policy.threat_intel_mode or '-'})"
         ))
         tree.root.remove_children()
@@ -103,21 +104,21 @@ class PolicyView(Static):
 
         # Inherited (parent) groups first, exactly as the firewall evaluates them.
         for policy_name, g in policy.all_groups():
-            origin = f"  · {escape(policy_name)}" if policy.parent is not None and policy_name != policy.name else ""
+            origin = f"  · {escape_rich_markup(policy_name)}" if policy.parent is not None and policy_name != policy.name else ""
             g_node = tree.root.add(
-                escape(f"[{g.priority}] {g.name}") + origin,   # whole label escaped: it is Rich markup
+                escape_rich_markup(f"[{g.priority}] {g.name}") + origin,   # whole label escaped: it is Rich markup
                 data={"kind": "rcg", "rcg": g},
             )
             for rc in sorted(g.rule_collections, key=lambda x: x.priority):
                 action = f" ({rc.action})" if rc.action else ""
                 rc_node = g_node.add(
-                    escape(f"[{rc.priority}] {rc.name}{action}"),
+                    escape_rich_markup(f"[{rc.priority}] {rc.name}{action}"),
                     data={"kind": "rc", "rcg": g, "rc": rc},
                 )
                 for r in rc.rules:
                     rule_ref = self._rule_ref(policy_name, g.name, rc.name, r.name)
                     node = rc_node.add_leaf(
-                        escape(r.name),
+                        escape_rich_markup(r.name),
                         data={"kind": "rule", "rcg": g, "rc": rc, "rule": r, "rule_ref": rule_ref},
                     )
                     self._rule_ref_to_node[rule_ref] = node
@@ -254,12 +255,12 @@ class PolicyView(Static):
         own = len(policy.rule_collection_groups)
         inherited = len(policy.all_groups()) - own
         rcg_count = f"{own}" if not inherited else f"{own} own + {inherited} inherited"
-        base = escape(policy.parent.name) if policy.parent is not None else (escape(policy.base_policy_id) or "-")
+        base = escape_markup(policy.parent.name) if policy.parent is not None else (escape_markup(policy.base_policy_id) or "-")
         return "\n".join([
-            f"[b]{escape(policy.name)}[/b]",
+            f"[b]{escape_markup(policy.name)}[/b]",
             "",
-            f"[dim]SKU[/]            {escape(policy.sku_tier) or '-'}",
-            f"[dim]ThreatIntel[/]    {escape(policy.threat_intel_mode) or '-'}",
+            f"[dim]SKU[/]            {escape_markup(policy.sku_tier) or '-'}",
+            f"[dim]ThreatIntel[/]    {escape_markup(policy.threat_intel_mode) or '-'}",
             f"[dim]Base policy[/]    {base}",
             f"[dim]RCG count[/]      {rcg_count}",
         ])
@@ -271,7 +272,7 @@ class PolicyView(Static):
         return "\n".join([
             "[b]Rule Collection Group[/b]",
             "",
-            f"[dim]Name[/]           {escape(rcg.name)}",
+            f"[dim]Name[/]           {escape_markup(rcg.name)}",
             f"[dim]Priority[/]       {rcg.priority}",
             f"[dim]Collections[/]    {len(rcg.rule_collections)}",
         ])
@@ -283,11 +284,11 @@ class PolicyView(Static):
         return "\n".join([
             "[b]Rule Collection[/b]",
             "",
-            f"[dim]RCG[/]            {escape(rcg.name) if rcg else '-'}",
-            f"[dim]Name[/]           {escape(rc.name)}",
+            f"[dim]RCG[/]            {escape_markup(rcg.name) if rcg else '-'}",
+            f"[dim]Name[/]           {escape_markup(rc.name)}",
             f"[dim]Priority[/]       {rc.priority}",
-            f"[dim]Action[/]         {escape(rc.action) or '-'}",
-            f"[dim]Type[/]           {escape(rc.rule_collection_type) or '-'}",
+            f"[dim]Action[/]         {escape_markup(rc.action) or '-'}",
+            f"[dim]Type[/]           {escape_markup(rc.rule_collection_type) or '-'}",
             f"[dim]Rules[/]          {len(rc.rules)}",
         ])
 
@@ -298,13 +299,13 @@ class PolicyView(Static):
         src_groups = self._render_group_values(rule.source_ip_groups, ip_groups)
         dst_groups = self._render_group_values(rule.destination_ip_groups, ip_groups)
         def j(values: list[str]) -> str:
-            return escape(", ".join(values)) if values else "-"
+            return escape_markup(", ".join(values)) if values else "-"
 
         lines = [
-            f"[b]Rule: {escape(rule.name)}[/b]",
+            f"[b]Rule: {escape_markup(rule.name)}[/b]",
             "",
-            f"[dim]RCG[/]            {escape(rcg.name) if rcg else '-'}",
-            f"[dim]Collection[/]     {escape(rc.name) if rc else '-'}",
+            f"[dim]RCG[/]            {escape_markup(rcg.name) if rcg else '-'}",
+            f"[dim]Collection[/]     {escape_markup(rc.name) if rc else '-'}",
             f"[dim]Category[/]       {_rule_category(rule, rc) if rc else '-'}",
             f"[dim]Protocols[/]      {j(rule.protocols)}",
             f"[dim]Dest ports[/]     {j(rule.destination_ports)}",
@@ -343,8 +344,8 @@ class PolicyView(Static):
         lines = [f"[dim]HTTP headers[/]   {count} inserted   {status}"]
         pad = " " * _VALUE_COLUMN
         for h in rule.http_headers:
-            value = escape(h.value) if self._reveal_header_values else _HIDDEN_HEADER_VALUE
-            lines.append(f"{pad}{escape(h.name)}: {value}")
+            value = escape_markup(h.value) if self._reveal_header_values else _HIDDEN_HEADER_VALUE
+            lines.append(f"{pad}{escape_markup(h.name)}: {value}")
         lines.append(self._header_insertion_scope_line(rule))
         return lines
 
@@ -383,11 +384,11 @@ class PolicyView(Static):
         for gid in group_ids:
             grp = ip_groups.get(gid)
             if grp is None:
-                out.append(f"{escape(gid)} (unresolved)")
+                out.append(f"{escape_markup(gid)} (unresolved)")
                 continue
             preview = ", ".join(grp.ip_addresses[:5])
             if len(grp.ip_addresses) > 5:
                 preview += ", …"
-            # Parentheses, not brackets: this string is rendered as Rich markup.
-            out.append(f"{escape(grp.name)}: ({escape(preview)})" if preview else escape(grp.name))
+            # Parentheses, not brackets: this string is rendered as Textual markup.
+            out.append(f"{escape_markup(grp.name)}: ({escape_markup(preview)})" if preview else escape_markup(grp.name))
         return "\n                  ".join(out)

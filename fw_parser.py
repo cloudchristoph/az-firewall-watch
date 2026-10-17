@@ -11,9 +11,9 @@ Ported from azure-firewall-mon/firewall-mon-app/src/app/services/event-hub-sourc
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, fields
 
-from helpers import normalise_address, split_endpoint
+from helpers import display_safe, normalise_address, split_endpoint
 
 _counter = 0
 
@@ -92,7 +92,23 @@ def parse_record(record: dict) -> FirewallDataRow | None:
 
     Returns None only if the record dict itself is malformed; skipped records
     are returned with a category starting with 'SKIP:' so callers can count them.
+
+    Every field leaves here display-safe (see ``helpers.display_safe``): the
+    record is untrusted input, and an ESC in an FQDN or a rule name would
+    otherwise reach the terminal from the table, the dialog and the trace.
+    Ordinary values come out unchanged, so matching against the policy is
+    unaffected; only a value carrying control characters differs.
     """
+    row = _parse_record(record)
+    if row is not None:
+        for f in fields(row):
+            value = getattr(row, f.name)
+            if isinstance(value, str):
+                setattr(row, f.name, display_safe(value))
+    return row
+
+
+def _parse_record(record: dict) -> FirewallDataRow | None:
     resource_id: str = record.get("resourceId", "")
     category: str = record.get("category", "")
     op_name: str = record.get("operationName", "")

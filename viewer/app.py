@@ -32,6 +32,7 @@ from dialogs import PolicyContextNoticeDialog, StatusBar
 from fw_parser import FirewallDataRow
 from helpers import _category_text, _highlight, _is_ipv6, _to_local, address_matches
 
+from .arm import is_firewall_resource_id
 from .azure_resources import FirewallInfo, FirewallPolicyInfo, IpGroupInfo
 from .cache import CachedSnapshot
 from .cache import load as load_cached
@@ -392,7 +393,7 @@ class FirewallLogApp(App[None]):
             for _, g in (snap.policy.all_groups() if snap.policy else [])
             for rc in g.rule_collections for r in rc.rules
         }
-        if snap.firewall.name:
+        if snap.firewall.name and snap.firewall.name.isprintable():
             # ARM knows the real (case-preserved) name; the diagnostics
             # resourceId only gave us an upper-cased one.
             self.sub_title = snap.firewall.name
@@ -490,8 +491,8 @@ class FirewallLogApp(App[None]):
 
     def request_mgmt_load(self, firewall_id: str) -> None:
         """Called from streaming.on_event when we first see a resourceId."""
-        if not self._policy_context:
-            return
+        if not self._policy_context or not is_firewall_resource_id(firewall_id):
+            return  # off, or not a firewall id: it would carry the ARM token elsewhere
         if self._awaiting_context_answer:
             # Consent pending: remember the firewall, touch nothing yet.
             if self._deferred_firewall_id is None:
@@ -562,7 +563,7 @@ class FirewallLogApp(App[None]):
             _highlight(row.protocol, f["proto"]),
             self._source_text(self._format_ip(row.sourceip), row.srcport, f["src"]),
             _highlight(self._format_ip(row.targetip), f["dst"]),
-            row.targetport,
+            Text(row.targetport),  # a plain str cell would be parsed as markup
             action_text,
             self._info_text(info),
         )

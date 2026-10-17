@@ -11,6 +11,8 @@ from textual.reactive import reactive
 from textual.screen import ModalScreen
 from textual.widgets import Button, LoadingIndicator, Static
 
+from helpers import escape_markup
+
 
 class ConnectingDialog(ModalScreen[None]):
     """Splash shown while the initial connection probe is in progress."""
@@ -413,10 +415,11 @@ class UpdateDialog(ModalScreen[None]):
         with Static(id="dialog"):
             yield Static("\u2b06  Update available", id="upd-title")
             yield Static(
-                f"Version [bold]{self._latest}[/bold] is now available on GitHub.",
+                f"Version [bold]{escape_markup(self._latest)}[/bold] is now available on GitHub.",
                 markup=True,
             )
-            yield Static(f"[dim]{self._url}[/dim]", markup=True, id="upd-url")
+            # Tag and URL come from the GitHub API response, not from this code.
+            yield Static(f"[dim]{escape_markup(self._url)}[/dim]", markup=True, id="upd-url")
             if self._upgrade_command:
                 yield Static(f"Update with [bold]{self._upgrade_command}[/bold]", markup=True, id="upd-cmd")
             with Horizontal(classes="btn-row"):

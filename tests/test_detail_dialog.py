@@ -407,7 +407,7 @@ async def test_rule_caption_absent_with_trace(structured_record, mgmt, firewall_
         assert "[dim]Rule[/]" not in _dialog_text(with_trace)
 
 
-async def test_ip_groups_render_one_per_line(structured_record, monkeypatch):
+async def test_ip_groups_render_one_per_line(structured_record, monkeypatch, firewall_id):
     """Two overlapping IP groups on one address must be two lines, not a comma list."""
     import viewer.app as app_module
 
@@ -432,7 +432,7 @@ async def test_ip_groups_render_one_per_line(structured_record, monkeypatch):
     app = FirewallLogApp()
     async with app.run_test(size=(160, 45)) as pilot:
         await pilot.pause()
-        await _load(app, pilot, "fw-id")
+        await _load(app, pilot, firewall_id)
         dialog = await _open_detail(app, pilot, _network_row(structured_record, SourceIp="10.3.5.4"))
         contents = [str(s.content) for s in dialog.query(Static)]
         src_field = next(c for c in contents if c.startswith("[dim]Src IP groups[/]"))

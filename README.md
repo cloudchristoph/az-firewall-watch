@@ -131,6 +131,10 @@ Platform notes (Gatekeeper, SmartScreen) and the full wizard walkthrough are in
 [Getting started](docs/getting-started.md). The Windows binary's
 [code signing policy](docs/code-signing.md) names who signs it and what it sends.
 
+Code signing for Windows: free code signing provided by [SignPath.io](https://signpath.io),
+certificate by [SignPath Foundation](https://signpath.org). Signing starts with the first
+release after the project is approved; until then the `.exe` is unsigned.
+
 ## 🤖 MCP server
 
 The same binary can run headless as an [MCP](https://modelcontextprotocol.io) server,
@@ -145,8 +149,8 @@ the same folder):
 ```
 
 For Claude Code: `claude mcp add az-firewall-watch -- /path/to/az-firewall-watch --mcp`.
-Tools, resources, prompts and the consumer-group advice for running it next to the
-viewer are in [MCP server](docs/mcp-server.md).
+Tools, resources, prompts and the notes on running it next to the viewer are in
+[MCP server](docs/mcp-server.md).
 
 ## 📚 Documentation
 

@@ -1,11 +1,13 @@
 """Top-level Textual app for az-firewall-watch."""
 from __future__ import annotations
 
+import asyncio
 import heapq
 import ipaddress
 import re
 import time
 from pathlib import Path
+from typing import Any
 
 from rich.text import Text
 from textual import on, work
@@ -32,7 +34,9 @@ from helpers import _category_text, _highlight, _is_ipv6, _to_local, address_mat
 
 from .azure_resources import FirewallInfo, FirewallPolicyInfo, IpGroupInfo
 from .cache import CachedSnapshot
+from .cache import load as load_cached
 from .config import CATEGORY_GROUPS, CATEGORY_OPTIONS, MAX_ROWS, TABLE_TRIM_SLACK, VERSION
+from .credentials import create_credential
 from .enrichment import find_matching_ip_groups, resolve_fw_instance
 from .management import load_management_data
 from .streaming import run_stream
@@ -153,6 +157,8 @@ class FirewallLogApp(App[None]):
                  env_file: Path | None = None) -> None:
         super().__init__()
         self.theme = "flexoki"
+        self._credential: Any | None = None
+        self._closing = False
         # Policy context (ARM reads, CLI token fallback, cache).
         # Off → Logs tab only, no ARM access at all.
         self._policy_context = policy_context
@@ -160,6 +166,12 @@ class FirewallLogApp(App[None]):
         # While the first-run notice is open nothing may reach ARM: the first
         # firewall id seen is parked here and loaded only after "Keep enabled".
         self._awaiting_context_answer = self._policy_context_notice
+        self._context_decided = asyncio.Event()
+        if not self._awaiting_context_answer:
+            self._context_decided.set()
+        self._arm_disabled = asyncio.Event()
+        if not self._policy_context:
+            self._arm_disabled.set()
         self._deferred_firewall_id: str | None = None
         self._env_file = env_file
         self._all_rows: list[FirewallDataRow] = []
@@ -243,10 +255,43 @@ class FirewallLogApp(App[None]):
             notice.repush_callback = self._on_policy_context_notice  # keeps working if the splash lifts it
             self.push_screen(notice, callback=self._on_policy_context_notice)
 
+    def arm_access_allowed(self) -> bool:
+        return self._policy_context and not self._awaiting_context_answer and not self._closing
+
+    async def wait_for_arm_permission(self) -> bool:
+        """Wait for an explicit first-run decision before any ARM access."""
+        await self._context_decided.wait()
+        return self.arm_access_allowed()
+
+    async def wait_for_arm_disabled(self) -> None:
+        await self._arm_disabled.wait()
+
+    def get_credential(self) -> Any:
+        """Lazily share the identity and its token cache across EH and ARM."""
+        if self._closing:
+            raise RuntimeError("The app is shutting down")
+        if self._credential is None:
+            self._credential = create_credential()
+        return self._credential
+
+    async def on_unmount(self) -> None:
+        self._closing = True
+        self._context_decided.set()
+        self._arm_disabled.set()
+        workers = list(self.workers)
+        for worker in workers:
+            if not worker.is_cancelled:
+                worker.cancel()
+        await asyncio.gather(*(worker.wait() for worker in workers), return_exceptions=True)
+        if self._credential is not None:
+            await self._credential.close()
+            self._credential = None
+
     # ── enrichment switch ──────────────────────────────────────────────────────
     def _on_policy_context_notice(self, keep: bool | None) -> None:
-        keep = True if keep is None else keep
+        keep = keep is True
         self._awaiting_context_answer = False
+        self._context_decided.set()
         self._persist_policy_context(keep)
         if not keep:
             self._disable_policy_context()
@@ -268,6 +313,8 @@ class FirewallLogApp(App[None]):
     def _disable_policy_context(self) -> None:
         """Switch policy context off at runtime: drop the metadata tabs, stop ARM use."""
         self._policy_context = False
+        self._arm_disabled.set()
+        self._context_decided.set()
         self._firewall_id = None
         self._deferred_firewall_id = None
         self._mgmt_loaded = False
@@ -300,9 +347,20 @@ class FirewallLogApp(App[None]):
     @work(exclusive=True, group="mgmt")
     async def _load_mgmt(self, firewall_id: str, *, force: bool = False) -> None:
         """Background fetch of firewall / policy / IP-groups metadata."""
+        if self._closing or not self.is_running or not self._policy_context or self._awaiting_context_answer:
+            return
         status = self.query_one("#status", StatusBar)
         errors: list[str] = []
-        snap = await load_management_data(firewall_id, force=force, errors=errors)
+        try:
+            # A fresh cache entry needs no ARM call, so do not build the
+            # credential for it (it stays lazy, e.g. for SAS-only setups).
+            cached = None if force else load_cached(firewall_id)
+            credential = None if cached is not None and cached.is_fresh() else self.get_credential()
+        except Exception:
+            credential = None  # ArmClient can still use its CLI fallback.
+        snap = await load_management_data(firewall_id, force=force, errors=errors, credential=credential)
+        if self._closing or not self.is_running or not self._policy_context:
+            return
         if snap is None:
             reason = errors[0] if errors else "no ARM access"
             status.ctx_error = reason

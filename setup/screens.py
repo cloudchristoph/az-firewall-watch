@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import os
 from typing import TYPE_CHECKING, cast
 
+from rich.text import Text
 from textual import work
 from textual.containers import Horizontal, Vertical
 from textual.screen import ModalScreen, Screen
@@ -18,6 +20,8 @@ from textual.widgets import (
     RichLog,
     Static,
 )
+
+from viewer.cache import cache_path
 
 from .operations import (
     cli_ensure_login,
@@ -36,6 +40,15 @@ if TYPE_CHECKING:
 
 class _WizardScreen(Screen):
     """Base screen that exposes a typed accessor for :class:`WizardApp`."""
+
+    INPUT_SUBMIT_BUTTON: str | None = None
+
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        if self.INPUT_SUBMIT_BUTTON is not None:
+            event.stop()
+            button = self.query_one(f"#{self.INPUT_SUBMIT_BUTTON}", Button)
+            if button.is_on_screen and not button.disabled:
+                button.press()
 
     @property
     def _wizard_app(self) -> WizardApp:
@@ -80,12 +93,12 @@ class WelcomeScreen(Screen):
                     id="opt-deploy",
                 )
             with Horizontal(classes="wiz-buttons"):
-                yield Button("Quit", id="btn-quit", variant="error")
                 yield Button("Next →", id="btn-next", variant="primary")
+                yield Button("Quit", id="btn-quit", variant="error")
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         if event.button.id == "btn-quit":
-            self.app.exit()
+            self.app.exit(False)
             return
         if event.button.id == "btn-next":
             radio = self.query_one("#welcome-radio", _SafeRadioSet)
@@ -190,17 +203,21 @@ class PolicyContextScreen(ModalScreen[bool | None]):
     """Asks whether the viewer may read firewall metadata via ARM (default: yes)."""
 
     def compose(self):
+        permissions = (
+            "Windows access permissions apply"
+            if os.name == "nt" else "file mode 0600 requested on write"
+        )
         with Vertical(classes="wiz-box"):
             yield Static("Policy context", classes="wiz-title")
             yield Static(
-                "Besides reading the Event Hub, the viewer can read the firewall,\n"
+                Text("Besides reading the Event Hub, the viewer can read the firewall,\n"
                 "its policy and IP groups via Azure Resource Manager to show the\n"
                 "Firewall / Policy / IP Groups tabs and the evaluation trace.\n\n"
                 "This means, in addition to the log stream:\n"
                 "  • read-only ARM requests (Reader role on firewall, policy, IP groups)\n"
                 "  • a token from the Azure CLI as fallback (az account get-access-token)\n"
-                "  • a cache in your user cache directory, az-firewall-watch/cache.json (1 h, mode 0600)\n\n"
-                "Nothing is written to Azure. Saved to .env as POLICY_CONTEXT=on|off.",
+                f"  • local cache: {cache_path()} (1 h; {permissions})\n\n"
+                "Nothing is written to Azure. Saved to .env as POLICY_CONTEXT=on|off."),
                 classes="wiz-info",
             )
             with RadioSet(id="context-radio"):
@@ -228,6 +245,8 @@ class PolicyContextScreen(ModalScreen[bool | None]):
 
 class PasteConnectionScreen(_WizardScreen):
     """Option 3 — paste a SAS connection string."""
+
+    INPUT_SUBMIT_BUTTON = "btn-save"
 
     def compose(self):
         with Vertical(classes="wiz-box"):
@@ -289,11 +308,13 @@ class PasteConnectionScreen(_WizardScreen):
         if policy_context is None:
             return
         write_env(self._wizard_app.env_file, raw, policy_context=policy_context)
-        self.app.exit()
+        self.app.exit(True)
 
 
 class EnterExistingHubScreen(_WizardScreen):
     """Option 3 — enter existing Event Hub name, connect with Entra ID."""
+
+    INPUT_SUBMIT_BUTTON = "btn-save"
 
     def compose(self):
         with Vertical(classes="wiz-box"):
@@ -356,7 +377,7 @@ class EnterExistingHubScreen(_WizardScreen):
         if policy_context is None:
             return
         write_env_entra(self._wizard_app.env_file, ns, hub, policy_context=policy_context)
-        self.app.exit()
+        self.app.exit(True)
 
 
 class PickExistingScreen(_WizardScreen):
@@ -449,7 +470,7 @@ class PickExistingScreen(_WizardScreen):
 
         if auth_method == "entra":
             write_env_entra(self._wizard_app.env_file, f"{ns}.servicebus.windows.net", eh, policy_context=policy_context)
-            self.app.exit()
+            self.app.exit(True)
             return
 
         rule_name = "az-firewall-watch-listen"
@@ -471,7 +492,7 @@ class PickExistingScreen(_WizardScreen):
             log.write("[green]✓[/] Writing .env…")
             write_env(self._wizard_app.env_file, conn_str, policy_context=policy_context)
             log.write("[green]✓[/] Done!")
-            self.app.exit()
+            self.app.exit(True)
         except Exception as exc:
             self._show_error(f"Failed to configure auth rule: {cli_error_text(exc)}")
 
@@ -618,6 +639,13 @@ class DeployNewScreen(_WizardScreen):
                 self._start_deploy()
             case "btn-back-progress":
                 self.query_one(ContentSwitcher).current = "step-summary"
+
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        event.stop()
+        if self.query_one(ContentSwitcher).current == "step-naming":
+            button = self.query_one("#btn-next-naming", Button)
+            if button.is_on_screen and not button.disabled:
+                button.press()
 
     def _go_subscription(self) -> None:
         lv = self.query_one("#sub-list", ListView)
@@ -769,7 +797,7 @@ class DeployNewScreen(_WizardScreen):
             else:
                 write_env(self._wizard_app.env_file, conn_str, policy_context=self._policy_context)
             log.write("[green]✓[/] .env written — setup complete!")
-            self.app.exit()
+            self.app.exit(True)
         except Exception as exc:
             log.write(f"[red]✗[/] Deployment failed: {cli_error_text(exc)}")
             self.query_one("#progress-spinner", LoadingIndicator).display = False

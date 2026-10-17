@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -46,33 +47,55 @@ def _policy_context_line(policy_context: bool) -> str:
     return f"POLICY_CONTEXT={'on' if policy_context else 'off'}\n"
 
 
+def _write_private(env_file: Path, text: str) -> None:
+    """Write .env readable by the user only (0600): it can carry a SAS key.
+    On Windows the mode only sets the read-only flag; the user profile is
+    private there already."""
+    # No O_TRUNC yet: an existing file keeps its old mode through os.open, and
+    # if that cannot be tightened the current .env must survive untouched.
+    fd = os.open(env_file, os.O_WRONLY | os.O_CREAT, 0o600)
+    try:
+        if hasattr(os, "fchmod"):
+            try:
+                os.fchmod(fd, 0o600)
+            except OSError:
+                if os.name != "nt":
+                    raise  # never write the secret into a file others can read
+        os.ftruncate(fd, 0)
+    except BaseException:
+        os.close(fd)
+        raise
+    with os.fdopen(fd, "w", encoding="utf-8") as fh:
+        fh.write(text)
+
+
 def write_env(env_file: Path, conn_str: str, policy_context: bool = True) -> None:
     """Write a connection-string-based .env file."""
     ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    env_file.write_text(
+    _write_private(
+        env_file,
         f"# Written by setup.app - {ts}\n"
         "# Do NOT commit this file - it contains a shared access key.\n"
         f"EVENT_HUB_CONNECTION_STRING={conn_str}\n"
         "EVENT_HUB_CONSUMER_GROUP=$Default\n"
         "EVENT_HUB_START_POSITION=latest\n"
         + _POLICY_CONTEXT_COMMENT + _policy_context_line(policy_context),
-        encoding="utf-8",
     )
 
 
 def write_env_entra(env_file: Path, namespace: str, hub_name: str, policy_context: bool = True) -> None:
     """Write an Entra ID (passwordless) .env file."""
     ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    env_file.write_text(
+    _write_private(
+        env_file,
         f"# Written by setup.app - {ts}\n"
-        "# Entra ID (passwordless) authentication — no secrets stored.\n"
+        "# Entra ID (passwordless) authentication: no secrets stored.\n"
         "# Your identity must have 'Azure Event Hubs Data Receiver' role.\n"
         f"EVENT_HUB_NAMESPACE={namespace}\n"
         f"EVENT_HUB_NAME={hub_name}\n"
         "EVENT_HUB_CONSUMER_GROUP=$Default\n"
         "EVENT_HUB_START_POSITION=latest\n"
         + _POLICY_CONTEXT_COMMENT + _policy_context_line(policy_context),
-        encoding="utf-8",
     )
 
 
@@ -98,4 +121,4 @@ def set_env_value(env_file: Path, key: str, value: str) -> None:
         if key == "POLICY_CONTEXT":
             lines.extend(_POLICY_CONTEXT_COMMENT.rstrip("\n").splitlines())
         lines.append(f"{key}={value}")
-    env_file.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    _write_private(env_file, "\n".join(lines) + "\n")

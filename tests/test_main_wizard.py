@@ -21,9 +21,10 @@ def wizard(monkeypatch, tmp_path: Path):
     """A wizard stand-in that records its call and writes a SAS .env."""
     calls: list[dict] = []
 
-    def _run_wizard(base_dir: Path, reconfigure: bool = False) -> None:
+    def _run_wizard(base_dir: Path, reconfigure: bool = False) -> bool:
         calls.append({"base_dir": base_dir, "reconfigure": reconfigure})
         (base_dir / ".env").write_text(f"EVENT_HUB_CONNECTION_STRING={CONN}\n", encoding="utf-8")
+        return True
 
     monkeypatch.setattr(setup_app, "run_wizard", _run_wizard)
     monkeypatch.setattr(main, "BASE_DIR", tmp_path)
@@ -74,3 +75,22 @@ def test_reconfigure_runs_the_wizard_despite_credentials(wizard, tmp_path: Path,
     main._maybe_run_wizard()
     assert wizard == [{"base_dir": tmp_path, "reconfigure": True}]
     assert main.os.environ["EVENT_HUB_CONNECTION_STRING"] == CONN  # the new value replaced the old
+
+
+@pytest.mark.parametrize("reconfigure", [False, True])
+def test_quitting_wizard_never_starts_viewer(wizard, monkeypatch, reconfigure):
+    if reconfigure:
+        monkeypatch.setenv("EVENT_HUB_CONNECTION_STRING", CONN)
+        monkeypatch.setattr(main.sys, "argv", ["main.py", "--reconfigure"])
+    monkeypatch.setattr(setup_app, "run_wizard", lambda *args, **kwargs: False)
+    monkeypatch.setattr(main, "FirewallLogApp", lambda **kwargs: pytest.fail("Viewer started after Quit"))
+    main.main()
+
+
+def test_completed_wizard_starts_viewer(wizard, monkeypatch):
+    from unittest.mock import Mock
+
+    viewer = Mock()
+    monkeypatch.setattr(main, "FirewallLogApp", viewer)
+    main.main()
+    viewer.return_value.run.assert_called_once_with()

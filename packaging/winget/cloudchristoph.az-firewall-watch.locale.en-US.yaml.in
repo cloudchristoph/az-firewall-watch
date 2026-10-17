@@ -1,6 +1,6 @@
 # yaml-language-server: $schema=https://aka.ms/winget-manifest.defaultLocale.1.10.0.schema.json
 # Rendered by packaging/winget/render-manifests.sh for microsoft/winget-pkgs.
-PackageIdentifier: CloudChristoph.AzFirewallWatch
+PackageIdentifier: cloudchristoph.az-firewall-watch
 PackageVersion: "@VERSION@"
 PackageLocale: en-US
 Publisher: CloudChristoph
@@ -10,10 +10,11 @@ PackageName: Azure Firewall Watch
 PackageUrl: https://github.com/cloudchristoph/az-firewall-watch
 License: MIT
 LicenseUrl: https://github.com/cloudchristoph/az-firewall-watch/blob/main/LICENSE
-ShortDescription: Live terminal viewer for Azure Firewall logs streamed from Event Hub
+ShortDescription: Live terminal viewer for Azure Firewall logs streamed from Event Hub. Unofficial.
 Description: |-
   Streams an Azure Firewall's diagnostic logs from Event Hub into a terminal UI, filters them
   live and explains each decision against the firewall policy read from Azure Resource Manager.
+  This is an unofficial tool and is not affiliated with or endorsed by Microsoft.
 Moniker: az-firewall-watch
 Tags:
   - azure

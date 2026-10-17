@@ -1,6 +1,6 @@
 # yaml-language-server: $schema=https://aka.ms/winget-manifest.version.1.10.0.schema.json
 # Rendered by packaging/winget/render-manifests.sh for microsoft/winget-pkgs.
-PackageIdentifier: CloudChristoph.AzFirewallWatch
+PackageIdentifier: cloudchristoph.az-firewall-watch
 PackageVersion: "@VERSION@"
 DefaultLocale: en-US
 ManifestType: version

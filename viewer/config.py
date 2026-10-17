@@ -7,7 +7,7 @@ from pathlib import Path
 
 from helpers import load_env  # re-exported for main.py
 
-WINGET_ID = "CloudChristoph.AzFirewallWatch"
+WINGET_ID = "cloudchristoph.az-firewall-watch"
 
 # How to update a binary that a package manager installed (see install_source).
 UPGRADE_COMMANDS: dict[str, str] = {

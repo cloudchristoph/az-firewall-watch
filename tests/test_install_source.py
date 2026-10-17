@@ -34,9 +34,9 @@ def test_caskroom_binary_is_a_homebrew_install(tmp_path):
 
 
 @pytest.mark.parametrize("path", [
-    r"C:\Users\me\AppData\Local\Microsoft\WinGet\Packages\CloudChristoph.AzFirewallWatch_Microsoft.Winget.Source_8wekyb3d8bbwe\az-firewall-watch.exe",
+    r"C:\Users\me\AppData\Local\Microsoft\WinGet\Packages\cloudchristoph.az-firewall-watch_Microsoft.Winget.Source_8wekyb3d8bbwe\az-firewall-watch.exe",
     r"C:\Users\me\AppData\Local\Microsoft\WinGet\Links\az-firewall-watch.exe",
-    r"C:\Program Files\WinGet\Packages\CloudChristoph.AzFirewallWatch_Microsoft.Winget.Source_8wekyb3d8bbwe\az-firewall-watch.exe",
+    r"C:\Program Files\WinGet\Packages\cloudchristoph.az-firewall-watch_Microsoft.Winget.Source_8wekyb3d8bbwe\az-firewall-watch.exe",
     r"c:\users\me\appdata\local\microsoft\winget\links\az-firewall-watch.exe",  # case-insensitive, as Windows is
 ])
 def test_winget_portable_paths(path):
@@ -105,7 +105,7 @@ class _DialogHost(App):
 
 @pytest.mark.parametrize("command", [
     "brew upgrade --cask az-firewall-watch",
-    "winget upgrade CloudChristoph.AzFirewallWatch",
+    "winget upgrade cloudchristoph.az-firewall-watch",
     None,
 ])
 async def test_upgrade_hint_only_for_package_installs(command):

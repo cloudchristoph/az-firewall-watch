@@ -13,7 +13,6 @@ the footer; this panel only owns the tree, its legend and the detail Static.
 """
 from __future__ import annotations
 
-from rich.markup import escape
 from rich.text import Text
 from textual import events
 from textual.app import ComposeResult
@@ -21,6 +20,8 @@ from textual.containers import Vertical, VerticalScroll
 from textual.message import Message
 from textual.widgets import Static, Tree
 from textual.widgets.tree import TreeNode
+
+from helpers import escape_markup, escape_rich_markup
 
 from ..azure_resources import RuleCollectionGroup
 from ..trace import (
@@ -65,7 +66,7 @@ def _action_tag(action: str, kind: str) -> str:
         return "[dim green]allow[/]"   # quiet, but still readable as the good outcome
     if a == "dnat" or kind == "dnat":
         return "[bold yellow]dnat[/]"
-    return f"[dim]{escape(a or kind or '')}[/]"
+    return f"[dim]{escape_rich_markup(a or kind or '')}[/]"
 
 
 def _short(text: str, limit: int = _NAME_MAX) -> str:
@@ -77,14 +78,14 @@ def _short(text: str, limit: int = _NAME_MAX) -> str:
 def _render_pass_detail(p: PassTrace) -> str:
     title = _PASS_TITLE[p.kind]
     if not p.evaluated:
-        return f"[b]{escape(title)}[/b]\n[dim]{escape(p.note)}[/]"
+        return f"[b]{escape_rich_markup(title)}[/b]\n[dim]{escape_rich_markup(p.note)}[/]"
     matched = sum(1 for c in p.collections if c.verdict == MATCH)
     missed = sum(1 for c in p.collections if c.verdict == MISS)
     unknown = sum(1 for c in p.collections if c.verdict == UNKNOWN)
     skipped = sum(1 for c in p.collections if not c.evaluated)
-    lines = [f"[b]{escape(title)}[/b]"]
+    lines = [f"[b]{escape_rich_markup(title)}[/b]"]
     if p.note:
-        lines.append(f"[dim]{escape(p.note)}[/]")
+        lines.append(f"[dim]{escape_rich_markup(p.note)}[/]")
     lines.append(f"{matched} matched · {missed} miss · {unknown} cannot evaluate · {skipped} not evaluated")
     return "\n".join(lines)
 
@@ -92,7 +93,7 @@ def _render_pass_detail(p: PassTrace) -> str:
 def _render_group_detail(name: str, priority: int, collections: list[CollectionTrace]) -> str:
     n = len(collections)
     k = sum(1 for c in collections if c.verdict == UNKNOWN)
-    return (f"[b]{escape(f'[{priority}] {name}')}[/b]\n"
+    return (f"[b]{escape_rich_markup(f'[{priority}] {name}')}[/b]\n"
             f"{n} collection{'s' if n != 1 else ''} · {k} with ?")
 
 
@@ -101,33 +102,33 @@ def _render_collection_detail(c: CollectionTrace) -> str:
         return "[dim]not evaluated: a rule before it matched[/]"
     rc = c.collection
     lines = [
-        f"[b]{escape(rc.name)}[/b]   {_action_tag(rc.action, rc.kind)}   "
-        f"[dim]{escape(c.group.name)} · priority {rc.priority}[/]",
+        f"[b]{escape_rich_markup(rc.name)}[/b]   {_action_tag(rc.action, rc.kind)}   "
+        f"[dim]{escape_rich_markup(c.group.name)} · priority {rc.priority}[/]",
         f"{len(c.rules)} rule{'s' if len(c.rules) != 1 else ''}",
     ]
     icon = _ICON.get(c.verdict, "")
-    body = escape(c.note) if c.note else _VERDICT_WORD.get(c.verdict, c.verdict)
+    body = escape_rich_markup(c.note) if c.note else _VERDICT_WORD.get(c.verdict, c.verdict)
     lines.append(f"{icon} {body}")
     if c.verdict in (MISS, UNKNOWN):
         miss = nearest_miss(c)
         if miss is not None:
             label = "nearest miss" if miss.result == MISS else "cannot decide"
-            lines.append(f"{label}: {escape(miss.name)}: {escape(miss.detail)}")
+            lines.append(f"{label}: {escape_rich_markup(miss.name)}: {escape_rich_markup(miss.detail)}")
     return "\n".join(lines)
 
 
 def _render_rule_detail(r: RuleTrace, c: CollectionTrace) -> str:
     rule = r.rule
-    lines = [f"[b]{escape(rule.name)}[/b]   {_action_tag(c.collection.action, c.collection.kind)}   "
-             f"[dim]{escape(c.group.name)} » {escape(c.collection.name)}[/]"]
+    lines = [f"[b]{escape_rich_markup(rule.name)}[/b]   {_action_tag(c.collection.action, c.collection.kind)}   "
+             f"[dim]{escape_rich_markup(c.group.name)} » {escape_rich_markup(c.collection.name)}[/]"]
     for ch in r.checks:
         icon = _ICON.get(ch.result, "")
-        lines.append(f"{icon} {ch.name:<12} {escape(ch.detail)}")
+        lines.append(f"{icon} {ch.name:<12} {escape_rich_markup(ch.detail)}")
     if rule.http_headers:
         # What the rule does to the flow beyond allowing it. Names only:
         # the values can carry tokens, and the Policy tab reveals them on request.
         n = len(rule.http_headers)
-        names = ", ".join(escape(h.name) for h in rule.http_headers)
+        names = ", ".join(escape_rich_markup(h.name) for h in rule.http_headers)
         lines.append(f"✎ inserts {n} HTTP header{'s' if n != 1 else ''}: {names}")
     if r.logged:
         lines.append("[green]logged by the firewall[/]")
@@ -254,7 +255,7 @@ class TracePanel(Vertical):
     def compose(self) -> ComposeResult:
         t = self._trace
         if t.warnings:
-            yield Static("\n".join(f"⚠ {escape(w)}" for w in t.warnings), id="trace-warnings", markup=True)
+            yield Static("\n".join(f"⚠ {escape_markup(w)}" for w in t.warnings), id="trace-warnings", markup=True)
         tree = _TraceTree("Policy evaluation", id="trace-tree")
         tree.border_title = "Policy evaluation"
         yield tree
@@ -301,7 +302,7 @@ class TracePanel(Vertical):
         highlight = {id(r) for r in nearest_rules(t)} if t.matched_rule is None else set()
         show_origin = len({c.policy_name for p in t.passes for c in p.collections}) > 1
 
-        root.add_leaf(f"{_LEAF_PAD}Threat Intelligence   [dim]{escape(t.threat_intel)}[/]")
+        root.add_leaf(f"{_LEAF_PAD}Threat Intelligence   [dim]{escape_rich_markup(t.threat_intel)}[/]")
         if t.flow.threat_intel:
             # Decided before the rules: one line for all three passes, and no
             # repeated verdict — the header already carries it.
@@ -311,11 +312,11 @@ class TracePanel(Vertical):
             for p in t.passes:
                 self._add_pass(root, p, highlight, show_origin)
             if t.infrastructure:
-                root.add_leaf(f"{_LEAF_PAD}Built-in infrastructure FQDNs   [dim]{escape(t.infrastructure)}[/]")
+                root.add_leaf(f"{_LEAF_PAD}Built-in infrastructure FQDNs   [dim]{escape_rich_markup(t.infrastructure)}[/]")
             if t.matched_rule is not None:
                 root.add_leaf(f"{_LEAF_PAD}[green]✓[/] evaluation stopped at the logged rule")
             else:
-                root.add_leaf(f"{_LEAF_PAD}[red]✗[/] {escape(t.outcome)}")
+                root.add_leaf(f"{_LEAF_PAD}[red]✗[/] {escape_rich_markup(t.outcome)}")
         root.expand()
 
         self._size_detail(tree)
@@ -333,10 +334,10 @@ class TracePanel(Vertical):
     def _add_pass(self, root: TreeNode, p: PassTrace, highlight: set[int], show_origin: bool) -> None:
         title = _PASS_TITLE[p.kind]
         if not p.evaluated:
-            root.add_leaf(f"{_LEAF_PAD}[dim]{title}   {escape(p.note)}[/]")
+            root.add_leaf(f"{_LEAF_PAD}[dim]{title}   {escape_rich_markup(p.note)}[/]")
             return
         if not p.collections:
-            root.add_leaf(f"{_LEAF_PAD}{title}   [dim]{escape(p.note or 'no collections')}[/]")
+            root.add_leaf(f"{_LEAF_PAD}{title}   [dim]{escape_rich_markup(p.note or 'no collections')}[/]")
             return
         evaluated = [c for c in p.collections if c.evaluated]
         if p.stopped_here:
@@ -362,8 +363,8 @@ class TracePanel(Vertical):
                 groups.append((c.policy_name, c.group, [c]))
 
         for policy_name, group, cols in groups:
-            origin = f"   [dim]· {escape(policy_name)}[/]" if show_origin and policy_name else ""
-            label = escape(f"[{group.priority}] {group.name}") + origin
+            origin = f"   [dim]· {escape_rich_markup(policy_name)}[/]" if show_origin and policy_name else ""
+            label = escape_rich_markup(f"[{group.priority}] {group.name}") + origin
             logged_idx = next((i for i, c in enumerate(cols)
                                if c.evaluated and any(r.logged for r in c.rules)), None)
             g_has_unknown = any(c.verdict == UNKNOWN for c in cols if c.evaluated)
@@ -423,7 +424,7 @@ class TracePanel(Vertical):
     def _add_collection(self, parent: TreeNode, c: CollectionTrace, highlight: set[int]) -> None:
         rc = c.collection
         icon = _ICON.get(c.verdict, "")
-        head = escape(f"[{rc.priority}] {_short(rc.name)}") + "  " + _action_tag(rc.action, rc.kind)
+        head = escape_rich_markup(f"[{rc.priority}] {_short(rc.name)}") + "  " + _action_tag(rc.action, rc.kind)
         label = f"{icon} {head}"
         expand = (self._expand_all
                  or (c.verdict == MATCH and any(r.logged for r in c.rules))
@@ -434,14 +435,14 @@ class TracePanel(Vertical):
 
     def _add_notevaluated_leaf(self, parent: TreeNode, c: CollectionTrace) -> None:
         rc = c.collection
-        head = escape(f"[{rc.priority}] {_short(rc.name)}") + "  " + _action_tag(rc.action, rc.kind)
+        head = escape_rich_markup(f"[{rc.priority}] {_short(rc.name)}") + "  " + _action_tag(rc.action, rc.kind)
         # Never evaluated outranks a miss in how little it matters here, so the
         # whole line — action tag included — goes dim as one unit, not just the icon.
         parent.add_leaf(f"[dim]{_ICON[NA]} {head}[/]", data={"kind": "collection", "collection": c})
 
     def _add_rule(self, parent: TreeNode, c: CollectionTrace, r: RuleTrace, highlight: set[int]) -> None:
         ref = c.rule_ref_prefix + r.rule.name
-        name = escape(_short(r.rule.name))
+        name = escape_rich_markup(_short(r.rule.name))
         if r.logged:
             label = f"{_ICON[MATCH]} [b]{name}[/b]   [green]LOGGED[/]"
         else:

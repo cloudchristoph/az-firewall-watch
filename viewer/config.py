@@ -1,6 +1,7 @@
 """Constants and configuration helpers for the viewer TUI."""
 from __future__ import annotations
 
+import os
 import sys
 from collections.abc import Mapping
 from pathlib import Path
@@ -50,12 +51,24 @@ def frozen_base_dir(executable: str | Path) -> Path:
     return Path(executable).parent
 
 
+def prepare_base_dir(path: Path, private: bool) -> None:
+    """Create *path*. A package install's config directory is the app's own
+    and holds a ``.env`` that may carry a SAS key, so it is made private to the
+    user (0700); next to a downloaded binary the folder belongs to the user."""
+    path.mkdir(parents=True, exist_ok=True)
+    if private:
+        try:
+            os.chmod(path, 0o700)  # no-op beyond the read-only flag on Windows, where %LOCALAPPDATA% is per-user
+        except OSError:
+            pass
+
+
 # ── base directory (works both from source and as a PyInstaller binary) ───────
 INSTALL_SOURCE: str | None = None
 if getattr(sys, "frozen", False):
     INSTALL_SOURCE = install_source(sys.executable)
     BASE_DIR = frozen_base_dir(sys.executable)
-    BASE_DIR.mkdir(parents=True, exist_ok=True)
+    prepare_base_dir(BASE_DIR, private=INSTALL_SOURCE is not None)
     SRC_DIR = Path(sys._MEIPASS)  # type: ignore[attr-defined]
 else:
     BASE_DIR = Path(__file__).parent.parent
@@ -125,5 +138,5 @@ def policy_context_setting(argv: list[str], environ: Mapping[str, str]) -> tuple
 
 
 __all__ = ["BASE_DIR", "SRC_DIR", "INSTALL_SOURCE", "UPGRADE_COMMANDS", "WINGET_ID",
-           "install_source", "install_source_of", "frozen_base_dir", "VERSION", "MAX_ROWS", "TABLE_TRIM_SLACK", "CATEGORY_OPTIONS", "CATEGORY_GROUPS",
+           "install_source", "install_source_of", "frozen_base_dir", "prepare_base_dir", "VERSION", "MAX_ROWS", "TABLE_TRIM_SLACK", "CATEGORY_OPTIONS", "CATEGORY_GROUPS",
            "POLICY_CONTEXT_KEY", "policy_context_setting", "load_env"]

@@ -20,7 +20,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- **The wizard's `.env` was readable by other local users on macOS and Linux.** It is now written with mode 0600, and an existing `.env` is tightened the next time the viewer saves a setting, since a SAS connection string is a secret. Found while testing the Homebrew cask.
 - **Quitting setup now exits the application.** The wizard's Quit button and `Ctrl+Q` no longer start the viewer after cancellation, including during `--reconfigure`. Completing setup still opens the viewer. ([#29](https://github.com/cloudchristoph/az-firewall-watch/issues/29))
 - **The ARM token fallback can launch the Azure CLI on Windows.** It now runs the executable path found on the system, including `az.CMD` paths containing spaces, instead of trying to launch the bare `az` command. ([#30](https://github.com/cloudchristoph/az-firewall-watch/issues/30))
 - **Wizard inputs respond to Enter, and Next comes before Quit in the welcome screen's focus order.** Submitting an input uses the screen's existing validation and primary action. ([#27](https://github.com/cloudchristoph/az-firewall-watch/issues/27))
@@ -28,6 +27,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **The policy context prompt shows the actual cache file path.** The permissions hint follows the operating system and no longer claims POSIX mode 0600 on Windows. ([#25](https://github.com/cloudchristoph/az-firewall-watch/issues/25))
 - **Structured `AZFWNetworkRule` rows with IPv6 addresses were unusable.** A dual-stack firewall writes `SourceIp` and `DestinationIp` there as `[fd10:0003:0005:0001:0000:0000:0000:0004]`, bracketed and fully expanded, while `AZFWDnsQuery` writes the same address as `fd10:3:5:1::4`. The parser passed the brackets through, so the destination failed the address check and the trace evaluated the row's `targetFqdns` instead of its address ranges (a confident wrong verdict), a CIDR filter never matched, the `AzFw.<n>` label never appeared, and the table showed a 41-character string. Every address the parser emits is now normalised to one spelling: brackets off, IPv6 compressed, IPv4 and FQDNs untouched. Legacy messages get the same treatment, and a legacy network-rule deny without any rule now says *Default Action* like its structured twin, so both Event Hubs describe one flow with one string; the fixture test compares the two captures record for record. Found with real records; the legacy spelling question is settled at the same time: Azure always brackets IPv6 in `properties.msg`.
 - **Legacy network-rule messages from dual-stack firewalls carry a `Policy:` sentence** that the parser ignored, so the rule path lacked the policy name that the structured format has. It is read now, and the rule info of both formats is identical.
+
+### Security
+
+- **The wizard's `.env` was readable by other local users on macOS and Linux.** It is now written with mode 0600, and an existing `.env` is tightened the next time the viewer saves a setting, since a SAS connection string is a secret. Found while testing the Homebrew cask.
 
 ## [0.6.1] - 2026-09-14
 

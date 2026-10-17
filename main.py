@@ -16,6 +16,7 @@ Options
   --reconfigure     redo the setup wizard
   --policy-context      force policy context on for this run
   --no-policy-context   force it off (no ARM access, no cache, Logs tab only)
+  --mcp                 run the MCP server instead of the viewer; every other option goes to it
 """
 from __future__ import annotations
 
@@ -42,6 +43,10 @@ def _maybe_run_wizard() -> bool:
 
 
 def main() -> None:
+    if "--mcp" in sys.argv:
+        # Before anything TUI-related: the MCP server has its own options and never runs the wizard.
+        from mcp_server.cli import main as mcp_main
+        sys.exit(mcp_main([arg for arg in sys.argv[1:] if arg != "--mcp"]))
     load_env(BASE_DIR / ".env")
     if not _maybe_run_wizard():
         return

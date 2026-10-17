@@ -5,3 +5,4 @@ textual>=8.2.0
 aiohttp>=3.10.0
 certifi>=2024.2.2
 platformdirs>=4.0
+mcp>=2.3,<3

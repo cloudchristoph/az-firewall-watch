@@ -10,17 +10,53 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 import shutil
 import subprocess
 import time
 from dataclasses import dataclass
 from typing import Any
+from urllib.parse import unquote, urlsplit
 
 import aiohttp
 
 _ARM_BASE = "https://management.azure.com"
 _ARM_SCOPE = "https://management.azure.com/.default"
 _ARM_RESOURCE = "https://management.azure.com"
+# The only host the ARM token may be sent to, taken from the base URL.
+_ARM_HOST = urlsplit(_ARM_BASE).hostname or ""
+# Relative ARM paths the client accepts: everything it reads lives below one
+# of these roots (resource ids, tenant-level provider operations).
+_ARM_PATH_ROOTS = ("/subscriptions/", "/providers/")
+
+# One name segment of a resource id, in the characters Azure allows for
+# resource group and firewall names: letters, digits, "_", ".", "(", ")", "-".
+# Rules out separators, whitespace, control and format chars and markup.
+_NAME = r"[\w.()-]+"
+_GUID = r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
+_FIREWALL_ID_RE = re.compile(
+    rf"/subscriptions/{_GUID}/resourceGroups/(?P<rg>{_NAME})"
+    rf"/providers/Microsoft\.Network/azureFirewalls/(?P<name>{_NAME})",
+    re.IGNORECASE,
+)
+
+
+def is_firewall_resource_id(value: object) -> bool:
+    """True when *value* is an Azure Firewall resource id and nothing else.
+
+    ``/subscriptions/<guid>/resourceGroups/<rg>/providers/Microsoft.Network/
+    azureFirewalls/<name>``, case-insensitive, because Azure upper-cases the
+    ``resourceId`` of diagnostic records. Name segments may hold letters,
+    digits and ``_ . ( ) -`` only, and are never ``.`` or ``..``. Used to vet
+    ids taken from untrusted input (Event Hub records) before they are handed
+    to ARM or shown as the firewall name. No side effects.
+    """
+    if not isinstance(value, str):
+        return False
+    m = _FIREWALL_ID_RE.fullmatch(value)
+    if m is None:
+        return False
+    return all(seg not in (".", "..") for seg in (m["rg"], m["name"]))
 
 
 class ArmError(Exception):
@@ -114,6 +150,7 @@ class ArmClient:
     async def _request(self, method: str, url: str, *,
                        params: dict[str, str] | None = None,
                        json_body: dict | None = None) -> dict:
+        url = self._url(url)  # raises before the token is acquired, for any caller
         token = await self._get_token()
         headers = {"Authorization": f"Bearer {token}", "Accept": "application/json"}
         if json_body is not None:
@@ -154,6 +191,7 @@ class ArmClient:
         items: list[dict] = list(first.get("value") or [])
         next_link: str | None = first.get("nextLink")
         while next_link:
+            # nextLink comes from the response body; _request vets it.
             page = await self._request("GET", next_link)
             items.extend(page.get("value") or [])
             next_link = page.get("nextLink")
@@ -161,11 +199,47 @@ class ArmClient:
 
     @staticmethod
     def _url(resource_id_or_path: str) -> str:
-        if resource_id_or_path.startswith("http://") or resource_id_or_path.startswith("https://"):
-            return resource_id_or_path
-        if not resource_id_or_path.startswith("/"):
-            resource_id_or_path = "/" + resource_id_or_path
-        return _ARM_BASE + resource_id_or_path
+        """Absolute ARM URL for a resource id, path or ARM URL.
+
+        The bearer token goes to whatever this returns, and ids reach it from
+        Event Hub records and ARM response bodies. So only a path below
+        ``/subscriptions/`` or ``/providers/`` is accepted, or an https URL on
+        the ARM host itself (``nextLink``); anything else raises
+        :class:`ArmError` before a token is acquired.
+        """
+        if not isinstance(resource_id_or_path, str):
+            raise _untrusted(resource_id_or_path)
+        if "://" in resource_id_or_path:
+            parts = urlsplit(resource_id_or_path)
+            if (parts.scheme.lower() != "https" or parts.netloc.lower() not in (_ARM_HOST, f"{_ARM_HOST}:443")
+                    or parts.fragment or "#" in resource_id_or_path):
+                raise _untrusted(resource_id_or_path)
+            path, query = parts.path, parts.query
+        else:
+            path, query = resource_id_or_path, ""
+            if not path.startswith("/"):
+                path = "/" + path
+        if not _is_arm_path(path):
+            raise _untrusted(resource_id_or_path)
+        return _ARM_BASE + path + (f"?{query}" if query else "")
+
+
+def _is_arm_path(path: str) -> bool:
+    """True for a plain path below one of the ARM roots, without dot segments,
+    empty segments, query or fragment markers, backslashes or control chars."""
+    if not path.lower().startswith(_ARM_PATH_ROOTS):
+        return False
+    for seg in path[1:].split("/"):
+        decoded = unquote(seg)
+        if decoded in ("", ".", ".."):
+            return False
+        if any(c in "/?#\\" or c.isspace() or not c.isprintable() for c in decoded):
+            return False
+    return True
+
+
+def _untrusted(value: object) -> ArmError:
+    return ArmError(0, "UntrustedUrl", f"Refusing to send the ARM token to {str(value)[:200]!r}")
 
 
 def _extract_error(body: str) -> tuple[str, str]:

@@ -259,7 +259,7 @@ async def test_skipped_and_malformed_events_are_counted_not_displayed(monkeypatc
         await wait_until(pilot, lambda: len(app._all_rows) == 1)
         status = app.query_one("#status", StatusBar)
         assert status.total == 1
-        assert status.skipped == 2
+        assert status.skipped == 3  # the two SKIP records and the event that is not JSON
 
 
 async def test_splash_stays_until_a_real_firewall_event(monkeypatch, fake_client):

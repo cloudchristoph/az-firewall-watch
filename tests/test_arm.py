@@ -64,6 +64,8 @@ class FakeCredential:
 
 ARM = "https://management.azure.com"
 FW = "/subscriptions/s/resourceGroups/rg/providers/Microsoft.Network/azureFirewalls/fw"
+X = "/subscriptions/s/x"
+LIST = "/subscriptions/s/list"
 
 
 # ── URL building / errors ────────────────────────────────────────────────────
@@ -71,7 +73,60 @@ FW = "/subscriptions/s/resourceGroups/rg/providers/Microsoft.Network/azureFirewa
 def test_url_forms():
     assert ArmClient._url(FW) == ARM + FW
     assert ArmClient._url(FW.lstrip("/")) == ARM + FW
-    assert ArmClient._url("https://management.azure.com/next?x=1") == "https://management.azure.com/next?x=1"
+    assert ArmClient._url(FW.upper()) == ARM + FW.upper()
+    assert ArmClient._url("/providers/Microsoft.ResourceGraph/resources") == ARM + "/providers/Microsoft.ResourceGraph/resources"
+    # an absolute URL is only accepted on the ARM host itself (nextLink)
+    assert ArmClient._url(ARM + LIST + "?api-version=1&$skipToken=a") == ARM + LIST + "?api-version=1&$skipToken=a"
+    assert ArmClient._url("HTTPS://MANAGEMENT.AZURE.COM" + LIST) == ARM + LIST
+    assert ArmClient._url("https://management.azure.com:443" + LIST) == ARM + LIST
+
+
+@pytest.mark.parametrize("target", [
+    "https://attacker.example/x/AZUREFIREWALLS/y",
+    "https://attacker.example" + FW,
+    "http://management.azure.com" + FW,
+    "https://management.azure.com@attacker.example" + FW,
+    "https://user:pw@management.azure.com" + FW,
+    "https://management.azure.com.attacker.example" + FW,
+    "https://management.azure.com:8443" + FW,
+    "https://management.azure.com" + FW + "#frag",
+    "ftp://management.azure.com" + FW,
+    "//attacker.example" + FW,
+    "/x",
+    "/",
+    "",
+    FW + "/../../evil",
+    FW + "/%2e%2e/evil",
+    "/subscriptions/s/./x",
+    "/subscriptions//x",
+    "/subscriptions/s/x?api-version=1",
+    "/subscriptions/s/x#y",
+    "/subscriptions/s/x\\y",
+    "/subscriptions/s/x y",
+    "/subscriptions/s/x\ny",
+    "https://management.azure.com/x",
+    "https://management.azure.com/subscriptions/s/../../x",
+])
+def test_url_rejects_anything_but_arm_paths_and_the_arm_host(target):
+    with pytest.raises(ArmError) as exc:
+        ArmClient._url(target)
+    assert exc.value.code == "UntrustedUrl"
+
+
+@pytest.mark.parametrize("target", [
+    "https://attacker.example/x/AZUREFIREWALLS/y",
+    "http://management.azure.com" + FW,
+    "https://management.azure.com@attacker.example" + FW,
+    "//attacker.example" + FW,
+])
+async def test_get_with_foreign_target_never_requests_a_token(target):
+    cred = FakeCredential()
+    session = FakeSession({})
+    with pytest.raises(ArmError) as exc:
+        await ArmClient(cred, session).get(target, "v")
+    assert exc.value.code == "UntrustedUrl"
+    assert cred.calls == 0
+    assert session.calls == []
 
 
 def test_extract_error_variants():
@@ -106,23 +161,47 @@ async def test_get_sends_bearer_and_api_version():
 
 async def test_get_all_follows_next_link():
     session = FakeSession({
-        ARM + "/list": (200, {"value": [1, 2], "nextLink": ARM + "/list?page=2"}),
-        ARM + "/list?page=2": (200, {"value": [3]}),
+        ARM + LIST: (200, {"value": [1, 2], "nextLink": ARM + LIST + "?page=2"}),
+        ARM + LIST + "?page=2": (200, {"value": [3]}),
     })
     client = ArmClient(FakeCredential(), session)
-    assert await client.get_all("/list", "2024-01-01") == [1, 2, 3]
-    assert session.calls[1]["url"] == ARM + "/list?page=2"
+    assert await client.get_all(LIST, "2024-01-01") == [1, 2, 3]
+    assert session.calls[1]["url"] == ARM + LIST + "?page=2"
     assert session.calls[1]["params"] is None  # next links carry their own query string
 
 
+@pytest.mark.parametrize("next_link", [
+    "https://attacker.example" + LIST + "?page=2",
+    "http://management.azure.com" + LIST + "?page=2",
+    "https://management.azure.com@attacker.example" + LIST,
+    "//attacker.example" + LIST,
+    {"url": "https://attacker.example"},
+])
+async def test_get_all_refuses_a_foreign_next_link(next_link):
+    """A forged nextLink must not take the token anywhere: nothing is sent for it."""
+    session = FakeSession({ARM + LIST: (200, {"value": [1], "nextLink": next_link})})
+    with pytest.raises(ArmError) as exc:
+        await ArmClient(FakeCredential(), session).get_all(LIST, "v")
+    assert exc.value.code == "UntrustedUrl"
+    assert [c["url"] for c in session.calls] == [ARM + LIST]
+
+
+async def test_get_all_accepts_a_relative_next_link_below_subscriptions():
+    session = FakeSession({
+        ARM + LIST: (200, {"value": [1], "nextLink": LIST + "/page2"}),
+        ARM + LIST + "/page2": (200, {"value": [2]}),
+    })
+    assert await ArmClient(FakeCredential(), session).get_all(LIST, "v") == [1, 2]
+
+
 async def test_get_all_without_value():
-    client = ArmClient(FakeCredential(), FakeSession({ARM + "/x": (200, {})}))
-    assert await client.get_all("/x", "v") == []
+    client = ArmClient(FakeCredential(), FakeSession({ARM + X: (200, {})}))
+    assert await client.get_all(X, "v") == []
 
 
 async def test_empty_body_is_empty_dict():
-    client = ArmClient(FakeCredential(), FakeSession({ARM + "/x": (204, "")}))
-    assert await client.get("/x", "v") == {}
+    client = ArmClient(FakeCredential(), FakeSession({ARM + X: (204, "")}))
+    assert await client.get(X, "v") == {}
 
 
 async def test_http_error_raises_arm_error():
@@ -151,28 +230,28 @@ async def test_transport_error_raises_arm_error():
 # ── tokens ───────────────────────────────────────────────────────────────────
 
 async def test_token_is_cached_until_close_to_expiry():
-    session = FakeSession({ARM + "/x": (200, {})})
+    session = FakeSession({ARM + X: (200, {})})
     cred = FakeCredential(ttl=3600)
     client = ArmClient(cred, session)
-    await client.get("/x", "v")
-    await client.get("/x", "v")
+    await client.get(X, "v")
+    await client.get(X, "v")
     assert cred.calls == 1
 
 
 async def test_token_refreshes_within_60s_of_expiry():
-    session = FakeSession({ARM + "/x": (200, {})})
+    session = FakeSession({ARM + X: (200, {})})
     cred = FakeCredential(ttl=30)
     client = ArmClient(cred, session)
-    await client.get("/x", "v")
-    await client.get("/x", "v")
+    await client.get(X, "v")
+    await client.get(X, "v")
     assert cred.calls == 2
 
 
 async def test_falls_back_to_az_cli_when_credential_fails(monkeypatch):
     monkeypatch.setattr(arm_mod, "_token_from_az_cli", _fake_cli_token("cli-tok"))
-    session = FakeSession({ARM + "/x": (200, {})})
+    session = FakeSession({ARM + X: (200, {})})
     client = ArmClient(FakeCredential(fail=True), session)
-    await client.get("/x", "v")
+    await client.get(X, "v")
     assert session.calls[0]["headers"]["Authorization"] == "Bearer cli-tok"
 
 
@@ -183,7 +262,7 @@ async def test_no_credential_at_all_raises(monkeypatch):
     monkeypatch.setattr(arm_mod, "_token_from_az_cli", _none)
     client = ArmClient(None, FakeSession({}))
     with pytest.raises(ArmError) as exc:
-        await client.get("/x", "v")
+        await client.get(X, "v")
     assert exc.value.status == 401 and exc.value.code == "NoCredential"
 
 

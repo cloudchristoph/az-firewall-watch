@@ -8,6 +8,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-10-17
+
 ### Added
 
 - **winget package.** `winget install cloudchristoph.az-firewall-watch` installs the Windows binary as a portable package and puts `az-firewall-watch` on the `PATH`. A winget install keeps `.env` in `%LOCALAPPDATA%\az-firewall-watch\` because winget owns its install folder, and the update notice names `winget upgrade cloudchristoph.az-firewall-watch`. The manifests are rendered from `packaging/winget/` for `microsoft/winget-pkgs`.
@@ -296,7 +298,8 @@ This release adds passwordless Entra ID authentication, better Azure Firewall lo
 
 [Full diff](https://github.com/cloudchristoph/az-firewall-watch/commits/v0.1.0)
 
-[Unreleased]: https://github.com/cloudchristoph/az-firewall-watch/compare/v0.6.1...HEAD
+[Unreleased]: https://github.com/cloudchristoph/az-firewall-watch/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/cloudchristoph/az-firewall-watch/compare/v0.6.1...v0.7.0
 [0.6.1]: https://github.com/cloudchristoph/az-firewall-watch/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/cloudchristoph/az-firewall-watch/compare/v0.5.1...v0.6.0
 [0.5.1]: https://github.com/cloudchristoph/az-firewall-watch/compare/v0.5.0...v0.5.1

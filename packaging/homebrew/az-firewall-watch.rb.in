@@ -38,10 +38,14 @@ cask "az-firewall-watch" do
     end
   end
 
-  zap trash: [
-    "~/.cache/az-firewall-watch",
-    "~/.config/az-firewall-watch",
-    "~/Library/Application Support/az-firewall-watch",
-    "~/Library/Caches/az-firewall-watch",
-  ]
+  # The config holds .env, which can carry a SAS key: delete it rather than
+  # moving it to the trash. The cache only holds ARM responses.
+  zap delete: [
+        "~/.config/az-firewall-watch",
+        "~/Library/Application Support/az-firewall-watch",
+      ],
+      trash:  [
+        "~/.cache/az-firewall-watch",
+        "~/Library/Caches/az-firewall-watch",
+      ]
 end

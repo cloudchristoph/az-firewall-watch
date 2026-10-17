@@ -140,3 +140,32 @@ async def test_upgrade_hint_only_for_package_installs(command):
             assert command in rendered
         else:
             assert "upgrade" not in rendered
+
+
+# ── .env file mode ────────────────────────────────────────────────────────────
+
+_POSIX = pytest.mark.skipif(not hasattr(__import__("os"), "geteuid"), reason="POSIX permissions")
+_CONN = "Endpoint=sb://ns.servicebus.windows.net/;SharedAccessKeyName=k;SharedAccessKey=secret;EntityPath=h"
+
+
+@_POSIX
+@pytest.mark.parametrize("write", [
+    lambda env: __import__("setup.services", fromlist=["write_env"]).write_env(env, _CONN),
+    lambda env: __import__("setup.services", fromlist=["write_env_entra"]).write_env_entra(env, "ns.servicebus.windows.net", "h"),
+])
+def test_wizard_writes_env_for_the_user_only(tmp_path, write):
+    env = tmp_path / ".env"
+    write(env)
+    assert env.stat().st_mode & 0o777 == 0o600  # may carry a SAS key
+
+
+@_POSIX
+def test_set_env_value_tightens_an_existing_env(tmp_path):
+    from setup.services import set_env_value
+
+    env = tmp_path / ".env"
+    env.write_text(f"EVENT_HUB_CONNECTION_STRING={_CONN}\n", encoding="utf-8")
+    env.chmod(0o644)  # written by an older version or by hand
+    set_env_value(env, "POLICY_CONTEXT", "off")
+    assert env.stat().st_mode & 0o777 == 0o600
+    assert env.read_text(encoding="utf-8").startswith(f"EVENT_HUB_CONNECTION_STRING={_CONN}\n")

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -51,10 +52,24 @@ def _policy_context_line(policy_context: bool) -> str:
     return f"POLICY_CONTEXT={'on' if policy_context else 'off'}\n"
 
 
+def _write_private(env_file: Path, text: str) -> None:
+    """Write .env readable by the user only (0600): it can carry a SAS key.
+    On Windows the mode only sets the read-only flag; the user profile is
+    private there already."""
+    fd = os.open(env_file, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as fh:
+        fh.write(text)
+    try:
+        os.chmod(env_file, 0o600)  # an existing file keeps its old mode through os.open
+    except OSError:
+        pass
+
+
 def write_env(env_file: Path, conn_str: str, policy_context: bool = True) -> None:
     """Write a connection-string-based .env file."""
     ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    env_file.write_text(
+    _write_private(
+        env_file,
         f"# Written by setup.app - {ts}\n"
         "# Do NOT commit this file - it contains a shared access key.\n"
         f"EVENT_HUB_CONNECTION_STRING={conn_str}\n"
@@ -62,16 +77,16 @@ def write_env(env_file: Path, conn_str: str, policy_context: bool = True) -> Non
         "EVENT_HUB_START_POSITION=latest\n"
         + _POLICY_CONTEXT_COMMENT + _policy_context_line(policy_context)
         + _UPDATE_CHECK_COMMENT,
-        encoding="utf-8",
     )
 
 
 def write_env_entra(env_file: Path, namespace: str, hub_name: str, policy_context: bool = True) -> None:
     """Write an Entra ID (passwordless) .env file."""
     ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    env_file.write_text(
+    _write_private(
+        env_file,
         f"# Written by setup.app - {ts}\n"
-        "# Entra ID (passwordless) authentication — no secrets stored.\n"
+        "# Entra ID (passwordless) authentication: no secrets stored.\n"
         "# Your identity must have 'Azure Event Hubs Data Receiver' role.\n"
         f"EVENT_HUB_NAMESPACE={namespace}\n"
         f"EVENT_HUB_NAME={hub_name}\n"
@@ -79,7 +94,6 @@ def write_env_entra(env_file: Path, namespace: str, hub_name: str, policy_contex
         "EVENT_HUB_START_POSITION=latest\n"
         + _POLICY_CONTEXT_COMMENT + _policy_context_line(policy_context)
         + _UPDATE_CHECK_COMMENT,
-        encoding="utf-8",
     )
 
 
@@ -105,4 +119,4 @@ def set_env_value(env_file: Path, key: str, value: str) -> None:
         if key == "POLICY_CONTEXT":
             lines.extend(_POLICY_CONTEXT_COMMENT.rstrip("\n").splitlines())
         lines.append(f"{key}={value}")
-    env_file.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    _write_private(env_file, "\n".join(lines) + "\n")

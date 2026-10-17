@@ -43,8 +43,8 @@ command too.
 A Homebrew install keeps `.env` in your config directory instead of next to the
 binary, because `brew upgrade` replaces the versioned install folder:
 `~/Library/Application Support/az-firewall-watch/` on macOS,
-`~/.config/az-firewall-watch/` on Linux. `brew uninstall --zap` removes it along
-with the cache.
+`~/.config/az-firewall-watch/` on Linux. `brew uninstall --zap` deletes it and moves
+the cache to the trash.
 
 ## Option 2: Download the binary
 
@@ -90,6 +90,9 @@ xattr -d com.apple.quarantine az-firewall-watch
 ```
 
 ### Linux
+
+The Linux binaries need glibc 2.38 or newer, for example Ubuntu 24.04, Debian 13 or
+Fedora 39. On older distributions, [run from source](#option-3-run-from-source-python-310).
 
 ```bash
 # 1. Extract (preserves execute permission)

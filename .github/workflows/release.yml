@@ -18,7 +18,7 @@ jobs:
   validate-changelog:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           persist-credentials: false   # no token left in .git/config for later steps
       - name: Ensure CHANGELOG has section for this tag
@@ -53,11 +53,11 @@ jobs:
     runs-on: ${{ matrix.os }}
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           persist-credentials: false   # no token left in .git/config for later steps
 
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
         with:
           python-version: "3.12"
           cache: pip
@@ -66,7 +66,7 @@ jobs:
             requirements-build.txt
 
       - name: Install dependencies
-        run: pip install -r requirements.txt -r requirements-build.txt
+        run: pip install --require-hashes -r requirements-build.lock.txt
 
       - name: Build binary (Linux / macOS)
         if: runner.os != 'Windows'
@@ -113,7 +113,7 @@ jobs:
       - name: Upload unsigned Windows binary
         id: upload-unsigned
         if: runner.os == 'Windows' && vars.SIGNPATH_ENABLED == 'true' && startsWith(github.ref, 'refs/tags/')
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           # Outside the az-firewall-watch* pattern the release job downloads
           name: unsigned-windows-exe
@@ -159,7 +159,7 @@ jobs:
           fi
 
       - name: Upload binary
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: ${{ matrix.artifact }}
           path: dist/${{ matrix.artifact }}*
@@ -174,11 +174,11 @@ jobs:
       id-token: write     # sign the provenance attestation
       attestations: write
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           persist-credentials: false   # no token left in .git/config for later steps
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           pattern: az-firewall-watch*   # the release binaries, not unsigned-windows-exe
           path: dist
@@ -248,11 +248,11 @@ jobs:
     needs: release
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           persist-credentials: false   # no token left in .git/config for later steps
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           pattern: az-firewall-watch-{macos,linux,linux-arm64}
           path: dist
@@ -261,7 +261,7 @@ jobs:
       - name: Render cask
         run: packaging/homebrew/render-cask.sh "${GITHUB_REF_NAME#v}" dist/az-firewall-watch-macos.tar.gz dist/az-firewall-watch-linux.tar.gz dist/az-firewall-watch-linux-arm64.tar.gz > az-firewall-watch.rb
 
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           repository: cloudchristoph/homebrew-tap
           token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
@@ -286,11 +286,11 @@ jobs:
     if: "!startsWith(github.ref, 'refs/tags/')"
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           persist-credentials: false   # no token left in .git/config for later steps
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           pattern: az-firewall-watch*
           path: dist
@@ -303,7 +303,7 @@ jobs:
           packaging/homebrew/render-cask.sh "$version" dist/az-firewall-watch-macos.tar.gz dist/az-firewall-watch-linux.tar.gz dist/az-firewall-watch-linux-arm64.tar.gz > dist/az-firewall-watch.rb
           packaging/winget/render-manifests.sh "$version" dist/az-firewall-watch.exe dist/winget
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: dryrun-packages
           path: |

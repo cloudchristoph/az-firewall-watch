@@ -22,10 +22,15 @@ def test_renders_product_name_and_version():
     assert "StringStruct('CompanyName', 'CloudChristoph')" in text
 
 
-@pytest.mark.parametrize("bad", ["0.7", "v0.7.0", "0.7.0-rc1", "unknown", ""])
+@pytest.mark.parametrize("bad", ["0.7", "v0.7.0", "0.7.0-rc1", "unknown", "", "01.2.3", "0.07.0", "0.7.00"])
 def test_rejects_anything_but_major_minor_patch(bad):
     with pytest.raises(SystemExit):
         version_info.render(bad)
+
+
+@pytest.mark.parametrize("good", ["0.7.0", "0.10.0", "10.0.1", "1.20.300"])
+def test_accepts_plain_versions(good):
+    assert f"StringStruct('ProductVersion', '{good}')" in version_info.render(good)
 
 
 def test_repo_version_renders():

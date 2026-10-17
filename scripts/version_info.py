@@ -48,7 +48,8 @@ VSVersionInfo(
 
 
 def render(version: str) -> str:
-    m = re.fullmatch(r"(\d+)\.(\d+)\.(\d+)", version.strip())
+    # No leading zeros: the parts become Python int literals in filevers/prodvers
+    m = re.fullmatch(r"(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)", version.strip())
     if not m:
         raise SystemExit(f"version.txt must read MAJOR.MINOR.PATCH, got {version!r}")
     major, minor, patch = m.groups()

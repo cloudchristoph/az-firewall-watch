@@ -65,3 +65,22 @@ async def test_wizard_welcome_mentions_the_update_check(tmp_path: Path):
         assert isinstance(app.screen, WelcomeScreen)
         note = str(app.screen.query_one("#welcome-update-note", Static).content)
         assert "api.github.com" in note and "UPDATE_CHECK=off" in note
+
+
+@pytest.mark.parametrize("value", ["off", "on"])
+@pytest.mark.parametrize("writer, args", [
+    (write_env, ("Endpoint=sb://ns.servicebus.windows.net/;SharedAccessKeyName=k;SharedAccessKey=x;EntityPath=h",)),
+    (write_env_entra, ("ns.servicebus.windows.net", "hub")),
+])
+def test_reconfigure_keeps_an_update_check_choice(tmp_path: Path, writer, args, value):
+    """--reconfigure rewrites .env; a set UPDATE_CHECK must survive it."""
+    env = tmp_path / ".env"
+    writer(env, *args)
+    text = env.read_text(encoding="utf-8").replace("# UPDATE_CHECK=off\n", f"UPDATE_CHECK={value}\n")
+    env.write_text(text, encoding="utf-8")  # the user uncommented the switch
+
+    writer(env, *args)  # the wizard runs again
+    rewritten = env.read_text(encoding="utf-8")
+    assert f"\nUPDATE_CHECK={value}\n" in rewritten
+    assert "# UPDATE_CHECK=off\n" not in rewritten
+    assert update_check_enabled([], {"UPDATE_CHECK": value}) is (value == "on")

@@ -146,3 +146,16 @@ def test_detail_header_is_rich_safe():
                           srcport="1", targetip='[link="https://e"]evil[/]', targetport="443", action="Allow")
     plain = Text.from_markup(_header_line1(row)).plain
     assert '[link="https://e"]evil[/]' in plain and "[/x" in plain
+
+
+# ── update dialog: tag and URL come from the GitHub API ────────────────────────
+
+async def test_update_dialog_shows_hostile_tag_and_url_as_text():
+    from dialogs import UpdateDialog
+
+    app = App()
+    async with app.run_test(size=(120, 30)) as pilot:
+        await app.push_screen(UpdateDialog("[/x", "https://e.example/[ @click=app.quit]x[/]"))
+        await pilot.pause()
+        url = _plain(app.screen.query_one("#upd-url", Static))
+        assert url == "https://e.example/[ @click=app.quit]x[/]"

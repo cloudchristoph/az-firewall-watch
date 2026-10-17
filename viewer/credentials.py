@@ -15,6 +15,8 @@ class CachedCredential:
         self._pending: dict[tuple, asyncio.Task] = {}
         # Callers still waiting on each shared acquisition.
         self._waiters: dict[asyncio.Task, int] = {}
+        # Cancelled acquisitions still unwinding; close() waits for them too.
+        self._abandoned: set[asyncio.Task] = set()
         self._closed = False
         self._close_task: asyncio.Task | None = None
 
@@ -61,6 +63,8 @@ class CachedCredential:
                 # A later caller starts a fresh one rather than joining this.
                 if self._pending.get(key) is task:
                     del self._pending[key]
+                self._abandoned.add(task)
+                task.add_done_callback(self._abandoned.discard)
                 task.cancel()
 
     async def _acquire(self, key: tuple, scopes: tuple[str, ...], kwargs: dict[str, Any], cacheable: bool) -> Any:
@@ -86,7 +90,10 @@ class CachedCredential:
         pending = list(self._pending.values())
         for task in pending:
             task.cancel()
-        await asyncio.gather(*pending, return_exceptions=True)
+        # Acquisitions cancelled earlier may still be unwinding: wait for them
+        # (without cancelling again, which would cut their cleanup short) so the
+        # underlying credential is never closed under a running get_token().
+        await asyncio.gather(*pending, *self._abandoned, return_exceptions=True)
         await self._credential.close()
 
 

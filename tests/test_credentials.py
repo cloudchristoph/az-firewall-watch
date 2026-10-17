@@ -137,6 +137,37 @@ async def test_last_cancelled_waiter_stops_acquisition(credential):
     await cached.close()
 
 
+async def test_close_waits_for_an_abandoned_acquisition_to_unwind():
+    """A cancelled acquisition that is still unwinding must finish before the
+    underlying credential is closed."""
+    events: list[str] = []
+    started = asyncio.Event()
+
+    class SlowUnwind:
+        async def get_token(self, *scopes, **kwargs):
+            started.set()
+            try:
+                await asyncio.Event().wait()
+            except asyncio.CancelledError:
+                await asyncio.sleep(0.05)  # cleanup that takes a moment
+                events.append("unwound")
+                raise
+
+        async def close(self):
+            events.append("closed")
+
+    cached = CachedCredential(SlowUnwind())
+    request = asyncio.create_task(cached.get_token("scope"))
+    await started.wait()
+    request.cancel()  # the only waiter gives up: the acquisition is cancelled
+    with pytest.raises(asyncio.CancelledError):
+        await request
+    assert cached._pending == {}
+    await cached.close()
+    assert events == ["unwound", "closed"]
+    assert cached._abandoned == set()
+
+
 async def test_close_cancels_acquisition_and_is_idempotent(credential):
     credential.release.clear()
     cached = CachedCredential(credential)

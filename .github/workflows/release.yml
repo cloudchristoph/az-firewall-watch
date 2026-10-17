@@ -189,7 +189,8 @@ jobs:
 
       - name: Attest build provenance
         # Verifiable with: gh attestation verify <file> --repo cloudchristoph/az-firewall-watch
-        uses: actions/attest-build-provenance@v4
+        # Pinned to a commit (v4.2.2): runs with id-token and attestations write. Update deliberately.
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-path: |
             dist/az-firewall-watch.exe
@@ -232,7 +233,8 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v3
+        # Pinned to a commit (v3.0.3): third-party action with contents: write. Update deliberately.
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
         with:
           files: dist/*
           generate_release_notes: true

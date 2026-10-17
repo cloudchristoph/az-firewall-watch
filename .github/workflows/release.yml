@@ -105,6 +105,11 @@ jobs:
           path: dist
           merge-multiple: true
 
+      - name: Checksums
+        working-directory: dist
+        # Admins allow-list unsigned binaries by hash (docs/getting-started.md)
+        run: sha256sum -- * > SHA256SUMS.txt && cat SHA256SUMS.txt
+
       - name: Extract release notes from CHANGELOG.md
         id: changelog
         shell: bash
@@ -124,14 +129,16 @@ jobs:
             echo "notes<<EOF"
             echo "$notes"
             echo ""
-            echo "## Download"
+            echo "## Install"
             echo ""
-            echo "| Platform | File |"
-            echo "|----------|------|"
-            echo "| Linux (x86_64) | \`az-firewall-watch-linux.tar.gz\` |"
-            echo "| Linux (arm64) | \`az-firewall-watch-linux-arm64.tar.gz\` |"
-            echo "| macOS Apple Silicon | \`az-firewall-watch-macos.tar.gz\` |"
-            echo "| Windows | \`az-firewall-watch.exe\` |"
+            echo "| Platform | Command or file |"
+            echo "|----------|-----------------|"
+            echo "| Windows | \`winget install cloudchristoph.az-firewall-watch\` or \`az-firewall-watch.exe\` |"
+            echo "| macOS Apple Silicon | \`brew install --cask cloudchristoph/tap/az-firewall-watch\` or \`az-firewall-watch-macos.tar.gz\` |"
+            echo "| Linux (x86_64) | \`brew install --cask cloudchristoph/tap/az-firewall-watch\` or \`az-firewall-watch-linux.tar.gz\` |"
+            echo "| Linux (arm64) | \`brew install --cask cloudchristoph/tap/az-firewall-watch\` or \`az-firewall-watch-linux-arm64.tar.gz\` |"
+            echo ""
+            echo "SHA-256 of \`az-firewall-watch.exe\`: \`$(sha256sum dist/az-firewall-watch.exe | cut -d' ' -f1)\` (all files: \`SHA256SUMS.txt\`)"
             echo ""
             echo "See [Getting started](https://github.com/${GITHUB_REPOSITORY}/blob/${GITHUB_REF_NAME}/docs/getting-started.md) for first-run instructions on each platform."
             echo "EOF"

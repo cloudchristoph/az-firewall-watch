@@ -111,6 +111,40 @@ start.bat
 The scripts create a virtual environment, install dependencies and launch the
 app. The setup wizard runs automatically if `.env` is not yet configured.
 
+## Blocked by your organisation's security policy?
+
+The binaries are not code-signed yet, and every release has a new file hash
+that Microsoft's reputation service has not seen often. Hardened Windows
+machines may therefore refuse to start `az-firewall-watch.exe`, whether it came
+from winget or from the release page. Typical messages are *"Your IT
+administrator has blocked this app"*, *"An Application Control policy has
+blocked this file"* or *"Access is denied"*.
+
+The usual causes, which only an administrator can change:
+
+| Policy | How to recognise it |
+| --- | --- |
+| Microsoft Defender attack surface reduction rule *Block executable files from running unless they meet a prevalence, age, or trusted list criterion* (`01443614-cd74-433a-b99e-2ecdc07bfc25`) | Event ID 1121 (blocked) or 1122 (audited) in *Applications and Services Logs › Microsoft › Windows › Windows Defender › Operational* |
+| App Control for Business (WDAC) or AppLocker allow lists | Events in *Microsoft › Windows › CodeIntegrity › Operational* or *AppLocker* |
+| Smart App Control (Windows 11) | A Smart App Control notification on launch |
+
+**For administrators:** allow the file by its SHA-256 hash, for example as an
+*Allow* file indicator in Microsoft Defender for Endpoint, an ASR exclusion or a
+hash rule. Each release lists the hash of `az-firewall-watch.exe` in its notes and
+all hashes in `SHA256SUMS.txt`. To check a downloaded file:
+
+```powershell
+Get-FileHash .\az-firewall-watch.exe -Algorithm SHA256
+```
+
+A winget install keeps the binary under
+`%LOCALAPPDATA%\Microsoft\WinGet\Packages\cloudchristoph.az-firewall-watch_*\`.
+The hash changes with every release, so the allowance has to be renewed on
+update.
+
+**Without an administrator:** [run from source](#option-3-run-from-source-python-310).
+Python itself is signed, so these rules usually leave it alone.
+
 ## 🧙 The setup wizard
 
 The wizard runs the first time you launch the app, or whenever `.env` is missing.

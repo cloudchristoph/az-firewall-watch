@@ -91,8 +91,9 @@ xattr -d com.apple.quarantine az-firewall-watch
 ### Linux
 
 ```bash
-# 1. Extract (preserves execute permission; arm64: az-firewall-watch-linux-arm64.tar.gz)
-tar -xzf az-firewall-watch-linux.tar.gz
+# 1. Extract (preserves execute permission)
+tar -xzf az-firewall-watch-linux.tar.gz          # x86_64
+tar -xzf az-firewall-watch-linux-arm64.tar.gz    # arm64 (check with: uname -m)
 
 # 2. Run (the setup wizard launches automatically on first start)
 ./az-firewall-watch

@@ -11,7 +11,7 @@ from textual.widgets import Static
 
 import viewer.updates as updates_module
 from dialogs import UpdateDialog
-from viewer.config import UPGRADE_COMMANDS, frozen_base_dir, install_source, install_source_of
+from viewer.config import UPGRADE_COMMANDS, frozen_base_dir, install_source, install_source_of, prepare_base_dir
 from viewer.updates import check_for_update
 
 
@@ -65,6 +65,29 @@ def test_package_install_keeps_env_in_the_config_dir(tmp_path, monkeypatch):
     base = frozen_base_dir(link)
     assert base == tmp_path / "config" / "az-firewall-watch"
     assert "Caskroom" not in base.parts  # survives brew upgrade, which replaces the versioned folder
+
+
+@pytest.mark.skipif(not hasattr(__import__("os"), "geteuid"), reason="POSIX permissions")
+def test_package_config_dir_is_private(tmp_path):
+    base = tmp_path / "config" / "az-firewall-watch"
+    prepare_base_dir(base, private=True)
+    assert base.is_dir()
+    assert base.stat().st_mode & 0o777 == 0o700  # the .env inside may carry a SAS key
+
+
+@pytest.mark.skipif(not hasattr(__import__("os"), "geteuid"), reason="POSIX permissions")
+def test_folder_next_to_a_download_keeps_its_permissions(tmp_path):
+    folder = tmp_path / "Downloads"
+    folder.mkdir(mode=0o755)
+    folder.chmod(0o755)
+    prepare_base_dir(folder, private=False)
+    assert folder.stat().st_mode & 0o777 == 0o755  # the user's folder, not ours to lock down
+
+
+def test_prepare_base_dir_creates_missing_parents(tmp_path):
+    base = tmp_path / "a" / "b" / "az-firewall-watch"
+    prepare_base_dir(base, private=True)
+    assert base.is_dir()
 
 
 class _RecordingApp:

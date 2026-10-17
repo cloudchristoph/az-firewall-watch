@@ -46,7 +46,7 @@ jobs:
             requirements-build.txt
 
       - name: Install dependencies
-        run: pip install -r requirements.txt -r requirements-build.txt
+        run: pip install --require-hashes -r requirements-build.lock.txt
 
       - name: Build binary (Linux / macOS)
         if: runner.os != 'Windows'

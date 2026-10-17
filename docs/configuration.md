@@ -7,8 +7,16 @@ has no Azure CLI, which the wizard needs for discovery and deployment.
 
 ## Writing `.env` yourself
 
-Create a `.env` file next to the binary (or in the repo root when running from
-source).
+Create a `.env` file next to the binary, or in the repo root when running from
+source. A binary installed by a package manager uses the user config directory
+instead, because the package manager owns the install folder:
+
+- [winget](getting-started.md#windows-winget): `%LOCALAPPDATA%\az-firewall-watch\`.
+  `winget uninstall` leaves it in place; delete the folder to remove the
+  configuration.
+- [Homebrew](getting-started.md#macos-and-linux-homebrew):
+  `~/Library/Application Support/az-firewall-watch/` on macOS,
+  `~/.config/az-firewall-watch/` on Linux
 
 **SAS connection string:**
 

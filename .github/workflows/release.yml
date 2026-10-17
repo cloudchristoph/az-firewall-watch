@@ -25,8 +25,12 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: ubuntu-latest
+          # Pinned: a PyInstaller binary needs at least the build host's glibc,
+          # so ubuntu-latest moving to a newer release would drop older distros.
+          - os: ubuntu-24.04
             artifact: az-firewall-watch-linux
+          - os: ubuntu-24.04-arm
+            artifact: az-firewall-watch-linux-arm64
           - os: macos-latest # Apple Silicon / arm64
             artifact: az-firewall-watch-macos
           - os: windows-latest
@@ -103,6 +107,11 @@ jobs:
           path: dist
           merge-multiple: true
 
+      - name: Checksums
+        working-directory: dist
+        # Admins allow-list unsigned binaries by hash (docs/getting-started.md)
+        run: sha256sum -- * > SHA256SUMS.txt && cat SHA256SUMS.txt
+
       - name: Extract release notes from CHANGELOG.md
         id: changelog
         shell: bash
@@ -122,13 +131,16 @@ jobs:
             echo "notes<<EOF"
             echo "$notes"
             echo ""
-            echo "## Download"
+            echo "## Install"
             echo ""
-            echo "| Platform | File |"
-            echo "|----------|------|"
-            echo "| Linux (x86_64) | \`az-firewall-watch-linux.tar.gz\` |"
-            echo "| macOS Apple Silicon | \`az-firewall-watch-macos.tar.gz\` |"
-            echo "| Windows | \`az-firewall-watch.exe\` |"
+            echo "| Platform | Command or file |"
+            echo "|----------|-----------------|"
+            echo "| Windows | \`winget install cloudchristoph.az-firewall-watch\` or \`az-firewall-watch.exe\` |"
+            echo "| macOS Apple Silicon | \`brew install --cask cloudchristoph/tap/az-firewall-watch\` or \`az-firewall-watch-macos.tar.gz\` |"
+            echo "| Linux (x86_64) | \`brew install --cask cloudchristoph/tap/az-firewall-watch\` or \`az-firewall-watch-linux.tar.gz\` |"
+            echo "| Linux (arm64) | \`brew install --cask cloudchristoph/tap/az-firewall-watch\` or \`az-firewall-watch-linux-arm64.tar.gz\` |"
+            echo ""
+            echo "SHA-256 of \`az-firewall-watch.exe\`: \`$(sha256sum dist/az-firewall-watch.exe | cut -d' ' -f1)\` (all files: \`SHA256SUMS.txt\`)"
             echo ""
             echo "See [Getting started](https://github.com/${GITHUB_REPOSITORY}/blob/${GITHUB_REF_NAME}/docs/getting-started.md) for first-run instructions on each platform."
             echo "EOF"
@@ -140,3 +152,39 @@ jobs:
           files: dist/*
           generate_release_notes: true
           body: ${{ steps.changelog.outputs.notes }}
+
+  homebrew:
+    # Publish the cask to cloudchristoph/homebrew-tap. Needs the repository
+    # secret HOMEBREW_TAP_TOKEN (fine-grained PAT, contents: write on the tap).
+    needs: release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: az-firewall-watch-{macos,linux,linux-arm64}
+          path: dist
+          merge-multiple: true
+
+      - name: Render cask
+        run: packaging/homebrew/render-cask.sh "${GITHUB_REF_NAME#v}" dist/az-firewall-watch-macos.tar.gz dist/az-firewall-watch-linux.tar.gz dist/az-firewall-watch-linux-arm64.tar.gz > az-firewall-watch.rb
+
+      - uses: actions/checkout@v6
+        with:
+          repository: cloudchristoph/homebrew-tap
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          path: tap
+
+      - name: Commit and push cask
+        working-directory: tap
+        run: |
+          mkdir -p Casks
+          cp ../az-firewall-watch.rb Casks/az-firewall-watch.rb
+          git add Casks/az-firewall-watch.rb
+          if git diff --cached --quiet; then
+            echo "Cask unchanged"; exit 0
+          fi
+          git -c user.name=github-actions[bot] -c user.email=41898282+github-actions[bot]@users.noreply.github.com \
+            commit -m "az-firewall-watch ${GITHUB_REF_NAME}"
+          git push

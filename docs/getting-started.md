@@ -1,8 +1,9 @@
 # Getting started
 
-Two ways to run Azure Firewall Watch: a self-contained binary (recommended) or
-from source with Python 3.10+. Either way the setup wizard takes over on first
-launch and writes your `.env`.
+Three ways to run Azure Firewall Watch: a package manager (winget on Windows,
+Homebrew on macOS and Linux), a self-contained binary, or from source with
+Python 3.10+. Either way the setup wizard takes over on first launch and writes
+your `.env`.
 
 ## Before you start
 
@@ -11,9 +12,52 @@ launch and writes your `.env`.
   [required Azure permissions](configuration.md#required-azure-permissions).
 - **Azure CLI.** Needed for *Discover* and *Deploy* in the wizard, and for Entra ID
   if you sign in with your own account. Install it and run `az login` once.
-- **Python 3.10+.** Only needed for Option 2 below. The binaries need nothing installed.
+- **Python 3.10+.** Only needed for Option 3 below. The binaries need nothing installed.
 
-## Option 1: Download the binary *(recommended)*
+## Option 1: Package manager *(recommended)*
+
+### Windows: winget
+
+```powershell
+winget install cloudchristoph.az-firewall-watch
+```
+
+winget adds the command to your `PATH`, so open a new terminal and run:
+
+```powershell
+az-firewall-watch
+```
+
+Update with `winget upgrade cloudchristoph.az-firewall-watch`; the update notice
+in the app shows that command too.
+
+A winget install keeps `.env` in `%LOCALAPPDATA%\az-firewall-watch\` instead of
+next to the binary, because winget owns its install folder. `winget uninstall`
+leaves that folder in place; delete it to remove the configuration.
+
+### macOS and Linux: Homebrew
+
+*(macOS Apple Silicon, Linux x86_64 and arm64)*
+
+```bash
+brew install --cask cloudchristoph/tap/az-firewall-watch
+az-firewall-watch
+```
+
+The cask installs the same binary as the release download and removes the
+Gatekeeper quarantine flag for you. Update with
+`brew upgrade --cask az-firewall-watch`; the update notice in the app shows that
+command too.
+
+A Homebrew install keeps `.env` in your config directory instead of next to the
+binary, because `brew upgrade` replaces the versioned install folder:
+`~/Library/Application Support/az-firewall-watch/` on macOS,
+`~/.config/az-firewall-watch/` on Linux. `brew uninstall --zap` deletes it and moves
+the cache to the trash. If you set `XDG_CONFIG_HOME` or `XDG_CACHE_HOME` on Linux, the
+app uses `az-firewall-watch` below those folders instead, and `--zap` does not see
+them: delete them yourself.
+
+## Option 2: Download the binary
 
 Download the binary for your platform from the
 [latest release](https://github.com/cloudchristoph/az-firewall-watch/releases/latest):
@@ -24,6 +68,7 @@ Download the binary for your platform from the
 | Windows             | [`az-firewall-watch.exe`](https://github.com/cloudchristoph/az-firewall-watch/releases/latest/download/az-firewall-watch.exe)                           |
 | macOS Apple Silicon | [`az-firewall-watch-macos.tar.gz`](https://github.com/cloudchristoph/az-firewall-watch/releases/latest/download/az-firewall-watch-macos.tar.gz)         |
 | Linux x86_64        | [`az-firewall-watch-linux.tar.gz`](https://github.com/cloudchristoph/az-firewall-watch/releases/latest/download/az-firewall-watch-linux.tar.gz)         |
+| Linux arm64         | [`az-firewall-watch-linux-arm64.tar.gz`](https://github.com/cloudchristoph/az-firewall-watch/releases/latest/download/az-firewall-watch-linux-arm64.tar.gz) |
 <!-- markdownlint-enable MD060 -->
 
 ### Windows
@@ -62,6 +107,13 @@ xattr -d com.apple.quarantine az-firewall-watch
 
 ### Linux
 
+The Linux binaries need glibc 2.38 or newer, for example Ubuntu 24.04, Debian 13 or
+Fedora 39. On older distributions, [run from source](#option-3-run-from-source-python-310).
+
+Pick the archive for your architecture (`uname -m` shows `x86_64` or `aarch64`).
+
+x86_64:
+
 ```bash
 # 1. Extract (preserves execute permission)
 tar -xzf az-firewall-watch-linux.tar.gz
@@ -70,22 +122,68 @@ tar -xzf az-firewall-watch-linux.tar.gz
 ./az-firewall-watch
 ```
 
-## Option 2: Run from source *(Python 3.10+)*
+arm64:
+
+```bash
+# 1. Extract (preserves execute permission)
+tar -xzf az-firewall-watch-linux-arm64.tar.gz
+
+# 2. Run (the setup wizard launches automatically on first start)
+./az-firewall-watch
+```
+
+## Option 3: Run from source *(Python 3.10+)*
 
 ```bash
 git clone https://github.com/cloudchristoph/az-firewall-watch.git
 cd az-firewall-watch
 
-# Linux / macOS
-./start.sh
-
 # Windows
 start.bat
+
+# macOS / Linux
+./start.sh
 ```
 
 The scripts create a virtual environment, install dependencies and launch the
 app. The setup wizard runs automatically while no Event Hub credentials are configured,
 neither in `.env` nor in the environment.
+
+## Blocked by your organisation's security policy?
+
+The binaries are not code-signed yet, and every release has a new file hash
+that Microsoft's reputation service has not seen often. Hardened Windows
+machines may therefore refuse to start `az-firewall-watch.exe`, whether it came
+from winget or from the release page. Typical messages are *"Your IT
+administrator has blocked this app"*, *"An Application Control policy has
+blocked this file"* or *"Access is denied"*.
+
+The usual causes, which only an administrator can change:
+
+| Policy | How to recognise it |
+| --- | --- |
+| Microsoft Defender attack surface reduction rule *Block executable files from running unless they meet a prevalence, age, or trusted list criterion* (`01443614-cd74-433a-b99e-2ecdc07bfc25`) | Event ID 1121 (blocked) or 1122 (audited) in *Applications and Services Logs › Microsoft › Windows › Windows Defender › Operational* |
+| App Control for Business (WDAC) or AppLocker allow lists | Events in *Microsoft › Windows › CodeIntegrity › Operational* or *AppLocker* |
+| Smart App Control (Windows 11) | A Smart App Control notification on launch |
+
+**For administrators:** allow the file by its SHA-256 hash, for example as an
+*Allow* file indicator in Microsoft Defender for Endpoint or as a hash rule in App
+Control for Business or AppLocker. ASR rules do not take hashes: an ASR exclusion is
+a file or folder path (see the winget path below). Each release lists the hash of
+`az-firewall-watch.exe` in its notes and all hashes in `SHA256SUMS.txt`. To check a
+downloaded file:
+
+```powershell
+Get-FileHash .\az-firewall-watch.exe -Algorithm SHA256
+```
+
+A winget install keeps the binary under
+`%LOCALAPPDATA%\Microsoft\WinGet\Packages\cloudchristoph.az-firewall-watch_*\`.
+The hash changes with every release, so the allowance has to be renewed on
+update.
+
+**Without an administrator:** [run from source](#option-3-run-from-source-python-310).
+Python itself is signed, so these rules usually leave it alone.
 
 ## 🧙 The setup wizard
 

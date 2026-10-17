@@ -46,8 +46,9 @@ address, as with any web request. The setup wizard
 says so on its first screen, and `UPDATE_CHECK=off` in `.env` or `--no-update-check`
 turns it off (see [Configuration](configuration.md)).
 
-It sends nothing to the author or to any other third party. Logs and resource definitions
-stay on your machine. On its own, the app writes two things:
+Apart from that release check, it sends nothing to the author or to any other third party,
+and no logs, resource definitions or credentials leave your machine. On its own, the app
+writes two things:
 
 - the `.env` with your connection settings: next to the binary, or in the user config
   directory when winget or Homebrew installed it (`%LOCALAPPDATA%\az-firewall-watch\`,

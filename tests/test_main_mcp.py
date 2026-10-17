@@ -30,7 +30,8 @@ def started(monkeypatch) -> dict[str, Any]:
 
     monkeypatch.setattr(cli, "main", _fake_mcp_main)
     monkeypatch.setattr(main, "FirewallLogApp", _FakeViewer)
-    monkeypatch.setattr(main, "_maybe_run_wizard", lambda: seen["started"].append("wizard"))
+    # The wizard reports whether the viewer may start (False means the user cancelled it).
+    monkeypatch.setattr(main, "_maybe_run_wizard", lambda: (seen["started"].append("wizard"), True)[1])
     monkeypatch.setattr(main, "load_env", lambda *_a, **_k: seen["started"].append("load_env"))
     return seen
 

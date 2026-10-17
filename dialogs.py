@@ -139,7 +139,7 @@ class ErrorDialog(ModalScreen[None]):
 
 
 class PolicyContextNoticeDialog(ModalScreen[bool]):
-    """One-time notice: policy context is on and reaches beyond the Event Hub.
+    """Ask for consent before policy context reaches beyond the Event Hub.
 
     Dismisses with ``True`` to keep it enabled, ``False`` to switch it off.
     """
@@ -211,7 +211,7 @@ class PolicyContextNoticeDialog(ModalScreen[bool]):
     def on_key(self, event: events.Key) -> None:
         if event.key in ("escape", "q"):
             event.stop()
-            self.dismiss(True)  # closing means "leave it as it is"
+            self.dismiss(False)  # closing without approval leaves ARM access disabled
 
 
 def _ago(seconds: float) -> str:

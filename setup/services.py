@@ -67,14 +67,20 @@ def _write_private(env_file: Path, text: str) -> None:
     """Write .env readable by the user only (0600): it can carry a SAS key.
     On Windows the mode only sets the read-only flag; the user profile is
     private there already."""
-    fd = os.open(env_file, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-    # An existing file keeps its old mode through os.open: tighten it before
-    # the secret is written, not after.
-    if hasattr(os, "fchmod"):
-        try:
-            os.fchmod(fd, 0o600)
-        except OSError:
-            pass
+    # No O_TRUNC yet: an existing file keeps its old mode through os.open, and
+    # if that cannot be tightened the current .env must survive untouched.
+    fd = os.open(env_file, os.O_WRONLY | os.O_CREAT, 0o600)
+    try:
+        if hasattr(os, "fchmod"):
+            try:
+                os.fchmod(fd, 0o600)
+            except OSError:
+                if os.name != "nt":
+                    raise  # never write the secret into a file others can read
+        os.ftruncate(fd, 0)
+    except BaseException:
+        os.close(fd)
+        raise
     with os.fdopen(fd, "w", encoding="utf-8") as fh:
         fh.write(text)
 

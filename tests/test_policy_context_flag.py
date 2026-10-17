@@ -104,7 +104,7 @@ def test_set_env_value_creates_missing_file(tmp_path: Path):
 def arm_calls(monkeypatch):
     calls: list[str] = []
 
-    async def _load(firewall_id, *, force=False, errors=None):
+    async def _load(firewall_id, *, force=False, errors=None, credential=None):
         calls.append(firewall_id)
         return None
 
@@ -242,16 +242,17 @@ async def test_notice_enter_means_keep_enabled(tmp_path: Path, arm_calls):
 
 
 @pytest.mark.parametrize("key", ["escape", "q"])
-async def test_notice_close_keys_keep_enabled(tmp_path: Path, arm_calls, key):
+async def test_notice_close_keys_decline_arm_access(tmp_path: Path, arm_calls, key):
     app, env = await _open_notice(tmp_path, arm_calls)
     async with app.run_test(size=(160, 45)) as pilot:
         await wait_until(pilot, lambda: isinstance(app.screen, PolicyContextNoticeDialog))
         await pilot.pause()
         await pilot.press(key)
         await wait_until(pilot, lambda: not isinstance(app.screen, PolicyContextNoticeDialog))
-        assert app.query_one(TabbedContent)
+        assert not app._policy_context
+        assert app.query_one("#status", StatusBar).ctx_state == "off"
         assert not app._exit  # 'q' must not quit the viewer through the dialog
-    assert _values(env)["POLICY_CONTEXT"] == "on"
+    assert _values(env)["POLICY_CONTEXT"] == "off"
 
 
 async def test_notice_disable_removes_tabs_and_persists_off(tmp_path: Path, arm_calls):
@@ -282,3 +283,16 @@ async def test_notice_without_env_file_does_not_write(tmp_path: Path, arm_calls)
         await wait_until(pilot, lambda: not isinstance(app.screen, PolicyContextNoticeDialog))
     assert not (tmp_path / "missing.env").exists()
     assert not os.path.exists(tmp_path / ".env")
+
+
+async def test_none_notice_result_does_not_grant_arm_consent(tmp_path: Path, arm_calls):
+    app, env = await _open_notice(tmp_path, arm_calls)
+    async with app.run_test(size=(160, 45)) as pilot:
+        await wait_until(pilot, lambda: isinstance(app.screen, PolicyContextNoticeDialog))
+        app.request_mgmt_load(FW)
+        app.screen.dismiss(None)
+        await wait_until(pilot, lambda: not isinstance(app.screen, PolicyContextNoticeDialog))
+        assert not await app.wait_for_arm_permission()
+        assert not app._policy_context
+        assert arm_calls == []
+    assert _values(env)["POLICY_CONTEXT"] == "off"

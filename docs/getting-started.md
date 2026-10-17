@@ -39,7 +39,9 @@ Run it from Windows Terminal:
 ```
 
 Double-clicking the `.exe` also works when Windows Terminal is your default
-terminal app; on Windows 10 it opens in conhost.
+terminal app (*Settings › Privacy & security › For developers › Terminal* on Windows 11,
+the *Default terminal application* setting in Windows Terminal on Windows 10). With the
+Windows 10 default it opens in conhost.
 
 > [!NOTE]
 > **Windows SmartScreen** may warn on first launch. Click **More info → Run anyway**.

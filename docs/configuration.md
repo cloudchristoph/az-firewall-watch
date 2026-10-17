@@ -7,9 +7,15 @@ has no Azure CLI, which the wizard needs for discovery and deployment.
 
 ## Writing `.env` yourself
 
-Create a `.env` file next to the binary (in the config directory for a
-[Homebrew install](getting-started.md#option-1-homebrew-macos-apple-silicon-linux-x86_64-and-arm64), or in the repo root when running from
-source).
+Create a `.env` file next to the binary, or in the repo root when running from
+source. A binary installed by a package manager uses the user config directory
+instead, because the package manager owns the install folder:
+
+- [Homebrew](getting-started.md#option-1-homebrew-macos-apple-silicon-linux-x86_64-and-arm64):
+  `~/Library/Application Support/az-firewall-watch/` on macOS,
+  `~/.config/az-firewall-watch/` on Linux
+- winget: `%LOCALAPPDATA%\az-firewall-watch\`. `winget uninstall` leaves it in
+  place; delete the folder to remove the configuration.
 
 **SAS connection string:**
 

@@ -335,6 +335,33 @@ async def test_policy_context_notice_survives_first_event(monkeypatch, fake_clie
     assert "POLICY_CONTEXT=off" in env.read_text(encoding="utf-8")
 
 
+async def test_splash_lifting_the_notice_is_not_a_decline(monkeypatch, fake_client, firewall_id, tmp_path):
+    """The splash pops and re-pushes the notice. ``app.pop_screen()`` drops the result
+    callback without calling it, so the lift must leave consent pending and a later
+    'Keep enabled' must keep policy context on."""
+    monkeypatch.setenv("EVENT_HUB_CONNECTION_STRING", SAS_CONN)
+    fake_client.script = [{"events": []}]
+    env = tmp_path / ".env"
+    env.write_text(f"EVENT_HUB_CONNECTION_STRING={SAS_CONN}\n", encoding="utf-8")
+    app = FirewallLogApp(policy_context=True, policy_context_notice=True, env_file=env)
+    async with app.run_test(size=(140, 40)) as pilot:
+        await wait_until(pilot, lambda: _connected(app))
+        client = fake_client.instances[0]
+        await client.on_event(None, FakeEvent(_records(firewall_id, 1)))
+        await pilot.pause(0.2)
+        assert isinstance(app.screen, PolicyContextNoticeDialog)  # lifted and re-pushed twice by now
+        assert app._policy_context
+        assert app._awaiting_context_answer
+        assert not app._context_decided.is_set()
+
+        await pilot.click("#btn-keep")
+        await wait_until(pilot, lambda: not isinstance(app.screen, PolicyContextNoticeDialog))
+        await pilot.pause()
+        assert app.arm_access_allowed()
+        assert [p.id for p in app.query("TabPane")] == ["tab-logs", "tab-firewall", "tab-policy", "tab-ipgroups"]
+    assert "POLICY_CONTEXT=on" in env.read_text(encoding="utf-8")
+
+
 # ── retries and errors ───────────────────────────────────────────────────────
 
 async def test_transient_errors_retry_three_times_then_error_dialog(monkeypatch, fake_client):

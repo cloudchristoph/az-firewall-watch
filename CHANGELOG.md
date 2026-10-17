@@ -33,6 +33,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **The release workflow runs with read-only defaults.** Only the tag-gated release job may write to the repository, dry runs and builds get `contents: read`, SignPath signing runs for tags only, and checkouts no longer leave the job token in `.git/config` (`persist-credentials: false`, except the tap checkout that pushes the cask).
 - **The wizard's `.env` was readable by other local users on macOS and Linux.** It is now written with mode 0600, and an existing `.env` is tightened the next time the viewer saves a setting, since a SAS connection string is a secret. Found while testing the Homebrew cask.
 
 ## [0.6.1] - 2026-09-14

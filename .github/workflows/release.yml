@@ -120,7 +120,8 @@ jobs:
 
       - name: Sign Windows binary (SignPath)
         if: runner.os == 'Windows' && vars.SIGNPATH_ENABLED == 'true' && startsWith(github.ref, 'refs/tags/')
-        uses: signpath/github-action-submit-signing-request@v3
+        # Pinned to a commit (v3.0): this step holds SIGNPATH_API_TOKEN. Update the pin deliberately.
+        uses: signpath/github-action-submit-signing-request@f6d04783b4569d051e0c80105fe66e82819d0092 # v3.0
         with:
           api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
           organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}

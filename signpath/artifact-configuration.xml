@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Reference copy of the SignPath artifact configuration. SignPath keeps its own
+  copy (Project > Artifact configurations); keep the two in sync.
+  The Windows job uploads dist/az-firewall-watch.exe with actions/upload-artifact,
+  which wraps it in a zip. ProductName is pinned; ProductVersion must equal the
+  version parameter, which the release workflow passes from version.txt.
+-->
+<artifact-configuration xmlns="http://signpath.io/artifact-configuration/v1">
+  <parameters>
+    <parameter name="version" required="true" />
+  </parameters>
+  <zip-file>
+    <pe-file path="az-firewall-watch.exe" product-name="Azure Firewall Watch" product-version="${version}">
+      <authenticode-sign/>
+    </pe-file>
+  </zip-file>
+</artifact-configuration>

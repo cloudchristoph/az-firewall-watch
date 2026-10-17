@@ -137,6 +137,20 @@ def policy_context_setting(argv: list[str], environ: Mapping[str, str]) -> tuple
     return raw in _ON_VALUES, True
 
 
+# ── update check flag ────────────────────────────────────────────────────────
+UPDATE_CHECK_KEY = "UPDATE_CHECK"
+
+
+def update_check_enabled(argv: list[str], environ: Mapping[str, str]) -> bool:
+    """Whether the viewer asks api.github.com for a newer release at start-up.
+    ``--no-update-check`` wins, then ``UPDATE_CHECK=on|off`` from the environment
+    (or ``.env``); a missing value means on."""
+    if "--no-update-check" in argv:
+        return False
+    raw = (environ.get(UPDATE_CHECK_KEY) or "").strip().lower()
+    return not raw or raw in _ON_VALUES
+
+
 __all__ = ["BASE_DIR", "SRC_DIR", "INSTALL_SOURCE", "UPGRADE_COMMANDS", "WINGET_ID",
            "install_source", "install_source_of", "frozen_base_dir", "prepare_base_dir", "VERSION", "MAX_ROWS", "TABLE_TRIM_SLACK", "CATEGORY_OPTIONS", "CATEGORY_GROUPS",
-           "POLICY_CONTEXT_KEY", "policy_context_setting", "load_env"]
+           "POLICY_CONTEXT_KEY", "policy_context_setting", "UPDATE_CHECK_KEY", "update_check_enabled", "load_env"]

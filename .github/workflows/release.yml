@@ -4,23 +4,37 @@ on:
   push:
     tags:
       - "v*"
+    # Dry run: a push to dryrun/<anything> builds every binary and renders the cask
+    # and winget manifests as workflow artifacts, without a release or a tap push.
+    branches:
+      - "dryrun/**"
 
+# Read-only by default: dryrun/** branches run this workflow too. The release
+# job grants itself contents: write; the tap push uses its own token.
 permissions:
-  contents: write # needed to create/upload release assets
+  contents: read
 
 jobs:
   validate-changelog:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+        with:
+          persist-credentials: false   # no token left in .git/config for later steps
       - name: Ensure CHANGELOG has section for this tag
+        if: startsWith(github.ref, 'refs/tags/')
         run: |
           version="${GITHUB_REF_NAME#v}"
           grep -q "^## \[${version}\]" CHANGELOG.md \
             || { echo "::error::CHANGELOG.md is missing '## [${version}]' section"; exit 1; }
+          [ "$(tr -d '[:space:]' < version.txt)" = "$version" ] \
+            || { echo "::error::version.txt reads '$(cat version.txt)', the tag says '${version}'"; exit 1; }
 
   build:
     needs: validate-changelog
+    permissions:
+      contents: read
+      actions: read   # SignPath reads the uploaded artifact through GITHUB_TOKEN
     strategy:
       fail-fast: false
       matrix:
@@ -40,6 +54,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v6
+        with:
+          persist-credentials: false   # no token left in .git/config for later steps
 
       - uses: actions/setup-python@v6
         with:
@@ -69,7 +85,9 @@ jobs:
       - name: Build binary (Windows)
         if: runner.os == 'Windows'
         run: |
+          python scripts/version_info.py version_info.txt
           pyinstaller `
+            --version-file version_info.txt `
             --onefile `
             --name az-firewall-watch `
             --collect-all textual `
@@ -79,6 +97,55 @@ jobs:
             "--add-data" "fw_parser.py;." `
             "--add-data" "version.txt;." `
             main.py
+
+      - name: Product version
+        id: product
+        if: runner.os == 'Windows'
+        shell: bash
+        run: echo "version=$(tr -d '[:space:]' < version.txt)" >> "$GITHUB_OUTPUT"
+
+      # Authenticode signing through the SignPath Foundation (free for open source).
+      # Tags only, and off until the project is approved: set the repository variable
+      # SIGNPATH_ENABLED=true and the secret SIGNPATH_API_TOKEN, then fill in the
+      # organization id below. Every signing request needs a manual approval in SignPath.
+      - name: Upload unsigned Windows binary
+        id: upload-unsigned
+        if: runner.os == 'Windows' && vars.SIGNPATH_ENABLED == 'true' && startsWith(github.ref, 'refs/tags/')
+        uses: actions/upload-artifact@v4
+        with:
+          # Outside the az-firewall-watch* pattern the release job downloads
+          name: unsigned-windows-exe
+          path: dist/az-firewall-watch.exe
+          if-no-files-found: error
+
+      - name: Sign Windows binary (SignPath)
+        if: runner.os == 'Windows' && vars.SIGNPATH_ENABLED == 'true' && startsWith(github.ref, 'refs/tags/')
+        # Pinned to a commit (v3.0): this step holds SIGNPATH_API_TOKEN. Update the pin deliberately.
+        uses: signpath/github-action-submit-signing-request@f6d04783b4569d051e0c80105fe66e82819d0092 # v3.0
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: az-firewall-watch
+          signing-policy-slug: release-signing
+          # Pins ProductVersion in the artifact configuration (signpath/artifact-configuration.xml).
+          # No artifact-configuration-slug: SignPath then uses the project's default configuration,
+          # so that XML must be the default one in the SignPath project.
+          parameters: |
+            version: "${{ steps.product.outputs.version }}"
+          github-artifact-id: ${{ steps.upload-unsigned.outputs.artifact-id }}
+          wait-for-completion: true
+          # Room for the manual approval in SignPath (default is 10 minutes)
+          wait-for-completion-timeout-in-seconds: 10800
+          output-artifact-directory: signed
+
+      - name: Replace binary with the signed one
+        if: runner.os == 'Windows' && vars.SIGNPATH_ENABLED == 'true' && startsWith(github.ref, 'refs/tags/')
+        shell: pwsh
+        run: |
+          Copy-Item signed/az-firewall-watch.exe dist/az-firewall-watch.exe -Force
+          $sig = Get-AuthenticodeSignature dist/az-firewall-watch.exe
+          if ($sig.Status -ne 'Valid') { throw "Signature check failed: $($sig.Status)" }
+          $sig.SignerCertificate.Subject
 
       - name: Package artifact
         shell: bash
@@ -98,12 +165,20 @@ jobs:
 
   release:
     needs: build
+    if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
+    permissions:
+      contents: write     # create the release
+      id-token: write     # sign the provenance attestation
+      attestations: write
     steps:
       - uses: actions/checkout@v6
+        with:
+          persist-credentials: false   # no token left in .git/config for later steps
 
       - uses: actions/download-artifact@v4
         with:
+          pattern: az-firewall-watch*   # the release binaries, not unsigned-windows-exe
           path: dist
           merge-multiple: true
 
@@ -111,6 +186,15 @@ jobs:
         working-directory: dist
         # Admins allow-list unsigned binaries by hash (docs/getting-started.md)
         run: sha256sum -- * > SHA256SUMS.txt && cat SHA256SUMS.txt
+
+      - name: Attest build provenance
+        # Verifiable with: gh attestation verify <file> --repo cloudchristoph/az-firewall-watch
+        # Pinned to a commit (v4.2.2): runs with id-token and attestations write. Update deliberately.
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: |
+            dist/az-firewall-watch.exe
+            dist/az-firewall-watch-*.tar.gz
 
       - name: Extract release notes from CHANGELOG.md
         id: changelog
@@ -142,12 +226,15 @@ jobs:
             echo ""
             echo "SHA-256 of \`az-firewall-watch.exe\`: \`$(sha256sum dist/az-firewall-watch.exe | cut -d' ' -f1)\` (all files: \`SHA256SUMS.txt\`)"
             echo ""
+            echo "Code signing policy and privacy: [docs/code-signing.md](https://github.com/${GITHUB_REPOSITORY}/blob/${GITHUB_REF_NAME}/docs/code-signing.md). Verify a file's origin with \`gh attestation verify <file> --repo ${GITHUB_REPOSITORY}\`."
+            echo ""
             echo "See [Getting started](https://github.com/${GITHUB_REPOSITORY}/blob/${GITHUB_REF_NAME}/docs/getting-started.md) for first-run instructions on each platform."
             echo "EOF"
           } >> "$GITHUB_OUTPUT"
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v3
+        # Pinned to a commit (v3.0.3): third-party action with contents: write. Update deliberately.
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
         with:
           files: dist/*
           generate_release_notes: true
@@ -160,6 +247,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+        with:
+          persist-credentials: false   # no token left in .git/config for later steps
 
       - uses: actions/download-artifact@v4
         with:
@@ -188,3 +277,35 @@ jobs:
           git -c user.name=github-actions[bot] -c user.email=41898282+github-actions[bot]@users.noreply.github.com \
             commit -m "az-firewall-watch ${GITHUB_REF_NAME}"
           git push
+
+  dryrun:
+    # Everything the release and homebrew jobs would publish, as artifacts only.
+    needs: build
+    if: "!startsWith(github.ref, 'refs/tags/')"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false   # no token left in .git/config for later steps
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: az-firewall-watch*
+          path: dist
+          merge-multiple: true
+
+      - name: Checksums, cask and winget manifests
+        run: |
+          version="$(tr -d '[:space:]' < version.txt)"
+          (cd dist && sha256sum -- * > SHA256SUMS.txt && cat SHA256SUMS.txt)
+          packaging/homebrew/render-cask.sh "$version" dist/az-firewall-watch-macos.tar.gz dist/az-firewall-watch-linux.tar.gz dist/az-firewall-watch-linux-arm64.tar.gz > dist/az-firewall-watch.rb
+          packaging/winget/render-manifests.sh "$version" dist/az-firewall-watch.exe dist/winget
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dryrun-packages
+          path: |
+            dist/SHA256SUMS.txt
+            dist/az-firewall-watch.rb
+            dist/winget/
+          if-no-files-found: error

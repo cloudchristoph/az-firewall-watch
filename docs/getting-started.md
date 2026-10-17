@@ -82,7 +82,8 @@ start.bat
 ```
 
 The scripts create a virtual environment, install dependencies and launch the
-app. The setup wizard runs automatically if `.env` is not yet configured.
+app. The setup wizard runs automatically while no Event Hub credentials are configured,
+neither in `.env` nor in the environment.
 
 ## 🧙 The setup wizard
 

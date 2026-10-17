@@ -232,3 +232,34 @@ async def test_malformed_body_does_not_stop_the_receiver(client, arm_loads, fire
         status = app.query_one("#status", StatusBar)
         assert status.total == 2
     assert client.errors == []
+
+
+async def test_malformed_bodies_are_counted_as_skipped(client, arm_loads, firewall_id):
+    client.events = [Event("{not json"), Event([]), Event({"records": 5}), Event({"records": [1]}),
+                     Event({"records": [_record(firewall_id, 0)]})]
+    app = FirewallLogApp()
+    async with app.run_test(size=(140, 40)) as pilot:
+        status = app.query_one("#status", StatusBar)
+        await wait_until(pilot, lambda: status.total == 1 and status.skipped == 4)
+    assert client.errors == []
+
+
+async def test_connection_error_text_loses_control_chars_but_keeps_lines(monkeypatch, client):
+    """Exception text can quote server data: ESC must not reach the terminal."""
+    import viewer.streaming as streaming
+
+    class Failing(Client):
+        async def get_partition_ids(self) -> list[str]:
+            raise OSError("bad reply \x1b]52;c;QUJD\x07 here\nsecond \x9b31m line")
+
+    import azure.eventhub.aio as eh_aio
+    monkeypatch.setattr(eh_aio, "EventHubConsumerClient", Failing)
+    monkeypatch.setattr(streaming, "_BACKOFF", [0, 0, 0])
+    app = FirewallLogApp()
+    async with app.run_test(size=(140, 40)) as pilot:
+        await wait_until(pilot, lambda: any("Connection error" in n.message for n in app._notifications))
+        note = next(n for n in app._notifications if "Connection error" in n.message)
+        for text in (note.message, app.query_one("#status", StatusBar).eh_error):
+            assert "\x1b" not in text and "\x07" not in text and "\x9b" not in text
+            assert "\n" in text and "�" in text
+        await pilot.pause()

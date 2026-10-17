@@ -47,6 +47,10 @@ def test_accepts_firewall_ids_in_any_case(value):
     FW.replace("fw-hub", "fw\x00hub"),
     FW.replace("fw-hub", "fw\\hub"),
     FW.replace("rg-hub", "rg/x"),
+    FW.replace("fw-hub", "[link=https://evil]fw[/link]"),  # markup in the shown name
+    FW.replace("fw-hub", "fw‮hub"),                   # bidi override
+    FW.replace("fw-hub", "fw\x1b[31mhub"),                 # terminal escape
+    FW.replace("fw-hub", "fw\x85hub"),                     # C1 control
     FW.replace("azureFirewalls", "virtualNetworks"),
     FW.replace("Microsoft.Network", "MicrosoftXNetwork"),
 ])

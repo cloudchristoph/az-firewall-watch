@@ -29,8 +29,10 @@ _ARM_HOST = urlsplit(_ARM_BASE).hostname or ""
 # of these roots (resource ids, tenant-level provider operations).
 _ARM_PATH_ROOTS = ("/subscriptions/", "/providers/")
 
-# One name segment of a resource id: no separators, whitespace or control chars.
-_NAME = r"[^/?#\\\s\x00-\x1f\x7f-\x9f]+"
+# One name segment of a resource id, in the characters Azure allows for
+# resource group and firewall names: letters, digits, "_", ".", "(", ")", "-".
+# Rules out separators, whitespace, control and format chars and markup.
+_NAME = r"[\w.()-]+"
 _GUID = r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
 _FIREWALL_ID_RE = re.compile(
     rf"/subscriptions/{_GUID}/resourceGroups/(?P<rg>{_NAME})"
@@ -44,8 +46,10 @@ def is_firewall_resource_id(value: object) -> bool:
 
     ``/subscriptions/<guid>/resourceGroups/<rg>/providers/Microsoft.Network/
     azureFirewalls/<name>``, case-insensitive, because Azure upper-cases the
-    ``resourceId`` of diagnostic records. Used to vet ids taken from untrusted
-    input (Event Hub records) before they are handed to ARM. No side effects.
+    ``resourceId`` of diagnostic records. Name segments may hold letters,
+    digits and ``_ . ( ) -`` only, and are never ``.`` or ``..``. Used to vet
+    ids taken from untrusted input (Event Hub records) before they are handed
+    to ARM or shown as the firewall name. No side effects.
     """
     if not isinstance(value, str):
         return False

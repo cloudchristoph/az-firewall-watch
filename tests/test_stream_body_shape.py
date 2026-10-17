@@ -13,6 +13,7 @@ from collections.abc import Callable
 from typing import Any
 
 import pytest
+from rich.text import Text
 
 import viewer.app as app_module
 from dialogs import StatusBar
@@ -155,6 +156,52 @@ async def test_request_mgmt_load_ignores_non_firewall_ids(client, arm_loads, fir
         assert app._firewall_id is None
         app.request_mgmt_load(firewall_id)
         await wait_until(pilot, lambda: arm_loads == [firewall_id])
+
+
+async def test_rejected_id_never_becomes_the_subtitle(client, arm_loads, firewall_id):
+    evil = ("/SUBSCRIPTIONS/00000000-0000-0000-0000-000000000000/RESOURCEGROUPS/rg"
+            "/PROVIDERS/MICROSOFT.NETWORK/AZUREFIREWALLS/fw\x1b]8;;https://evil\x07x")
+    client.events = [Event({"records": [_record(evil, 0)]})]
+    app = FirewallLogApp()
+    async with app.run_test(size=(140, 40)) as pilot:
+        await wait_until(pilot, lambda: len(app._all_rows) == 1)
+        assert "\x1b" not in app.sub_title and "evil" not in app.sub_title
+        assert not app._fw_name_set
+        assert arm_loads == []
+
+
+async def test_forged_port_is_not_rendered_as_markup(client, firewall_id):
+    rec = _record(firewall_id, 0)
+    rec["properties"]["DestinationPort"] = "[link=https://evil]443[/link]"
+    client.events = [Event({"records": [rec]})]
+    app = FirewallLogApp()
+    async with app.run_test(size=(140, 40)) as pilot:
+        await wait_until(pilot, lambda: len(app._all_rows) == 1)
+        cells = app._render_cells(app._all_rows[0], app._get_filters(), True)
+    port = cells[5]
+    assert isinstance(port, Text)
+    assert port.plain == "[link=https://evil]443[/link]"
+    assert not port.spans
+
+
+async def test_connection_error_toast_is_not_parsed_as_markup(monkeypatch, client):
+    """Exception text is untrusted; with markup on, a '[' in it can crash or inject."""
+    import viewer.streaming as streaming
+
+    class Failing(Client):
+        async def get_partition_ids(self) -> list[str]:
+            raise OSError("broken [/] reply [link=https://evil]x[/link]")
+
+    import azure.eventhub.aio as eh_aio
+    monkeypatch.setattr(eh_aio, "EventHubConsumerClient", Failing)
+    monkeypatch.setattr(streaming, "_BACKOFF", [0, 0, 0])
+    app = FirewallLogApp()
+    async with app.run_test(size=(140, 40)) as pilot:
+        await wait_until(pilot, lambda: any("Connection error" in n.message for n in app._notifications))
+        note = next(n for n in app._notifications if "Connection error" in n.message)
+        assert note.markup is False
+        assert "[link=https://evil]x[/link]" in note.message
+        await pilot.pause()
 
 
 @pytest.mark.parametrize("body", [

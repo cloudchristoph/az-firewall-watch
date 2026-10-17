@@ -404,7 +404,7 @@ async def run_stream(app: FirewallLogApp) -> None:
                 app.sub_title = "Live Log Monitor  |  connection lost"
                 status.eh_state = "reconnecting"
                 if attempt == 1:
-                    app.notify(f"Connection lost: {exc}", title="Event Hub", severity="warning")
+                    app.notify(f"Connection lost: {exc}", title="Event Hub", severity="warning", markup=False)
                 for remaining in range(delay, 0, -1):
                     status.eh_detail = f"attempt {attempt} in {remaining}s"
                     await asyncio.sleep(1)
@@ -416,7 +416,7 @@ async def run_stream(app: FirewallLogApp) -> None:
             delay = _BACKOFF[attempt - 1]
             status.eh_state = "retrying"
             if attempt == 1:
-                app.notify(f"Connection error: {exc}", title="Event Hub", severity="warning")
+                app.notify(f"Connection error: {exc}", title="Event Hub", severity="warning", markup=False)
             for remaining in range(delay, 0, -1):
                 status.eh_detail = f"attempt {attempt}/{_MAX_ATTEMPTS} in {remaining}s"
                 await asyncio.sleep(1)

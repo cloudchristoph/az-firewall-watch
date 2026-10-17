@@ -333,7 +333,7 @@ class FirewallLogApp(App[None]):
             for _, g in (snap.policy.all_groups() if snap.policy else [])
             for rc in g.rule_collections for r in rc.rules
         }
-        if snap.firewall.name:
+        if snap.firewall.name and snap.firewall.name.isprintable():
             # ARM knows the real (case-preserved) name; the diagnostics
             # resourceId only gave us an upper-cased one.
             self.sub_title = snap.firewall.name
@@ -503,7 +503,7 @@ class FirewallLogApp(App[None]):
             _highlight(row.protocol, f["proto"]),
             self._source_text(self._format_ip(row.sourceip), row.srcport, f["src"]),
             _highlight(self._format_ip(row.targetip), f["dst"]),
-            row.targetport,
+            Text(row.targetport),  # a plain str cell would be parsed as markup
             action_text,
             self._info_text(info),
         )

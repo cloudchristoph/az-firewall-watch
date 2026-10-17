@@ -5,6 +5,15 @@ Homebrew on macOS and Linux), a self-contained binary, or from source with
 Python 3.10+. Either way the setup wizard takes over on first launch and writes
 your `.env`.
 
+## Before you start
+
+- **Azure access.** You need the firewall whose logs you want to see, and access
+  to the Event Hub that receives them. The exact rights are listed under
+  [required Azure permissions](configuration.md#required-azure-permissions).
+- **Azure CLI.** Needed for *Discover* and *Deploy* in the wizard, and for Entra ID
+  if you sign in with your own account. Install it and run `az login` once.
+- **Python 3.10+.** Only needed for Option 3 below. The binaries need nothing installed.
+
 ## Option 1: Package manager *(recommended)*
 
 ### Windows: winget
@@ -62,11 +71,20 @@ Download the binary for your platform from the
 
 ### Windows
 
-Double-click `az-firewall-watch.exe` or run it from PowerShell:
+I recommend **Windows Terminal**, the default terminal on Windows 11 since 22H2.
+In the classic console (conhost), button borders may show as boxes; use Windows
+Terminal instead.
+
+Run it from Windows Terminal:
 
 ```powershell
 .\az-firewall-watch.exe
 ```
+
+Double-clicking the `.exe` also works when Windows Terminal is your default
+terminal app (*Settings › Privacy & security › For developers › Terminal* on Windows 11,
+the *Default terminal application* setting in Windows Terminal on Windows 10). With the
+Windows 10 default it opens in conhost.
 
 > [!NOTE]
 > **Windows SmartScreen** may warn on first launch. Click **More info → Run anyway**.
@@ -126,7 +144,8 @@ start.bat
 ```
 
 The scripts create a virtual environment, install dependencies and launch the
-app. The setup wizard runs automatically if `.env` is not yet configured.
+app. The setup wizard runs automatically while no Event Hub credentials are configured,
+neither in `.env` nor in the environment.
 
 ## Blocked by your organisation's security policy?
 
@@ -164,17 +183,27 @@ Python itself is signed, so these rules usually leave it alone.
 
 ## 🧙 The setup wizard
 
-The wizard runs the first time you launch the app, or whenever `.env` is missing.
+The wizard runs whenever no Event Hub credentials are configured, neither in `.env`
+nor in the environment, which is the case on first launch.
 It is a full TUI: pick with the arrow keys, **Next →** moves on, and every screen
 has a **Back** button. `Ctrl` + `Q` quits; on the confirmation dialogs `Escape` or
-`q` dismisses. Re-run the wizard any time with:
+`q` dismisses. Re-run the wizard any time with `--reconfigure`.
+
+macOS and Linux:
 
 ```bash
 ./az-firewall-watch --reconfigure
 ```
 
-The wizard has three steps: pick an Event Hub, choose how to authenticate against
-it, and decide whether the viewer may read policy context from Azure.
+Windows:
+
+```powershell
+.\az-firewall-watch.exe --reconfigure
+```
+
+The wizard asks up to three questions, one per step: which Event Hub to use, how
+to authenticate against it, and whether the viewer may read policy context from
+Azure. The authentication step is skipped where the path already implies it.
 
 ### Step 1: Pick an Event Hub
 
@@ -205,18 +234,19 @@ the hub.
 
 ### Step 2: Authentication method
 
-After picking a hub (Discover, Enter existing, or Deploy new), a follow-up screen
-asks **how** to authenticate against it:
+After picking a hub with Discover or Deploy new, a follow-up screen asks **how**
+to authenticate against it:
 
-- **Entra ID** *(recommended)*: passwordless auth via your Azure CLI login,
-  managed identity, environment credentials, and so on. Nothing secret is written
+- **Entra ID** *(recommended)*: passwordless auth via your Azure CLI login
+  (`az login`), managed identity, environment credentials, and so on. Nothing secret is written
   to `.env`. Requires the **Azure Event Hubs Data Receiver** role on the namespace
   or hub; the wizard verifies your assignment up front.
 - **SAS auth rule**: looks for a reusable Listen-only authorization rule on the
   hub; if none exists you are asked to confirm the creation of a new one before
   the connection string is written to `.env`.
 
-The *Paste connection string* path skips this screen, since SAS is already implied.
+The *Enter existing* path skips this screen and always uses Entra ID; the *Paste
+connection string* path skips it too, since SAS is already implied.
 
 > [!CAUTION]
 > SAS keys are powerful secrets that grant access to your Event Hub. If you choose
@@ -237,6 +267,16 @@ then get the Logs tab only, no ARM requests, no Azure CLI token and no cache fil
 
 → [What policy context gives you](policy-context.md), and how to change the
 decision later.
+
+## When the wizard is done
+
+Once `.env` is written, the viewer starts in the same run, so you do not launch it
+again. From then on, start the app as before. The wizard only runs again when
+no Event Hub credentials are found (in `.env` or the environment) or you pass
+`--reconfigure`.
+
+Events show up as soon as the firewall sends them. Quit the viewer with `q` or
+`Ctrl` + `Q`.
 
 ## Next steps
 

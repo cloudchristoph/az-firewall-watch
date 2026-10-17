@@ -11,13 +11,41 @@ import pytest
 from textual.widgets import DataTable, Input, Static, Switch
 
 import viewer.app as app_module
-from dialogs import StatusBar, _ago
+from dialogs import ErrorDialog, StatusBar, _ago
 from fw_parser import parse_record
 from helpers import _to_local
 from viewer.app import FirewallLogApp
 from viewer.views.detail_screen import DetailDialog
 
 pytestmark = pytest.mark.usefixtures("no_eventhub_env", "no_update_check")
+
+
+@pytest.mark.parametrize(
+    ("error", "expected"),
+    [
+        ("Connection refused\nError Description: Connection refused", "Connection refused"),
+        (
+            "Connection refused\nError condition: amqp:connection:forced\nError Description: Connection refused",
+            "Connection refused\nError condition: amqp:connection:forced",
+        ),
+        (
+            "Connection refused\nError Description: Check the namespace firewall",
+            "Connection refused\nError Description: Check the namespace firewall",
+        ),
+        ("Connection refused", "Connection refused"),
+        ("Connection refused\nError Description:", "Connection refused\nError Description:"),
+    ],
+)
+async def test_connection_error_dialog_prioritizes_hint_and_preserves_distinct_details(error, expected):
+    app = FirewallLogApp()
+    async with app.run_test(size=(140, 40)) as pilot:
+        app.push_screen(ErrorDialog(error, "Check your connection, then restart."))
+        await pilot.pause()
+        dialog = app.screen
+        hint = dialog.query_one("#hint", Static)
+        details = dialog.query_one("#error-details", Static)
+        assert str(details.content) == expected
+        assert hint.region.y < details.region.y
 
 
 @pytest.fixture

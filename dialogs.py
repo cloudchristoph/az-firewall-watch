@@ -78,6 +78,16 @@ class ConnectingDialog(ModalScreen[None]):
             self.app.exit()
 
 
+def _connection_error_details(error: str) -> str:
+    """Omit an SDK description only when it repeats the leading message."""
+    message, marker, description = error.partition("Error Description:")
+    if marker:
+        original = message.partition("Error condition:")[0]
+        if description.strip() and " ".join(description.split()) == " ".join(original.split()):
+            return message.rstrip()
+    return error
+
+
 class ErrorDialog(ModalScreen[None]):
     """Modal shown after repeated connection failures."""
 
@@ -109,14 +119,14 @@ class ErrorDialog(ModalScreen[None]):
 
     def __init__(self, error: str, hint: str) -> None:
         super().__init__()
-        self._error = error
+        self._error = _connection_error_details(error)
         self._hint = hint
 
     def compose(self) -> ComposeResult:
         with Static(id="dialog"):
             yield Static(" Connection failed", id="title")
-            yield Static(self._error)
             yield Static(self._hint, id="hint")
+            yield Static(self._error, id="error-details", markup=False)
             yield Button("Quit  (q)", variant="error", id="btn-quit")
 
     def on_button_pressed(self, event: Button.Pressed) -> None:

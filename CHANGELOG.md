@@ -21,6 +21,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - **The wizard's `.env` was readable by other local users on macOS and Linux.** It is now written with mode 0600, and an existing `.env` is tightened the next time the viewer saves a setting, since a SAS connection string is a secret. Found while testing the Homebrew cask.
+- **Quitting setup now exits the application.** The wizard's Quit button and `Ctrl+Q` no longer start the viewer after cancellation, including during `--reconfigure`. Completing setup still opens the viewer. ([#29](https://github.com/cloudchristoph/az-firewall-watch/issues/29))
+- **The ARM token fallback can launch the Azure CLI on Windows.** It now runs the executable path found on the system, including `az.CMD` paths containing spaces, instead of trying to launch the bare `az` command. ([#30](https://github.com/cloudchristoph/az-firewall-watch/issues/30))
 - **Wizard inputs respond to Enter, and Next comes before Quit in the welcome screen's focus order.** Submitting an input uses the screen's existing validation and primary action. ([#27](https://github.com/cloudchristoph/az-firewall-watch/issues/27))
 - **Connection failures are easier to read.** Startup retries show a single warning toast; the final dialog puts the actionable hint first and removes repeated SDK error descriptions while retaining distinct details. ([#28](https://github.com/cloudchristoph/az-firewall-watch/issues/28))
 - **The policy context prompt shows the actual cache file path.** The permissions hint follows the operating system and no longer claims POSIX mode 0600 on Windows. ([#25](https://github.com/cloudchristoph/az-firewall-watch/issues/25))

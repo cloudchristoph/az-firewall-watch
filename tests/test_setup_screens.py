@@ -187,6 +187,7 @@ async def test_welcome_quit_exits_without_env(env_file):
         await pilot.click("#btn-quit")
         await pilot.pause()
         assert app._exit
+        assert app.return_value is False
     assert not env_file.exists()
 
 
@@ -250,6 +251,7 @@ class TestPasteConnection:
             await pilot.click("#btn-save")
             await _pass_policy_context(app, pilot)
             await wait_until(pilot, lambda: app._exit)
+            assert app.return_value is True
         assert get_existing_conn_str(env_file) == CONN
         assert _env_values(env_file)["POLICY_CONTEXT"] == "on"
 
@@ -261,6 +263,7 @@ class TestPasteConnection:
             await pilot.click("#btn-save")
             await _pass_policy_context(app, pilot, enable=False)
             await wait_until(pilot, lambda: app._exit)
+            assert app.return_value is True
         assert _env_values(env_file)["POLICY_CONTEXT"] == "off"
 
     async def test_policy_context_back_keeps_wizard_open(self, env_file):
@@ -322,6 +325,7 @@ class TestEnterExistingHub:
             await pilot.click("#btn-save")
             await _pass_policy_context(app, pilot)
             await wait_until(pilot, lambda: app._exit)
+            assert app.return_value is True
         assert has_entra_config(env_file)
         assert _env_values(env_file)["POLICY_CONTEXT"] == "on"
         text = env_file.read_text(encoding="utf-8")
@@ -510,6 +514,7 @@ class TestPickExisting:
             await pilot.click("#btn-next")  # Entra is the default
             await _pass_policy_context(app, pilot, enable=False)
             await wait_until(pilot, lambda: app._exit)
+            assert app.return_value is True
         text = env_file.read_text(encoding="utf-8")
         assert "EVENT_HUB_NAMESPACE=ns-a.servicebus.windows.net" in text
         assert "POLICY_CONTEXT=off" in text
@@ -528,6 +533,7 @@ class TestPickExisting:
             await pilot.click("#btn-next")
             await _pass_policy_context(app, pilot)
             await wait_until(pilot, lambda: app._exit)
+            assert app.return_value is True
         assert get_existing_conn_str(env_file) == CONN
         assert _env_values(env_file)["POLICY_CONTEXT"] == "on"
         resolve = [c for c in fake_ops["calls"] if isinstance(c, tuple) and c[0] == "resolve_sas"][0]
@@ -572,6 +578,7 @@ class TestPickExisting:
             await pilot.pause()
             await pilot.click("#btn-confirm")
             await wait_until(pilot, lambda: app._exit)
+            assert app.return_value is True
         assert get_existing_conn_str(env_file) == CONN
 
     async def test_sas_failure_shows_error(self, env_file, fake_ops):
@@ -764,6 +771,7 @@ class TestDeployNew:
             await self._through_summary(app, pilot, "sas")
             await pilot.click("#btn-deploy")
             await wait_until(pilot, lambda: app._exit)
+            assert app.return_value is True
         assert get_existing_conn_str(env_file) == CONN
         deploy = [c for c in fake_ops["calls"] if isinstance(c, tuple) and c[0] == "deploy"][0][1]
         assert deploy["auth_method"] == "sas"
@@ -779,6 +787,7 @@ class TestDeployNew:
             await self._through_summary(app, pilot, "entra")
             await pilot.click("#btn-deploy")
             await wait_until(pilot, lambda: app._exit)
+            assert app.return_value is True
         assert has_entra_config(env_file)
         assert _env_values(env_file)["EVENT_HUB_NAMESPACE"] == "ehns-fwlogs-gwc-001.servicebus.windows.net"
         assert _env_values(env_file)["POLICY_CONTEXT"] == "off"
@@ -799,6 +808,7 @@ class TestDeployNew:
             assert "using existing" not in str(app.screen.query_one("#summary-text", Static).content)
             await pilot.click("#btn-deploy")
             await wait_until(pilot, lambda: app._exit)
+            assert app.return_value is True
         deploy = [c for c in fake_ops["calls"] if isinstance(c, tuple) and c[0] == "deploy"][0][1]
         assert deploy["using_existing_rg"] is False
         assert deploy["rg"] == "rg-brand-new"
@@ -959,6 +969,33 @@ class TestDeployNew:
             assert not app._exit
             assert not any(isinstance(c, tuple) and c[0] == "deploy" for c in fake_ops["calls"])
         assert not env_file.exists()
+
+
+@pytest.mark.asyncio
+async def test_ctrl_q_cancels_wizard(env_file):
+    app = WizardApp(env_file)
+    async with app.run_test() as pilot:
+        await pilot.press("ctrl+q")
+        await pilot.pause()
+        assert app._exit
+        assert app.return_value is False
+    assert not env_file.exists()
+
+
+@pytest.mark.asyncio
+async def test_ctrl_q_cancels_wizard_from_focused_input(env_file):
+    app = WizardApp(env_file)
+    async with app.run_test(size=(100, 40)) as pilot:
+        await pilot.pause()
+        await app.push_screen(PasteConnectionScreen())
+        await pilot.pause()
+        app.screen.query_one("#inp-conn", Input).focus()
+        await pilot.pause()
+        await pilot.press("ctrl+q")
+        await pilot.pause()
+        assert app._exit
+        assert app.return_value is False
+    assert not env_file.exists()
 
 
 async def test_welcome_tab_focuses_next_before_quit(env_file):

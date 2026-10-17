@@ -208,6 +208,20 @@ async def test_cli_token_parses_output(monkeypatch):
     assert tok is not None and tok.value == "abc" and tok.expires_at == 1_900_000_000
 
 
+@pytest.mark.parametrize("lookup_name", ["az", "az.cmd"])
+async def test_cli_token_uses_resolved_windows_executable(monkeypatch, lookup_name):
+    az = r"C:\Program Files\Microsoft SDKs\Azure\CLI2\wbin\az.CMD"
+    monkeypatch.setattr(arm_mod.shutil, "which", lambda name: az if name == lookup_name else None)
+
+    def run(args, **kwargs):
+        assert args == [az, "account", "get-access-token", "--resource", ARM, "--output", "json"]
+        return subprocess.CompletedProcess(args, 0, stdout=json.dumps({"accessToken": "windows-token"}))
+
+    monkeypatch.setattr(arm_mod.subprocess, "run", run)
+    tok = await _token_from_az_cli()
+    assert tok is not None and tok.value == "windows-token"
+
+
 @pytest.mark.parametrize(
     "result",
     [

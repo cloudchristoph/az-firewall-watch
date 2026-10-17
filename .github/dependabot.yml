@@ -13,6 +13,12 @@ updates:
     commit-message:
       prefix: "ci"
     groups:
+      # upload-artifact and download-artifact must stay compatible and only run
+      # in release.yml, so every update of the pair (majors too) comes as one PR
+      # that is checked with a dry run. First match wins, so this group comes first.
+      artifact-actions:
+        applies-to: version-updates
+        patterns: ["actions/upload-artifact", "actions/download-artifact"]
       actions-minor-patch:
         applies-to: version-updates
         update-types: ["minor", "patch"]

@@ -7,21 +7,43 @@ from pathlib import Path
 
 from helpers import load_env  # re-exported for main.py
 
+WINGET_ID = "CloudChristoph.AzFirewallWatch"
 
-def is_homebrew_install(executable: str | Path) -> bool:
-    """True when *executable* lives in a Homebrew Caskroom. ``brew`` links the
-    binary into ``bin``, so the symlink is resolved first."""
+# How to update a binary that a package manager installed (see install_source).
+UPGRADE_COMMANDS: dict[str, str] = {
+    "homebrew": "brew upgrade --cask az-firewall-watch",
+    "winget": f"winget upgrade {WINGET_ID}",
+}
+
+
+def install_source_of(parts: tuple[str, ...]) -> str | None:
+    """Which package manager owns a binary at a path with these *parts*:
+    ``homebrew`` for a Caskroom, ``winget`` for a portable package (its
+    ``Packages`` folder or the ``Links`` folder on PATH), else ``None``."""
+    lower = [part.lower() for part in parts]
+    if "caskroom" in lower:
+        return "homebrew"
+    if any(a == "winget" and b in ("packages", "links") for a, b in zip(lower, lower[1:], strict=False)):
+        return "winget"
+    return None
+
+
+def install_source(executable: str | Path) -> str | None:
+    """:func:`install_source_of` for *executable*, with symlinks resolved:
+    ``brew`` links the binary into ``bin``, winget into its ``Links`` folder."""
     try:
-        return "Caskroom" in Path(executable).resolve().parts
+        path = Path(executable).resolve()
     except OSError:
-        return False
+        path = Path(executable)
+    return install_source_of(path.parts)
 
 
 def frozen_base_dir(executable: str | Path) -> Path:
     """Where a compiled binary keeps its ``.env``: next to the executable, or
-    the user's config directory for a Homebrew install, whose Caskroom folder
-    is versioned and replaced by every ``brew upgrade``."""
-    if is_homebrew_install(executable):
+    the user's config directory when a package manager installed it. Its folder
+    belongs to the package manager: ``brew upgrade`` replaces the versioned
+    Caskroom folder, and winget's ``Links`` folder is shared by every package."""
+    if install_source(executable):
         from platformdirs import user_config_dir
 
         return Path(user_config_dir("az-firewall-watch", appauthor=False))
@@ -29,9 +51,9 @@ def frozen_base_dir(executable: str | Path) -> Path:
 
 
 # ── base directory (works both from source and as a PyInstaller binary) ───────
-HOMEBREW = False
+INSTALL_SOURCE: str | None = None
 if getattr(sys, "frozen", False):
-    HOMEBREW = is_homebrew_install(sys.executable)
+    INSTALL_SOURCE = install_source(sys.executable)
     BASE_DIR = frozen_base_dir(sys.executable)
     BASE_DIR.mkdir(parents=True, exist_ok=True)
     SRC_DIR = Path(sys._MEIPASS)  # type: ignore[attr-defined]
@@ -102,5 +124,6 @@ def policy_context_setting(argv: list[str], environ: Mapping[str, str]) -> tuple
     return raw in _ON_VALUES, True
 
 
-__all__ = ["BASE_DIR", "SRC_DIR", "HOMEBREW", "is_homebrew_install", "frozen_base_dir", "VERSION", "MAX_ROWS", "TABLE_TRIM_SLACK", "CATEGORY_OPTIONS", "CATEGORY_GROUPS",
+__all__ = ["BASE_DIR", "SRC_DIR", "INSTALL_SOURCE", "UPGRADE_COMMANDS", "WINGET_ID",
+           "install_source", "install_source_of", "frozen_base_dir", "VERSION", "MAX_ROWS", "TABLE_TRIM_SLACK", "CATEGORY_OPTIONS", "CATEGORY_GROUPS",
            "POLICY_CONTEXT_KEY", "policy_context_setting", "load_env"]

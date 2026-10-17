@@ -1,0 +1,6 @@
+# Rendered by packaging/winget/render-manifests.sh for microsoft/winget-pkgs.
+PackageIdentifier: CloudChristoph.AzFirewallWatch
+PackageVersion: "@VERSION@"
+DefaultLocale: en-US
+ManifestType: version
+ManifestVersion: 1.10.0

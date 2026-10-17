@@ -1,0 +1,12 @@
+# Rendered by packaging/winget/render-manifests.sh for microsoft/winget-pkgs.
+PackageIdentifier: CloudChristoph.AzFirewallWatch
+PackageVersion: "@VERSION@"
+InstallerType: portable
+Commands:
+  - az-firewall-watch
+Installers:
+  - Architecture: x64
+    InstallerUrl: https://github.com/cloudchristoph/az-firewall-watch/releases/download/v@VERSION@/az-firewall-watch.exe
+    InstallerSha256: "@SHA256_WINDOWS@"
+ManifestType: installer
+ManifestVersion: 1.10.0

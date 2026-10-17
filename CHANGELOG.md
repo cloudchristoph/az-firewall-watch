@@ -24,6 +24,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Structured `AZFWNetworkRule` rows with IPv6 addresses were unusable.** A dual-stack firewall writes `SourceIp` and `DestinationIp` there as `[fd10:0003:0005:0001:0000:0000:0000:0004]`, bracketed and fully expanded, while `AZFWDnsQuery` writes the same address as `fd10:3:5:1::4`. The parser passed the brackets through, so the destination failed the address check and the trace evaluated the row's `targetFqdns` instead of its address ranges (a confident wrong verdict), a CIDR filter never matched, the `AzFw.<n>` label never appeared, and the table showed a 41-character string. Every address the parser emits is now normalised to one spelling: brackets off, IPv6 compressed, IPv4 and FQDNs untouched. Legacy messages get the same treatment, and a legacy network-rule deny without any rule now says *Default Action* like its structured twin, so both Event Hubs describe one flow with one string; the fixture test compares the two captures record for record. Found with real records; the legacy spelling question is settled at the same time: Azure always brackets IPv6 in `properties.msg`.
 - **Legacy network-rule messages from dual-stack firewalls carry a `Policy:` sentence** that the parser ignored, so the rule path lacked the policy name that the structured format has. It is read now, and the rule info of both formats is identical.
 
+### Security
+
+- **Builds install exactly the dependencies that were reviewed.** The release binaries and CI installed the newest PyPI release within each `>=` range, without hashes, so a compromised package would have run in the build and shipped inside the binaries. CI and the release build now install from `requirements-*.lock.txt`, hash-locked for every supported Python version and operating system, with `pip install --require-hashes`; the `requirements*.txt` files stay the place to edit dependencies (see `docs/development.md`). The weekly `pip-audit` checks the release lock on Linux, Windows and macOS.
+- **Workflow actions are pinned to commit SHAs.** A moved tag can no longer swap the code an action runs. Dependabot now proposes weekly updates for the actions and the lock files, grouped per ecosystem.
+
 ## [0.6.1] - 2026-09-14
 
 ### Fixed

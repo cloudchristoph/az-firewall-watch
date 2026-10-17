@@ -3,7 +3,9 @@ name: Tests
 on:
   push:
     branches: [main] # feature branches are covered by their pull request
+    paths-ignore: ["**.md", "docs/**"] # docs-only changes need no test run
   pull_request:
+    paths-ignore: ["**.md", "docs/**"]
 
 permissions:
   contents: read

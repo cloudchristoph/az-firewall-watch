@@ -88,8 +88,14 @@ def _category_text(category: str, term: str = "") -> Text:
 # an escape sequence (clipboard write, cursor moves, hyperlinks). C0 (tab
 # aside), DEL and C1 (0x9B CSI, 0x9D OSC) become a visible U+FFFD, and so do
 # the bidi embeddings, overrides and isolates, which reorder a row on screen.
-_UNSAFE_DISPLAY_RE = re.compile("[\x00-\x08\x0a-\x1f\x7f-\x9f‪-‮⁦-⁩]")
 DISPLAY_PLACEHOLDER = "�"
+_UNSAFE_CODEPOINTS = (
+    *range(0x00, 0x09), *range(0x0A, 0x20),   # C0 controls, tab aside
+    *range(0x7F, 0xA0),                       # DEL and C1 controls
+    *range(0x202A, 0x202F),                   # bidi embeddings and overrides
+    *range(0x2066, 0x206A),                   # bidi isolates
+)
+_DISPLAY_TABLE = {cp: DISPLAY_PLACEHOLDER for cp in _UNSAFE_CODEPOINTS} | {0x09: " "}
 
 
 def display_safe(value: str) -> str:
@@ -100,9 +106,7 @@ def display_safe(value: str) -> str:
     """
     if not value:
         return value
-    if "\t" in value:
-        value = value.replace("\t", " ")
-    return _UNSAFE_DISPLAY_RE.sub(DISPLAY_PLACEHOLDER, value)
+    return value.translate(_DISPLAY_TABLE)
 
 
 def escape_markup(value: str) -> str:

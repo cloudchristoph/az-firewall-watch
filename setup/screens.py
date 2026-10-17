@@ -92,6 +92,12 @@ class WelcomeScreen(Screen):
                     "Deploy new Event Hub and Diagnostics settings",
                     id="opt-deploy",
                 )
+            yield Static(
+                "At start-up the viewer asks api.github.com whether a newer release exists; "
+                "no logs or credentials are sent. UPDATE_CHECK=off in .env turns that off.",
+                classes="wiz-info",
+                id="welcome-update-note",
+            )
             with Horizontal(classes="wiz-buttons"):
                 yield Button("Next →", id="btn-next", variant="primary")
                 yield Button("Quit", id="btn-quit", variant="error")

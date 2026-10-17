@@ -41,6 +41,22 @@ _POLICY_CONTEXT_COMMENT = (
     "# POLICY_CONTEXT=on reads the firewall, its policy and IP groups via Azure Resource Manager\n"
     "# (Reader role), may use an Azure CLI token, and caches the result in your user cache directory.\n"
 )
+_UPDATE_CHECK_COMMENT = (
+    "# At start-up the viewer asks api.github.com whether a newer release exists (no logs or\n"
+    "# credentials are sent). Uncomment to turn that off:\n"
+    "# UPDATE_CHECK=off\n"
+)
+
+
+def _update_check_block(env_file: Path) -> str:
+    """The UPDATE_CHECK part of a freshly written .env: the commented hint, or
+    the value the user already set, so --reconfigure keeps an opt-out."""
+    if env_file.exists():
+        for line in _read_env_text(env_file).splitlines():
+            if line.startswith("UPDATE_CHECK="):
+                kept = _UPDATE_CHECK_COMMENT.splitlines()[:2]
+                return "\n".join(kept) + "\n" + line.strip() + "\n"
+    return _UPDATE_CHECK_COMMENT
 
 
 def _policy_context_line(policy_context: bool) -> str:
@@ -79,7 +95,8 @@ def write_env(env_file: Path, conn_str: str, policy_context: bool = True) -> Non
         f"EVENT_HUB_CONNECTION_STRING={conn_str}\n"
         "EVENT_HUB_CONSUMER_GROUP=$Default\n"
         "EVENT_HUB_START_POSITION=latest\n"
-        + _POLICY_CONTEXT_COMMENT + _policy_context_line(policy_context),
+        + _POLICY_CONTEXT_COMMENT + _policy_context_line(policy_context)
+        + _update_check_block(env_file),
     )
 
 
@@ -95,7 +112,8 @@ def write_env_entra(env_file: Path, namespace: str, hub_name: str, policy_contex
         f"EVENT_HUB_NAME={hub_name}\n"
         "EVENT_HUB_CONSUMER_GROUP=$Default\n"
         "EVENT_HUB_START_POSITION=latest\n"
-        + _POLICY_CONTEXT_COMMENT + _policy_context_line(policy_context),
+        + _POLICY_CONTEXT_COMMENT + _policy_context_line(policy_context)
+        + _update_check_block(env_file),
     )
 
 

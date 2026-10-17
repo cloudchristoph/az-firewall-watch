@@ -1,0 +1,2 @@
+# CI tool: pip-audit for .github/workflows/audit.yml
+pip-audit>=2.9

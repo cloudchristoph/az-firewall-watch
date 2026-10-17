@@ -6,6 +6,7 @@ on:
   pull_request:
     paths:
       - "requirements*.txt"
+      - "requirements*.in"
       - ".github/workflows/audit.yml"
   workflow_dispatch:
 
@@ -14,15 +15,25 @@ permissions:
 
 jobs:
   pip-audit:
-    runs-on: ubuntu-latest
+    # The lock has platform and Python markers that pip-audit evaluates against the
+    # running interpreter, so each release OS (and 3.10 for the older pins) audits its own set
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        python-version: ["3.12"]
+        include:
+          - os: ubuntu-latest
+            python-version: "3.10"
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
         with:
-          python-version: "3.12"
+          python-version: ${{ matrix.python-version }}
       - name: Install pip-audit
-        run: pip install pip-audit
-      # -r resolves the declared files (transitive packages included) in an isolated env,
+        run: pip install --require-hashes -r requirements-audit.lock.txt
+      # Audits the hashed release lock (runtime plus build) as pinned, without resolving,
       # so pip-audit and bootstrap packages of this runner are not part of the audit
       - name: pip-audit
-        run: pip-audit -r requirements.txt -r requirements-build.txt
+        run: pip-audit --disable-pip -r requirements-build.lock.txt

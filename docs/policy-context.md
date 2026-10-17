@@ -260,7 +260,7 @@ precedence:
 | `.env`           | `POLICY_CONTEXT=on` / `POLICY_CONTEXT=off`          | Persistent   |
 | Setup wizard     | *Policy context* step, writes the `.env` key for you | Persistent   |
 
-**What "off" actually means:** no ARM requests, no Azure CLI token, no cache file,
+**What "off" actually means:** no ARM requests, no ARM token, no context cache file,
 and the Logs tab only. The status bar reads `○ Context off`, `Enter` shows the
 plain row details, and `Ctrl` + `R` answers with the notification *Policy context
 is off. Enable it with POLICY_CONTEXT=on or --policy-context*.
@@ -270,7 +270,14 @@ has no `POLICY_CONTEXT` key. The viewer then shows a one-time notice at start-up
 explaining what policy context does (it is on by default) with a *Disable* button,
 and saves your choice to `.env`, so you are only asked once.
 
-While that notice is open **nothing is read from Azure**: no token, no ARM request,
-no cache file. Logs keep streaming, and the firewall the records point at is simply
-remembered. Answering *Keep enabled* fetches it once; *Disable* discards it and
-ignores every firewall seen later.
+While that notice is open **policy context makes no Azure requests**: no ARM
+token, no ARM request, and no context cache access. This also gates the optional
+ARM check of your Event Hub receiver permissions. Logs keep streaming; Entra ID
+still needs an Event Hub token for that, cached separately from ARM tokens by
+scope. The firewall the records point at is simply remembered.
+
+Answering *Keep enabled* (or pressing `Enter`) allows the ARM check and fetches
+the remembered firewall once. *Disable*, `Escape`, or `q` declines policy context,
+discards the remembered firewall, and ignores every firewall seen later. An
+existing `POLICY_CONTEXT=on` setting or `--policy-context` explicitly enables ARM
+access without showing the prompt again.

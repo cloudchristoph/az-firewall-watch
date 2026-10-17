@@ -61,9 +61,7 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
-          cache-dependency-path: |
-            requirements.txt
-            requirements-build.txt
+          cache-dependency-path: requirements-build.lock.txt
 
       - name: Install dependencies
         run: pip install --require-hashes -r requirements-build.lock.txt

@@ -34,6 +34,7 @@ from helpers import _category_text, _highlight, _is_ipv6, _to_local, address_mat
 
 from .azure_resources import FirewallInfo, FirewallPolicyInfo, IpGroupInfo
 from .cache import CachedSnapshot
+from .cache import load as load_cached
 from .config import CATEGORY_GROUPS, CATEGORY_OPTIONS, MAX_ROWS, TABLE_TRIM_SLACK, VERSION
 from .credentials import create_credential
 from .enrichment import find_matching_ip_groups, resolve_fw_instance
@@ -351,7 +352,10 @@ class FirewallLogApp(App[None]):
         status = self.query_one("#status", StatusBar)
         errors: list[str] = []
         try:
-            credential = self.get_credential()
+            # A fresh cache entry needs no ARM call, so do not build the
+            # credential for it (it stays lazy, e.g. for SAS-only setups).
+            cached = None if force else load_cached(firewall_id)
+            credential = None if cached is not None and cached.is_fresh() else self.get_credential()
         except Exception:
             credential = None  # ArmClient can still use its CLI fallback.
         snap = await load_management_data(firewall_id, force=force, errors=errors, credential=credential)

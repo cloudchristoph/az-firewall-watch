@@ -11,6 +11,7 @@ import json
 import threading
 import time
 from collections.abc import Callable
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -1110,3 +1111,28 @@ async def test_daemon_thread_delivers_result_and_error():
     assert await streaming._run_in_daemon_thread(lambda: 42) == 42
     with pytest.raises(ValueError, match="boom"):
         await streaming._run_in_daemon_thread(lambda: (_ for _ in ()).throw(ValueError("boom")))
+
+
+@pytest.mark.usefixtures("no_eventhub_env")
+@pytest.mark.parametrize("fresh, force, built", [(True, False, False), (False, False, True), (True, True, True)])
+async def test_mgmt_load_builds_the_credential_only_when_arm_is_needed(monkeypatch, fresh, force, built):
+    """A fresh cache hit makes no ARM call, so it must not construct the credential."""
+    firewall_id = "/subscriptions/s/resourceGroups/rg/providers/Microsoft.Network/azureFirewalls/fw"
+    snapshot = SimpleNamespace(is_fresh=lambda: fresh)
+    monkeypatch.setattr(app_module, "load_cached", lambda fid: snapshot)
+    loads: list = []
+
+    async def load(fid, *, credential, **kwargs):
+        loads.append(credential)
+        return None
+
+    monkeypatch.setattr(app_module, "load_management_data", load)
+    app = FirewallLogApp(policy_context=True, policy_context_notice=False)
+    created: list = []
+    monkeypatch.setattr(app, "get_credential", lambda: created.append(1) or "credential")
+    async with app.run_test(size=(140, 40)) as pilot:
+        app._load_mgmt(firewall_id, force=force)
+        await wait_until(pilot, lambda: len(loads) >= 1)
+    assert bool(created) is built
+    assert loads[-1] == ("credential" if built else None)
+

@@ -7,7 +7,6 @@ a footer with only ``Esc close``.
 """
 from __future__ import annotations
 
-from rich.markup import escape
 from rich.text import Text
 from textual import events
 from textual.app import ComposeResult
@@ -17,7 +16,7 @@ from textual.screen import ModalScreen
 from textual.widgets import Button, Static, TabbedContent, TabPane
 
 from fw_parser import FirewallDataRow, tcp_direction
-from helpers import _to_local, _utc_short, format_endpoint
+from helpers import _to_local, _utc_short, escape_markup, escape_rich_markup, format_endpoint
 
 from ..trace import Trace
 from .trace_screen import TracePanel
@@ -109,7 +108,7 @@ def _action_markup(action: str) -> str:
     """
     if not action or action == "-":
         return ""
-    safe = escape(action)
+    safe = escape_rich_markup(action)
     a = action.lower()
     if a in ("deny", "denywiththreat"):
         return f"[bold red]{safe}[/]"
@@ -137,12 +136,12 @@ def _header_endpoints(row: FirewallDataRow) -> tuple[str, str]:
 
 def _header_line1(row: FirewallDataRow) -> str:
     src, dst = _header_endpoints(row)
-    endpoint = f"[b]{escape(src)} → {escape(dst)}[/b]"
-    protocol = escape(row.protocol) if row.protocol and row.protocol != "-" else ""
+    endpoint = f"[b]{escape_rich_markup(src)} → {escape_rich_markup(dst)}[/b]"
+    protocol = escape_rich_markup(row.protocol) if row.protocol and row.protocol != "-" else ""
     action = _action_markup(row.action)
     tail = "   ".join(part for part in (protocol, action) if part)
     line = f"{endpoint}   {tail}" if tail else endpoint
-    return f"{line}   [dim]{escape(row.category)}[/]"
+    return f"{line}   [dim]{escape_rich_markup(row.category)}[/]"
 
 
 def _compact_outcome(outcome: str) -> str:
@@ -173,16 +172,17 @@ def _verdict_class(action: str) -> str:
 def _border_title(row: FirewallDataRow, trace: Trace | None) -> str:
     """The verdict as the frame's title tab: ``ALLOW · allow-web`` with a
     matched rule, the bare action without one, the category for rows that
-    carry no action. Rich markup, so the names are escaped."""
+    carry no action. A border title is Textual markup, so the names are
+    escaped for Textual, not Rich."""
     action = row.action if row.action and row.action != "-" else ""
     if not action:
-        return escape(row.category)
+        return escape_markup(row.category)
     title = action.upper()
     if trace is not None:
         _, sep, rule = _compact_outcome(trace.outcome).partition(" · ")
         if sep:
             title = f"{title} · {rule.partition(' (')[0]}"  # the note stays on the header line
-    return escape(title)
+    return escape_markup(title)
 
 
 def _outcome_path(outcome: str) -> tuple[str, str]:
@@ -210,19 +210,19 @@ def _header_line2(trace: Trace, cache_age: str, width: int | None = None) -> str
         icon = "[yellow]?[/]"  # the firewall matched a rule we could not locate (stale cache)
     else:
         icon = "[red]✗[/]"
-    age = f"   [dim]cached policy · {escape(cache_age)}[/]" if cache_age else ""
+    age = f"   [dim]cached policy · {escape_rich_markup(cache_age)}[/]" if cache_age else ""
     group, collection = _outcome_path(trace.outcome)
     if trace.matched_rule is not None and collection:
         candidates = [
-            f"{icon} matched in {escape(group)} » {escape(collection)}{age}",
-            f"{icon} matched in {escape(group)} » {escape(collection)}",
-            f"{icon} matched in {escape(collection)}",
+            f"{icon} matched in {escape_rich_markup(group)} » {escape_rich_markup(collection)}{age}",
+            f"{icon} matched in {escape_rich_markup(group)} » {escape_rich_markup(collection)}",
+            f"{icon} matched in {escape_rich_markup(collection)}",
         ]
     else:
         candidates = [
-            f"{icon} {escape(trace.outcome)}{age}",
-            f"{icon} {escape(_compact_outcome(trace.outcome))}{age}",
-            f"{icon} {escape(_compact_outcome(trace.outcome))}",
+            f"{icon} {escape_rich_markup(trace.outcome)}{age}",
+            f"{icon} {escape_rich_markup(_compact_outcome(trace.outcome))}{age}",
+            f"{icon} {escape_rich_markup(_compact_outcome(trace.outcome))}",
         ]
     if width is None:
         return candidates[0]
@@ -431,7 +431,7 @@ class DetailDialog(ModalScreen[str | None]):
         return self._trace is not None
 
     def _field(self, label: str, value: str) -> Static:
-        safe = value.replace("[", "\\[")
+        safe = escape_markup(value)
         if len(value) > self._inline_max:
             return Static(f"[dim]{label.rstrip()}[/]\n  {safe}", markup=True, classes="detail-row")
         return Static(f"[dim]{label.ljust(13)}[/]  {safe}", markup=True, classes="detail-row")
@@ -443,13 +443,13 @@ class DetailDialog(ModalScreen[str | None]):
         utc = _utc_short(row.time)                       # 2026-09-09T16:41:46Z
         utc_date, _, utc_clock = utc.partition("T")
         utc_short = utc_clock if local.startswith(utc_date) else utc
-        text = f"[dim]{'Time'.ljust(13)}[/]  {escape(local)}   [dim]{escape(utc_short)} UTC[/]"
+        text = f"[dim]{'Time'.ljust(13)}[/]  {escape_markup(local)}   [dim]{escape_markup(utc_short)} UTC[/]"
         return Static(text, markup=True, classes="detail-row")
 
     def _ip_groups_field(self, label: str, groups: list[str]) -> Static:
         indent = " " * (13 + 2)
-        lines = [f"[dim]{label.ljust(13)}[/]  {escape(groups[0])}"]
-        lines.extend(f"{indent}{escape(g)}" for g in groups[1:])
+        lines = [f"[dim]{label.ljust(13)}[/]  {escape_markup(groups[0])}"]
+        lines.extend(f"{indent}{escape_markup(g)}" for g in groups[1:])
         return Static("\n".join(lines), markup=True, classes="detail-row")
 
     def _header_text(self) -> Text:
@@ -507,7 +507,7 @@ class DetailDialog(ModalScreen[str | None]):
                         yield from self._entry_fields()
                         if self._trace is None and self._trace_note:
                             title, _, why = self._trace_note.partition("\n")
-                            yield Static(f"[b]{escape(title)}[/b]\n[dim]{escape(why)}[/]", id="trace-note",
+                            yield Static(f"[b]{escape_markup(title)}[/b]\n[dim]{escape_markup(why)}[/]", id="trace-note",
                                          classes="detail-row", markup=True)
                     if self._trace is not None:
                         yield TracePanel(self._trace, id="trace-panel")

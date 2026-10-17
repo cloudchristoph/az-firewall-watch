@@ -72,7 +72,14 @@ flowchart LR
 
 ## 🚀 Quick start
 
-Download the binary for your platform from the
+On macOS (Apple Silicon) and Linux (x86_64), install with Homebrew:
+
+```bash
+brew install --cask cloudchristoph/tap/az-firewall-watch
+az-firewall-watch
+```
+
+Or download the binary for your platform from the
 [latest release](https://github.com/cloudchristoph/az-firewall-watch/releases/latest)
 and run it. The setup wizard starts automatically on first launch:
 

@@ -7,7 +7,8 @@ has no Azure CLI, which the wizard needs for discovery and deployment.
 
 ## Writing `.env` yourself
 
-Create a `.env` file next to the binary (or in the repo root when running from
+Create a `.env` file next to the binary (in the config directory for a
+[Homebrew install](getting-started.md#option-1-homebrew-macos-apple-silicon-linux-x86_64), or in the repo root when running from
 source).
 
 **SAS connection string:**

@@ -7,10 +7,33 @@ from pathlib import Path
 
 from helpers import load_env  # re-exported for main.py
 
+
+def is_homebrew_install(executable: str | Path) -> bool:
+    """True when *executable* lives in a Homebrew Caskroom. ``brew`` links the
+    binary into ``bin``, so the symlink is resolved first."""
+    try:
+        return "Caskroom" in Path(executable).resolve().parts
+    except OSError:
+        return False
+
+
+def frozen_base_dir(executable: str | Path) -> Path:
+    """Where a compiled binary keeps its ``.env``: next to the executable, or
+    the user's config directory for a Homebrew install, whose Caskroom folder
+    is versioned and replaced by every ``brew upgrade``."""
+    if is_homebrew_install(executable):
+        from platformdirs import user_config_dir
+
+        return Path(user_config_dir("az-firewall-watch", appauthor=False))
+    return Path(executable).parent
+
+
 # ── base directory (works both from source and as a PyInstaller binary) ───────
+HOMEBREW = False
 if getattr(sys, "frozen", False):
-    # Running as a compiled binary — place .env next to the executable
-    BASE_DIR = Path(sys.executable).parent
+    HOMEBREW = is_homebrew_install(sys.executable)
+    BASE_DIR = frozen_base_dir(sys.executable)
+    BASE_DIR.mkdir(parents=True, exist_ok=True)
     SRC_DIR = Path(sys._MEIPASS)  # type: ignore[attr-defined]
 else:
     BASE_DIR = Path(__file__).parent.parent
@@ -79,5 +102,5 @@ def policy_context_setting(argv: list[str], environ: Mapping[str, str]) -> tuple
     return raw in _ON_VALUES, True
 
 
-__all__ = ["BASE_DIR", "SRC_DIR", "VERSION", "MAX_ROWS", "TABLE_TRIM_SLACK", "CATEGORY_OPTIONS", "CATEGORY_GROUPS",
+__all__ = ["BASE_DIR", "SRC_DIR", "HOMEBREW", "is_homebrew_install", "frozen_base_dir", "VERSION", "MAX_ROWS", "TABLE_TRIM_SLACK", "CATEGORY_OPTIONS", "CATEGORY_GROUPS",
            "POLICY_CONTEXT_KEY", "policy_context_setting", "load_env"]

@@ -140,3 +140,39 @@ jobs:
           files: dist/*
           generate_release_notes: true
           body: ${{ steps.changelog.outputs.notes }}
+
+  homebrew:
+    # Publish the cask to cloudchristoph/homebrew-tap. Needs the repository
+    # secret HOMEBREW_TAP_TOKEN (fine-grained PAT, contents: write on the tap).
+    needs: release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: az-firewall-watch-{macos,linux}
+          path: dist
+          merge-multiple: true
+
+      - name: Render cask
+        run: packaging/homebrew/render-cask.sh "${GITHUB_REF_NAME#v}" dist/az-firewall-watch-macos.tar.gz dist/az-firewall-watch-linux.tar.gz > az-firewall-watch.rb
+
+      - uses: actions/checkout@v6
+        with:
+          repository: cloudchristoph/homebrew-tap
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          path: tap
+
+      - name: Commit and push cask
+        working-directory: tap
+        run: |
+          mkdir -p Casks
+          cp ../az-firewall-watch.rb Casks/az-firewall-watch.rb
+          git add Casks/az-firewall-watch.rb
+          if git diff --cached --quiet; then
+            echo "Cask unchanged"; exit 0
+          fi
+          git -c user.name=github-actions[bot] -c user.email=41898282+github-actions[bot]@users.noreply.github.com \
+            commit -m "az-firewall-watch ${GITHUB_REF_NAME}"
+          git push

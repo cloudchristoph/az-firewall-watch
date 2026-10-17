@@ -1,10 +1,28 @@
 # Getting started
 
-Two ways to run Azure Firewall Watch: a self-contained binary (recommended) or
-from source with Python 3.10+. Either way the setup wizard takes over on first
+Three ways to run Azure Firewall Watch: Homebrew on macOS and Linux, a
+self-contained binary, or from source with Python 3.10+. Either way the setup wizard takes over on first
 launch and writes your `.env`.
 
-## Option 1: Download the binary *(recommended)*
+## Option 1: Homebrew *(macOS Apple Silicon, Linux x86_64)*
+
+```bash
+brew install --cask cloudchristoph/tap/az-firewall-watch
+az-firewall-watch
+```
+
+The cask installs the same binary as the release download and removes the
+Gatekeeper quarantine flag for you. Update with
+`brew upgrade --cask az-firewall-watch`; the update notice in the app shows that
+command too.
+
+A Homebrew install keeps `.env` in your config directory instead of next to the
+binary, because `brew upgrade` replaces the versioned install folder:
+`~/Library/Application Support/az-firewall-watch/` on macOS,
+`~/.config/az-firewall-watch/` on Linux. `brew uninstall --zap` removes it along
+with the cache.
+
+## Option 2: Download the binary
 
 Download the binary for your platform from the
 [latest release](https://github.com/cloudchristoph/az-firewall-watch/releases/latest):
@@ -52,7 +70,7 @@ tar -xzf az-firewall-watch-linux.tar.gz
 ./az-firewall-watch
 ```
 
-## Option 2: Run from source *(Python 3.10+)*
+## Option 3: Run from source *(Python 3.10+)*
 
 ```bash
 git clone https://github.com/cloudchristoph/az-firewall-watch.git

@@ -94,10 +94,23 @@ xattr -d com.apple.quarantine az-firewall-watch
 The Linux binaries need glibc 2.38 or newer, for example Ubuntu 24.04, Debian 13 or
 Fedora 39. On older distributions, [run from source](#option-3-run-from-source-python-310).
 
+Pick the archive for your architecture (`uname -m` shows `x86_64` or `aarch64`).
+
+x86_64:
+
 ```bash
 # 1. Extract (preserves execute permission)
-tar -xzf az-firewall-watch-linux.tar.gz          # x86_64
-tar -xzf az-firewall-watch-linux-arm64.tar.gz    # arm64 (check with: uname -m)
+tar -xzf az-firewall-watch-linux.tar.gz
+
+# 2. Run (the setup wizard launches automatically on first start)
+./az-firewall-watch
+```
+
+arm64:
+
+```bash
+# 1. Extract (preserves execute permission)
+tar -xzf az-firewall-watch-linux-arm64.tar.gz
 
 # 2. Run (the setup wizard launches automatically on first start)
 ./az-firewall-watch

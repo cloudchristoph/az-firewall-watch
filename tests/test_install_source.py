@@ -169,3 +169,26 @@ def test_set_env_value_tightens_an_existing_env(tmp_path):
     set_env_value(env, "POLICY_CONTEXT", "off")
     assert env.stat().st_mode & 0o777 == 0o600
     assert env.read_text(encoding="utf-8").startswith(f"EVENT_HUB_CONNECTION_STRING={_CONN}\n")
+
+
+@_POSIX
+def test_existing_env_is_private_before_the_secret_lands(tmp_path, monkeypatch):
+    """The mode is tightened on the open descriptor, before anything is written."""
+    import os
+
+    from setup.services import write_env
+
+    env = tmp_path / ".env"
+    env.write_text("OLD=1\n", encoding="utf-8")
+    env.chmod(0o644)
+    seen: list[int] = []
+    real_fdopen = os.fdopen
+
+    def _fdopen(fd, *args, **kwargs):
+        seen.append(os.fstat(fd).st_mode & 0o777)  # mode at the moment writing starts
+        return real_fdopen(fd, *args, **kwargs)
+
+    monkeypatch.setattr(os, "fdopen", _fdopen)
+    write_env(env, _CONN)
+    assert seen == [0o600]
+    assert env.stat().st_mode & 0o777 == 0o600

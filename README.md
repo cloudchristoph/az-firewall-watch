@@ -102,9 +102,17 @@ and run it:
 tar -xzf az-firewall-watch-macos.tar.gz
 xattr -d com.apple.quarantine az-firewall-watch
 ./az-firewall-watch
+```
 
-# Linux: az-firewall-watch-linux.tar.gz (x86_64) or az-firewall-watch-linux-arm64.tar.gz
+```bash
+# Linux x86_64
 tar -xzf az-firewall-watch-linux.tar.gz
+./az-firewall-watch
+```
+
+```bash
+# Linux arm64 (uname -m shows aarch64)
+tar -xzf az-firewall-watch-linux-arm64.tar.gz
 ./az-firewall-watch
 ```
 

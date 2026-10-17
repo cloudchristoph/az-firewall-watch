@@ -57,12 +57,15 @@ def _write_private(env_file: Path, text: str) -> None:
     On Windows the mode only sets the read-only flag; the user profile is
     private there already."""
     fd = os.open(env_file, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    # An existing file keeps its old mode through os.open: tighten it before
+    # the secret is written, not after.
+    if hasattr(os, "fchmod"):
+        try:
+            os.fchmod(fd, 0o600)
+        except OSError:
+            pass
     with os.fdopen(fd, "w", encoding="utf-8") as fh:
         fh.write(text)
-    try:
-        os.chmod(env_file, 0o600)  # an existing file keeps its old mode through os.open
-    except OSError:
-        pass
 
 
 def write_env(env_file: Path, conn_str: str, policy_context: bool = True) -> None:

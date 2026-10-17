@@ -30,11 +30,11 @@ VSVersionInfo(
       StringTable(
         '040904B0',
         [
-          StringStruct('CompanyName', ''),
+          StringStruct('CompanyName', 'CloudChristoph'),
           StringStruct('FileDescription', '{product}'),
           StringStruct('FileVersion', '{version}'),
           StringStruct('InternalName', 'az-firewall-watch'),
-          StringStruct('LegalCopyright', 'MIT License'),
+          StringStruct('LegalCopyright', 'Copyright (c) CloudChristoph, MIT License'),
           StringStruct('OriginalFilename', 'az-firewall-watch.exe'),
           StringStruct('ProductName', '{product}'),
           StringStruct('ProductVersion', '{version}')

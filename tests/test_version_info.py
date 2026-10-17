@@ -19,6 +19,7 @@ def test_renders_product_name_and_version():
     assert "StringStruct('ProductName', 'Azure Firewall Watch')" in text
     assert "StringStruct('ProductVersion', '0.7.0')" in text
     assert "StringStruct('OriginalFilename', 'az-firewall-watch.exe')" in text
+    assert "StringStruct('CompanyName', 'CloudChristoph')" in text
 
 
 @pytest.mark.parametrize("bad", ["0.7", "v0.7.0", "0.7.0-rc1", "unknown", ""])

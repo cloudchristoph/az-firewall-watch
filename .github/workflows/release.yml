@@ -4,6 +4,10 @@ on:
   push:
     tags:
       - "v*"
+    # Dry run: a push to dryrun/<anything> builds every binary and renders the cask
+    # and winget manifests as workflow artifacts, without a release or a tap push.
+    branches:
+      - "dryrun/**"
 
 permissions:
   contents: write # needed to create/upload release assets
@@ -14,6 +18,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - name: Ensure CHANGELOG has section for this tag
+        if: startsWith(github.ref, 'refs/tags/')
         run: |
           version="${GITHUB_REF_NAME#v}"
           grep -q "^## \[${version}\]" CHANGELOG.md \
@@ -138,6 +143,7 @@ jobs:
 
   release:
     needs: build
+    if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
     permissions:
       contents: write     # create the release
@@ -243,3 +249,33 @@ jobs:
           git -c user.name=github-actions[bot] -c user.email=41898282+github-actions[bot]@users.noreply.github.com \
             commit -m "az-firewall-watch ${GITHUB_REF_NAME}"
           git push
+
+  dryrun:
+    # Everything the release and homebrew jobs would publish, as artifacts only.
+    needs: build
+    if: "!startsWith(github.ref, 'refs/tags/')"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: az-firewall-watch*
+          path: dist
+          merge-multiple: true
+
+      - name: Checksums, cask and winget manifests
+        run: |
+          version="$(tr -d '[:space:]' < version.txt)"
+          (cd dist && sha256sum -- * > SHA256SUMS.txt && cat SHA256SUMS.txt)
+          packaging/homebrew/render-cask.sh "$version" dist/az-firewall-watch-macos.tar.gz dist/az-firewall-watch-linux.tar.gz dist/az-firewall-watch-linux-arm64.tar.gz > dist/az-firewall-watch.rb
+          packaging/winget/render-manifests.sh "$version" dist/az-firewall-watch.exe dist/winget
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dryrun-packages
+          path: |
+            dist/SHA256SUMS.txt
+            dist/az-firewall-watch.rb
+            dist/winget/
+          if-no-files-found: error

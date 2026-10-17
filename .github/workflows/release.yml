@@ -133,6 +133,10 @@ jobs:
   release:
     needs: build
     runs-on: ubuntu-latest
+    permissions:
+      contents: write     # create the release
+      id-token: write     # sign the provenance attestation
+      attestations: write
     steps:
       - uses: actions/checkout@v6
 
@@ -145,6 +149,14 @@ jobs:
         working-directory: dist
         # Admins allow-list unsigned binaries by hash (docs/getting-started.md)
         run: sha256sum -- * > SHA256SUMS.txt && cat SHA256SUMS.txt
+
+      - name: Attest build provenance
+        # Verifiable with: gh attestation verify <file> --repo cloudchristoph/az-firewall-watch
+        uses: actions/attest-build-provenance@v4
+        with:
+          subject-path: |
+            dist/az-firewall-watch.exe
+            dist/az-firewall-watch-*.tar.gz
 
       - name: Extract release notes from CHANGELOG.md
         id: changelog
@@ -175,6 +187,8 @@ jobs:
             echo "| Linux (arm64) | \`brew install --cask cloudchristoph/tap/az-firewall-watch\` or \`az-firewall-watch-linux-arm64.tar.gz\` |"
             echo ""
             echo "SHA-256 of \`az-firewall-watch.exe\`: \`$(sha256sum dist/az-firewall-watch.exe | cut -d' ' -f1)\` (all files: \`SHA256SUMS.txt\`)"
+            echo ""
+            echo "Code signing policy and privacy: [docs/code-signing.md](https://github.com/${GITHUB_REPOSITORY}/blob/${GITHUB_REF_NAME}/docs/code-signing.md). Verify a file's origin with \`gh attestation verify <file> --repo ${GITHUB_REPOSITORY}\`."
             echo ""
             echo "See [Getting started](https://github.com/${GITHUB_REPOSITORY}/blob/${GITHUB_REF_NAME}/docs/getting-started.md) for first-run instructions on each platform."
             echo "EOF"

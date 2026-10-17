@@ -40,6 +40,11 @@ _POLICY_CONTEXT_COMMENT = (
     "# POLICY_CONTEXT=on reads the firewall, its policy and IP groups via Azure Resource Manager\n"
     "# (Reader role), may use an Azure CLI token, and caches the result in your user cache directory.\n"
 )
+_UPDATE_CHECK_COMMENT = (
+    "# At start-up the viewer asks api.github.com whether a newer release exists (nothing about\n"
+    "# you is sent). Uncomment to turn that off:\n"
+    "# UPDATE_CHECK=off\n"
+)
 
 
 def _policy_context_line(policy_context: bool) -> str:
@@ -55,7 +60,8 @@ def write_env(env_file: Path, conn_str: str, policy_context: bool = True) -> Non
         f"EVENT_HUB_CONNECTION_STRING={conn_str}\n"
         "EVENT_HUB_CONSUMER_GROUP=$Default\n"
         "EVENT_HUB_START_POSITION=latest\n"
-        + _POLICY_CONTEXT_COMMENT + _policy_context_line(policy_context),
+        + _POLICY_CONTEXT_COMMENT + _policy_context_line(policy_context)
+        + _UPDATE_CHECK_COMMENT,
         encoding="utf-8",
     )
 
@@ -71,7 +77,8 @@ def write_env_entra(env_file: Path, namespace: str, hub_name: str, policy_contex
         f"EVENT_HUB_NAME={hub_name}\n"
         "EVENT_HUB_CONSUMER_GROUP=$Default\n"
         "EVENT_HUB_START_POSITION=latest\n"
-        + _POLICY_CONTEXT_COMMENT + _policy_context_line(policy_context),
+        + _POLICY_CONTEXT_COMMENT + _policy_context_line(policy_context)
+        + _UPDATE_CHECK_COMMENT,
         encoding="utf-8",
     )
 

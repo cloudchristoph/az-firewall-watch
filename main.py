@@ -23,7 +23,7 @@ import os
 import sys
 
 from viewer import FirewallLogApp
-from viewer.config import BASE_DIR, load_env, policy_context_setting
+from viewer.config import BASE_DIR, load_env, policy_context_setting, update_check_enabled
 
 
 def _maybe_run_wizard() -> None:
@@ -46,6 +46,7 @@ def main() -> None:
         policy_context=enabled,
         policy_context_notice=enabled and not explicit,  # nobody decided yet → say what is on
         env_file=BASE_DIR / ".env",
+        update_check=update_check_enabled(sys.argv, os.environ),
     ).run()
 
 

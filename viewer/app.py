@@ -150,7 +150,7 @@ class FirewallLogApp(App[None]):
 
     # ── state ──────────────────────────────────────────────────────────────────
     def __init__(self, *, policy_context: bool = True, policy_context_notice: bool = False,
-                 env_file: Path | None = None) -> None:
+                 env_file: Path | None = None, update_check: bool = True) -> None:
         super().__init__()
         self.theme = "flexoki"
         # Policy context (ARM reads, CLI token fallback, cache).
@@ -162,6 +162,7 @@ class FirewallLogApp(App[None]):
         self._awaiting_context_answer = self._policy_context_notice
         self._deferred_firewall_id: str | None = None
         self._env_file = env_file
+        self._update_check = update_check  # off: no request to api.github.com
         self._all_rows: list[FirewallDataRow] = []
         self._pending: list[FirewallDataRow] = []
         self._skip_pending: int = 0
@@ -237,7 +238,8 @@ class FirewallLogApp(App[None]):
         self._start_stream()
         self.set_interval(1.0, self._flush_rows)
         self.set_interval(60.0, self._check_cache_age)
-        self._check_update()
+        if self._update_check:
+            self._check_update()
         if self._policy_context_notice:
             notice = PolicyContextNoticeDialog()
             notice.repush_callback = self._on_policy_context_notice  # keeps working if the splash lifts it

@@ -17,6 +17,8 @@ from dialogs import ConnectingDialog, ErrorDialog, StatusBar
 from fw_parser import parse_record
 from helpers import _parse_eventhub_endpoint
 
+from .arm import is_firewall_resource_id
+
 if TYPE_CHECKING:
     from textual.screen import Screen
 
@@ -330,18 +332,32 @@ async def run_stream(app: FirewallLogApp) -> None:
                             body = json.loads(event.body_as_str())
                         except (ValueError, TypeError):
                             return
+                        # The body is untrusted: anything that is not the
+                        # documented {"records": [{...}]} shape is dropped here,
+                        # since an exception out of this callback stops the receiver.
+                        records = body.get("records") if isinstance(body, dict) else None
+                        if not isinstance(records, list):
+                            return
                         has_real = False
-                        for rec in body.get("records", []):
+                        for rec in records:
+                            if not isinstance(rec, dict):
+                                app._skip_pending += 1
+                                continue
                             if not app._fw_name_set:
                                 rid: str = rec.get("resourceId", "")
-                                if "/AZUREFIREWALLS/" in rid.upper():
+                                # Only a well-formed firewall id may reach ARM, never a URL.
+                                if is_firewall_resource_id(rid):
                                     # Diagnostic resourceIds are upper-cased by Azure; the
                                     # real name is lost. Lower-case is right for the usual
                                     # kebab-case firewall names.
                                     app.sub_title = rid.split("/")[-1].lower()
                                     app._fw_name_set = True
                                     app.request_mgmt_load(rid)
-                            row = parse_record(rec)
+                            try:
+                                row = parse_record(rec)
+                            except Exception:  # odd field types in a forged record
+                                app._skip_pending += 1
+                                continue
                             if row is None:
                                 continue
                             if "SKIP:" in row.category:

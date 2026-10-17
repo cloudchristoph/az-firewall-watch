@@ -30,6 +30,7 @@ from dialogs import PolicyContextNoticeDialog, StatusBar
 from fw_parser import FirewallDataRow
 from helpers import _category_text, _highlight, _is_ipv6, _to_local, address_matches
 
+from .arm import is_firewall_resource_id
 from .azure_resources import FirewallInfo, FirewallPolicyInfo, IpGroupInfo
 from .cache import CachedSnapshot
 from .config import CATEGORY_GROUPS, CATEGORY_OPTIONS, MAX_ROWS, TABLE_TRIM_SLACK, VERSION
@@ -430,8 +431,8 @@ class FirewallLogApp(App[None]):
 
     def request_mgmt_load(self, firewall_id: str) -> None:
         """Called from streaming.on_event when we first see a resourceId."""
-        if not self._policy_context:
-            return
+        if not self._policy_context or not is_firewall_resource_id(firewall_id):
+            return  # off, or not a firewall id: it would carry the ARM token elsewhere
         if self._awaiting_context_answer:
             # Consent pending: remember the firewall, touch nothing yet.
             if self._deferred_firewall_id is None:

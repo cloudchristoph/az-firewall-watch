@@ -12,7 +12,7 @@ from .screens import WelcomeScreen
 from .services import get_existing_conn_str, has_entra_config
 
 
-class WizardApp(App[None]):
+class WizardApp(App[bool]):
     """Top-level Textual app for the setup wizard."""
 
     TITLE = "Azure Firewall Watch — Setup Wizard"
@@ -86,26 +86,29 @@ class WizardApp(App[None]):
     }
     """
 
-    BINDINGS = [Binding("ctrl+q", "quit", "Quit")]
+    BINDINGS = [Binding("ctrl+q", "quit", "Quit", priority=True)]
 
     def __init__(self, env_file: Path) -> None:
         super().__init__()
         self.theme = "flexoki"
         self.env_file = env_file
 
+    async def action_quit(self) -> None:
+        self.exit(False)
+
     def on_mount(self) -> None:
         self.push_screen(WelcomeScreen())
 
 
-def run_wizard(base_dir: Path, reconfigure: bool = False) -> None:
-    """Run the setup wizard. Returns when .env is ready (or user quit)."""
+def run_wizard(base_dir: Path, reconfigure: bool = False) -> bool:
+    """Return True when configuration is ready, False when setup is cancelled."""
     env_file = base_dir / ".env"
 
     if not reconfigure and (get_existing_conn_str(env_file) or has_entra_config(env_file)):
-        return
+        return True
 
     load_env(env_file)
-    WizardApp(env_file).run()
+    return WizardApp(env_file).run() is True
 
 
 if __name__ == "__main__":

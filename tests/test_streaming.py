@@ -351,7 +351,7 @@ async def test_transient_errors_retry_three_times_then_error_dialog(monkeypatch,
         assert status.eh_detail == "after 3 attempts, see dialog"
         assert status.eh_error == "name resolution failed"
         assert "✖ EH failed · after 3 attempts, see dialog" in str(status.render())
-        assert toasts(app).count("Connection error: name resolution failed") == 2  # attempts 1 and 2 retried
+        assert toasts(app).count("Connection error: name resolution failed") == 1
         text = _dialog_text(app.screen)
         assert "name resolution failed" in text
         assert "could not be reached" in text

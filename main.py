@@ -26,21 +26,25 @@ from viewer import FirewallLogApp
 from viewer.config import BASE_DIR, load_env, policy_context_setting, update_check_enabled
 
 
-def _maybe_run_wizard() -> None:
-    """Launch the setup wizard when Event Hub credentials are missing or on --reconfigure."""
+def _maybe_run_wizard() -> bool:
+    """Return whether to start the viewer, running setup when needed."""
     has_conn_str = bool(os.environ.get("EVENT_HUB_CONNECTION_STRING"))
     has_entra = bool(
         os.environ.get("EVENT_HUB_NAMESPACE") and os.environ.get("EVENT_HUB_NAME")
     )
     if (not has_conn_str and not has_entra) or "--reconfigure" in sys.argv:
         from setup.app import run_wizard
-        run_wizard(BASE_DIR, reconfigure="--reconfigure" in sys.argv)
+        if not run_wizard(BASE_DIR, reconfigure="--reconfigure" in sys.argv):
+            return False
         load_env(BASE_DIR / ".env", override=True)
+
+    return True
 
 
 def main() -> None:
     load_env(BASE_DIR / ".env")
-    _maybe_run_wizard()
+    if not _maybe_run_wizard():
+        return
     enabled, explicit = policy_context_setting(sys.argv, os.environ)
     FirewallLogApp(
         policy_context=enabled,

@@ -25,6 +25,8 @@ jobs:
           version="${GITHUB_REF_NAME#v}"
           grep -q "^## \[${version}\]" CHANGELOG.md \
             || { echo "::error::CHANGELOG.md is missing '## [${version}]' section"; exit 1; }
+          [ "$(tr -d '[:space:]' < version.txt)" = "$version" ] \
+            || { echo "::error::version.txt reads '$(cat version.txt)', the tag says '${version}'"; exit 1; }
 
   build:
     needs: validate-changelog
@@ -92,13 +94,19 @@ jobs:
             "--add-data" "version.txt;." `
             main.py
 
+      - name: Product version
+        id: product
+        if: runner.os == 'Windows'
+        shell: bash
+        run: echo "version=$(tr -d '[:space:]' < version.txt)" >> "$GITHUB_OUTPUT"
+
       # Authenticode signing through the SignPath Foundation (free for open source).
-      # Off until the project is approved: set the repository variable
+      # Tags only, and off until the project is approved: set the repository variable
       # SIGNPATH_ENABLED=true and the secret SIGNPATH_API_TOKEN, then fill in the
       # organization id below. Every signing request needs a manual approval in SignPath.
       - name: Upload unsigned Windows binary
         id: upload-unsigned
-        if: runner.os == 'Windows' && vars.SIGNPATH_ENABLED == 'true'
+        if: runner.os == 'Windows' && vars.SIGNPATH_ENABLED == 'true' && startsWith(github.ref, 'refs/tags/')
         uses: actions/upload-artifact@v4
         with:
           # Outside the az-firewall-watch* pattern the release job downloads
@@ -107,13 +115,16 @@ jobs:
           if-no-files-found: error
 
       - name: Sign Windows binary (SignPath)
-        if: runner.os == 'Windows' && vars.SIGNPATH_ENABLED == 'true'
+        if: runner.os == 'Windows' && vars.SIGNPATH_ENABLED == 'true' && startsWith(github.ref, 'refs/tags/')
         uses: signpath/github-action-submit-signing-request@v3
         with:
           api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
           organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
           project-slug: az-firewall-watch
           signing-policy-slug: release-signing
+          # Pins ProductVersion in the artifact configuration (signpath/artifact-configuration.xml)
+          parameters: |
+            version: "${{ steps.product.outputs.version }}"
           github-artifact-id: ${{ steps.upload-unsigned.outputs.artifact-id }}
           wait-for-completion: true
           # Room for the manual approval in SignPath (default is 10 minutes)
@@ -121,7 +132,7 @@ jobs:
           output-artifact-directory: signed
 
       - name: Replace binary with the signed one
-        if: runner.os == 'Windows' && vars.SIGNPATH_ENABLED == 'true'
+        if: runner.os == 'Windows' && vars.SIGNPATH_ENABLED == 'true' && startsWith(github.ref, 'refs/tags/')
         shell: pwsh
         run: |
           Copy-Item signed/az-firewall-watch.exe dist/az-firewall-watch.exe -Force

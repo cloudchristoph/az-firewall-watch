@@ -1,10 +1,34 @@
 # Getting started
 
-Three ways to run Azure Firewall Watch: Homebrew on macOS and Linux, a
-self-contained binary, or from source with Python 3.10+. Either way the setup wizard takes over on first
-launch and writes your `.env`.
+Three ways to run Azure Firewall Watch: a package manager (winget on Windows,
+Homebrew on macOS and Linux), a self-contained binary, or from source with
+Python 3.10+. Either way the setup wizard takes over on first launch and writes
+your `.env`.
 
-## Option 1: Homebrew *(macOS Apple Silicon, Linux x86_64 and arm64)*
+## Option 1: Package manager *(recommended)*
+
+### Windows: winget
+
+```powershell
+winget install cloudchristoph.az-firewall-watch
+```
+
+winget adds the command to your `PATH`, so open a new terminal and run:
+
+```powershell
+az-firewall-watch
+```
+
+Update with `winget upgrade cloudchristoph.az-firewall-watch`; the update notice
+in the app shows that command too.
+
+A winget install keeps `.env` in `%LOCALAPPDATA%\az-firewall-watch\` instead of
+next to the binary, because winget owns its install folder. `winget uninstall`
+leaves that folder in place; delete it to remove the configuration.
+
+### macOS and Linux: Homebrew
+
+*(macOS Apple Silicon, Linux x86_64 and arm64)*
 
 ```bash
 brew install --cask cloudchristoph/tap/az-firewall-watch
@@ -77,11 +101,11 @@ tar -xzf az-firewall-watch-linux.tar.gz
 git clone https://github.com/cloudchristoph/az-firewall-watch.git
 cd az-firewall-watch
 
-# Linux / macOS
-./start.sh
-
 # Windows
 start.bat
+
+# macOS / Linux
+./start.sh
 ```
 
 The scripts create a virtual environment, install dependencies and launch the

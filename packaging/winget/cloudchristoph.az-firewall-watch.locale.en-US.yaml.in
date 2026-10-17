@@ -19,9 +19,11 @@ Moniker: az-firewall-watch
 Tags:
   - azure
   - azure-firewall
+  - azure-networking
   - event-hub
   - firewall
   - logs
+  - network-security
   - tui
 ReleaseNotesUrl: https://github.com/cloudchristoph/az-firewall-watch/releases/tag/v@VERSION@
 ManifestType: defaultLocale

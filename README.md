@@ -28,7 +28,8 @@ Built by [CloudChristoph](https://github.com/cloudchristoph).
   through the policy, collection by collection, up to the rule that matched.
 - **Setup wizard** that finds or deploys the Event Hub, wires up Diagnostic
   Settings and writes your `.env`.
-- **Single binary** for Windows, macOS and Linux, with no Python install required.
+- **Single binary** for Windows, macOS and Linux, with no Python install required,
+  installable with winget or Homebrew.
 
 ![The detail dialog: the log entry on the left, and on the right every rule collection the firewall walked through, ending at the rule that matched](docs/images/evaluation-trace.png)
 
@@ -72,6 +73,13 @@ flowchart LR
 
 ## 🚀 Quick start
 
+On Windows, install with winget, then open a new terminal:
+
+```powershell
+winget install cloudchristoph.az-firewall-watch
+az-firewall-watch
+```
+
 On macOS (Apple Silicon) and Linux (x86_64, arm64), install with Homebrew:
 
 ```bash
@@ -79,19 +87,20 @@ brew install --cask cloudchristoph/tap/az-firewall-watch
 az-firewall-watch
 ```
 
-Or download the binary for your platform from the
+The setup wizard starts automatically on first launch. Or download the binary
+for your platform from the
 [latest release](https://github.com/cloudchristoph/az-firewall-watch/releases/latest)
-and run it. The setup wizard starts automatically on first launch:
+and run it:
+
+```powershell
+# Windows
+.\az-firewall-watch.exe
+```
 
 ```bash
 # macOS / Linux
 tar -xzf az-firewall-watch-linux.tar.gz
 ./az-firewall-watch
-```
-
-```powershell
-# Windows
-.\az-firewall-watch.exe
 ```
 
 Or run from source (Python 3.10+):

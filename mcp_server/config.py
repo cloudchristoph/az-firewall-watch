@@ -11,6 +11,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from viewer.arm import is_firewall_resource_id
 from viewer.config import policy_context_setting
 from viewer.eventhub import EventHubSettings
 
@@ -104,9 +105,10 @@ class ServerConfig:
             raise ValueError(f"The HTTP port must be between 1 and 65535, got {port}.")
         host = (args.host or environ.get("AZFW_MCP_HOST") or DEFAULT_HOST).strip()
         firewall_id = (args.firewall_id or environ.get("AZFW_FIREWALL_ID") or "").strip() or None
-        if firewall_id is not None and "/providers/microsoft.network/azurefirewalls/" not in firewall_id.lower():
+        if firewall_id is not None and not is_firewall_resource_id(firewall_id):
             raise ValueError("AZFW_FIREWALL_ID must be an Azure Firewall resource id "
-                             "(/subscriptions/…/providers/Microsoft.Network/azureFirewalls/<name>).")
+                             "(/subscriptions/<guid>/resourceGroups/<rg>/providers/Microsoft.Network/"
+                             "azureFirewalls/<name>), nothing else.")
         return cls(
             eventhub=EventHubSettings.from_env(environ),
             policy_context=enabled,

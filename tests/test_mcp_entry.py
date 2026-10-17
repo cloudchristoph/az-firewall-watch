@@ -147,6 +147,10 @@ def test_command_line_wins_over_environment(firewall_id):
     ({}, ["--buffer-size", "5"], "between 100 and"),
     ({"AZFW_MCP_PORT": "70000"}, [], "between 1 and 65535"),
     ({"AZFW_FIREWALL_ID": "/subscriptions/x/virtualMachines/vm"}, [], "Azure Firewall resource id"),
+    ({"AZFW_FIREWALL_ID": "https://evil.example/providers/Microsoft.Network/azureFirewalls/fw"}, [],
+     "Azure Firewall resource id"),
+    ({}, ["--firewall-id", "/subscriptions/x/resourceGroups/rg/providers/Microsoft.Network/azureFirewalls/fw/../x"],
+     "Azure Firewall resource id"),
 ])
 def test_config_rejects_bad_values(env, argv, message):
     with pytest.raises(ValueError, match=message):

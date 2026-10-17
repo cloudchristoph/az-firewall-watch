@@ -250,6 +250,29 @@ def test_firewall_id_comes_from_the_first_firewall_record(firewall_id):
     assert seen == [firewall_id]
 
 
+def test_forged_firewall_ids_are_parsed_but_never_named(firewall_id, caplog):
+    """A record's resourceId becomes an ARM path with the bearer token attached, so only a
+    well-formed firewall id may be adopted; a URL or a traversal that merely contains the
+    firewall segment is logged once and otherwise treated like any other row."""
+    seen: list[str] = []
+    worker = make_worker(on_firewall_id=seen.append)
+    forged = [
+        "https://evil.example/x/PROVIDERS/MICROSOFT.NETWORK/AZUREFIREWALLS/fw",
+        firewall_id + "/../../otherResource",
+        "/SUBSCRIPTIONS/not-a-guid/RESOURCEGROUPS/rg/PROVIDERS/MICROSOFT.NETWORK/AZUREFIREWALLS/fw",
+    ]
+    with caplog.at_level("WARNING", logger="mcp_server.stream"):
+        for rid in forged:
+            rec = {"resourceId": rid, "category": "AZFWNetworkRule", "time": "2026-09-05T08:00:00Z",
+                   "properties": {"SourceIp": "10.0.0.1", "DestinationIp": "10.0.0.2", "Action": "Deny"}}
+            worker.handle_body(json.dumps({"records": [rec]}))
+    assert seen == [] and worker.firewall_id is None
+    assert sum("not a well-formed Azure Firewall id" in r.message for r in caplog.records) == 1
+    assert worker.buffer.size == 3   # the rows themselves are still shown
+    worker.handle_body(json.dumps({"records": records(firewall_id, 1)}))
+    assert seen == [firewall_id]
+
+
 # ── retry and reconnect ──────────────────────────────────────────────────────
 
 async def test_three_transient_failures_before_first_connect_fail(fake_client):

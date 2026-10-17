@@ -19,6 +19,7 @@ from typing import Any
 
 from fw_parser import parse_record
 from viewer import eventhub
+from viewer.arm import is_firewall_resource_id
 from viewer.eventhub import EventHubSettings, build_consumer_client, is_configuration_error
 
 from .buffer import MALFORMED_REASON, BufferedRow, LogBuffer
@@ -78,6 +79,7 @@ class StreamWorker:
         self.connected_since: float | None = None
         self.attempt = 0
         self.firewall_id: str | None = None
+        self._rejected_id_logged = False   # warn once, not once per record
         self.configuration_error = False
         self._task: asyncio.Task[None] | None = None
         # The clock is an attribute so a test can freeze it; it feeds the
@@ -214,11 +216,19 @@ class StreamWorker:
                 self.buffer.count_skip(MALFORMED_REASON)
                 continue
             if self.firewall_id is None:
+                # The id goes to ARM as a path with the caller's bearer token, so a
+                # record from the hub only counts when it is exactly a firewall id.
+                # Anything else (a URL, a traversal, another resource type) is
+                # parsed as a row but never named as the firewall.
                 rid = rec.get("resourceId", "")
-                if isinstance(rid, str) and "/AZUREFIREWALLS/" in rid.upper():
+                if is_firewall_resource_id(rid):
                     self.firewall_id = rid
                     if self.on_firewall_id is not None:
                         self.on_firewall_id(rid)
+                elif isinstance(rid, str) and "/AZUREFIREWALLS/" in rid.upper() and not self._rejected_id_logged:
+                    self._rejected_id_logged = True
+                    log.warning("Ignoring a record whose resourceId is not a well-formed Azure Firewall id: %r",
+                                rid[:200])
             row = parse_record(rec)
             if row is None:
                 self.buffer.count_skip(MALFORMED_REASON)

@@ -126,7 +126,9 @@ jobs:
           organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
           project-slug: az-firewall-watch
           signing-policy-slug: release-signing
-          # Pins ProductVersion in the artifact configuration (signpath/artifact-configuration.xml)
+          # Pins ProductVersion in the artifact configuration (signpath/artifact-configuration.xml).
+          # No artifact-configuration-slug: SignPath then uses the project's default configuration,
+          # so that XML must be the default one in the SignPath project.
           parameters: |
             version: "${{ steps.product.outputs.version }}"
           github-artifact-id: ${{ steps.upload-unsigned.outputs.artifact-id }}

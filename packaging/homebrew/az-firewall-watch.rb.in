@@ -3,6 +3,7 @@
 cask "az-firewall-watch" do
   version "@VERSION@"
   sha256 arm:          "@SHA256_MACOS@",
+         arm64_linux:  "@SHA256_LINUX_ARM64@",
          x86_64_linux: "@SHA256_LINUX@"
 
   on_macos do
@@ -11,9 +12,9 @@ cask "az-firewall-watch" do
     depends_on arch: :arm64
   end
   on_linux do
-    url "https://github.com/cloudchristoph/az-firewall-watch/releases/download/v#{version}/az-firewall-watch-linux.tar.gz"
+    arch arm: "-arm64"
 
-    depends_on arch: :x86_64
+    url "https://github.com/cloudchristoph/az-firewall-watch/releases/download/v#{version}/az-firewall-watch-linux#{arch}.tar.gz"
   end
 
   name "Azure Firewall Watch"

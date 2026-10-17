@@ -27,6 +27,8 @@ jobs:
         include:
           - os: ubuntu-latest
             artifact: az-firewall-watch-linux
+          - os: ubuntu-24.04-arm
+            artifact: az-firewall-watch-linux-arm64
           - os: macos-latest # Apple Silicon / arm64
             artifact: az-firewall-watch-macos
           - os: windows-latest
@@ -127,6 +129,7 @@ jobs:
             echo "| Platform | File |"
             echo "|----------|------|"
             echo "| Linux (x86_64) | \`az-firewall-watch-linux.tar.gz\` |"
+            echo "| Linux (arm64) | \`az-firewall-watch-linux-arm64.tar.gz\` |"
             echo "| macOS Apple Silicon | \`az-firewall-watch-macos.tar.gz\` |"
             echo "| Windows | \`az-firewall-watch.exe\` |"
             echo ""
@@ -151,12 +154,12 @@ jobs:
 
       - uses: actions/download-artifact@v4
         with:
-          pattern: az-firewall-watch-{macos,linux}
+          pattern: az-firewall-watch-{macos,linux,linux-arm64}
           path: dist
           merge-multiple: true
 
       - name: Render cask
-        run: packaging/homebrew/render-cask.sh "${GITHUB_REF_NAME#v}" dist/az-firewall-watch-macos.tar.gz dist/az-firewall-watch-linux.tar.gz > az-firewall-watch.rb
+        run: packaging/homebrew/render-cask.sh "${GITHUB_REF_NAME#v}" dist/az-firewall-watch-macos.tar.gz dist/az-firewall-watch-linux.tar.gz dist/az-firewall-watch-linux-arm64.tar.gz > az-firewall-watch.rb
 
       - uses: actions/checkout@v6
         with:

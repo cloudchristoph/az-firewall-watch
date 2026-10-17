@@ -4,7 +4,7 @@ Three ways to run Azure Firewall Watch: Homebrew on macOS and Linux, a
 self-contained binary, or from source with Python 3.10+. Either way the setup wizard takes over on first
 launch and writes your `.env`.
 
-## Option 1: Homebrew *(macOS Apple Silicon, Linux x86_64)*
+## Option 1: Homebrew *(macOS Apple Silicon, Linux x86_64 and arm64)*
 
 ```bash
 brew install --cask cloudchristoph/tap/az-firewall-watch
@@ -33,6 +33,7 @@ Download the binary for your platform from the
 | Windows             | [`az-firewall-watch.exe`](https://github.com/cloudchristoph/az-firewall-watch/releases/latest/download/az-firewall-watch.exe)                           |
 | macOS Apple Silicon | [`az-firewall-watch-macos.tar.gz`](https://github.com/cloudchristoph/az-firewall-watch/releases/latest/download/az-firewall-watch-macos.tar.gz)         |
 | Linux x86_64        | [`az-firewall-watch-linux.tar.gz`](https://github.com/cloudchristoph/az-firewall-watch/releases/latest/download/az-firewall-watch-linux.tar.gz)         |
+| Linux arm64         | [`az-firewall-watch-linux-arm64.tar.gz`](https://github.com/cloudchristoph/az-firewall-watch/releases/latest/download/az-firewall-watch-linux-arm64.tar.gz) |
 <!-- markdownlint-enable MD060 -->
 
 ### Windows
@@ -63,7 +64,7 @@ xattr -d com.apple.quarantine az-firewall-watch
 ### Linux
 
 ```bash
-# 1. Extract (preserves execute permission)
+# 1. Extract (preserves execute permission; arm64: az-firewall-watch-linux-arm64.tar.gz)
 tar -xzf az-firewall-watch-linux.tar.gz
 
 # 2. Run (the setup wizard launches automatically on first start)

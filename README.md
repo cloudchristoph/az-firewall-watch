@@ -72,7 +72,7 @@ flowchart LR
 
 ## 🚀 Quick start
 
-On macOS (Apple Silicon) and Linux (x86_64), install with Homebrew:
+On macOS (Apple Silicon) and Linux (x86_64, arm64), install with Homebrew:
 
 ```bash
 brew install --cask cloudchristoph/tap/az-firewall-watch

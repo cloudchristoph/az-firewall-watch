@@ -27,12 +27,14 @@ cask "az-firewall-watch" do
 
   binary "az-firewall-watch"
 
-  # postflight_steps has no quarantine step yet, so brew style flags this block.
-  postflight do
+  postflight_steps do
     # The binary is not notarized (no Apple Developer account). Homebrew sets
     # the quarantine attribute on casks, so remove it after install.
-    if OS.mac?
-      system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/az-firewall-watch"]
+    on_macos do
+      run "/usr/bin/xattr",
+          args:         ["-dr", "com.apple.quarantine", "az-firewall-watch"],
+          chdir:        ".",
+          must_succeed: false
     end
   end
 

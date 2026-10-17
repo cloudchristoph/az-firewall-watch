@@ -980,3 +980,19 @@ async def test_ctrl_q_cancels_wizard(env_file):
         assert app._exit
         assert app.return_value is False
     assert not env_file.exists()
+
+
+@pytest.mark.asyncio
+async def test_ctrl_q_cancels_wizard_from_focused_input(env_file):
+    app = WizardApp(env_file)
+    async with app.run_test(size=(100, 40)) as pilot:
+        await pilot.pause()
+        await app.push_screen(PasteConnectionScreen())
+        await pilot.pause()
+        app.screen.query_one("#inp-conn", Input).focus()
+        await pilot.pause()
+        await pilot.press("ctrl+q")
+        await pilot.pause()
+        assert app._exit
+        assert app.return_value is False
+    assert not env_file.exists()

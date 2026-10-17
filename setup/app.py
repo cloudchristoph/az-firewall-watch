@@ -86,7 +86,7 @@ class WizardApp(App[bool]):
     }
     """
 
-    BINDINGS = [Binding("ctrl+q", "quit", "Quit")]
+    BINDINGS = [Binding("ctrl+q", "quit", "Quit", priority=True)]
 
     def __init__(self, env_file: Path) -> None:
         super().__init__()

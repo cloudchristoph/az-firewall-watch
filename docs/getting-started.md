@@ -70,8 +70,9 @@ Double-click `az-firewall-watch.exe` or run it from PowerShell:
 
 > [!NOTE]
 > **Windows SmartScreen** may warn on first launch. Click **More info → Run anyway**.
-> The binary is not code-signed yet (see the [code signing policy](code-signing.md)), and
-> SmartScreen builds trust over time, so new releases can show the warning for a while. If a
+> Releases before the project's approval for code signing are unsigned (see the
+> [code signing policy](code-signing.md)), and SmartScreen builds trust over time even for
+> signed files, so new releases can show the warning for a while. If a
 > security policy blocks the file, see
 > [Blocked by your organisation's security policy?](#blocked-by-your-organisations-security-policy)
 
@@ -117,8 +118,9 @@ app. The setup wizard runs automatically if `.env` is not yet configured.
 
 ## Blocked by your organisation's security policy?
 
-The binaries are not code-signed yet, and every release has a new file hash
-that Microsoft's reputation service has not seen often. Hardened Windows
+Until code signing is in place (see the [code signing policy](code-signing.md)) the
+Windows binary is unsigned, and every release has a new file hash that Microsoft's
+reputation service has not seen often. Hardened Windows
 machines may therefore refuse to start `az-firewall-watch.exe`, whether it came
 from winget or from the release page. Typical messages are *"Your IT
 administrator has blocked this app"*, *"An Application Control policy has

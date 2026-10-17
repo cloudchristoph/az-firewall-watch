@@ -47,7 +47,7 @@ says so on its first screen, and `UPDATE_CHECK=off` in `.env` or `--no-update-ch
 turns it off (see [Configuration](configuration.md)).
 
 It sends nothing to the author or to any other third party. Logs and resource definitions
-stay on your machine. The app writes two things:
+stay on your machine. On its own, the app writes two things:
 
 - the `.env` with your connection settings: next to the binary, or in the user config
   directory when winget or Homebrew installed it (`%LOCALAPPDATA%\az-firewall-watch\`,
@@ -55,6 +55,7 @@ stay on your machine. The app writes two things:
 - a cache of ARM responses in the operating system's per-user cache directory (on Windows
   `%LOCALAPPDATA%\az-firewall-watch\Cache`).
 
-Delete either at any time. The binary makes no other system changes and needs no
+On request it also saves a screenshot of the screen (`Ctrl+S`) as an SVG file to your
+Downloads folder. Delete any of these at any time. The binary makes no other system changes and needs no
 installer: delete the file, or run `winget uninstall cloudchristoph.az-firewall-watch` or
 `brew uninstall --cask --zap az-firewall-watch`.

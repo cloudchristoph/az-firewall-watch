@@ -16,7 +16,9 @@ from typing import TYPE_CHECKING, Any
 
 from dialogs import ConnectingDialog, ErrorDialog, StatusBar
 from fw_parser import parse_record
-from helpers import _parse_eventhub_endpoint
+from helpers import _parse_eventhub_endpoint, display_safe
+
+from .arm import is_firewall_resource_id
 
 if TYPE_CHECKING:
     from textual.screen import Screen
@@ -328,6 +330,13 @@ def _error_hint(exc: Exception, use_entra: bool) -> str:
     )
 
 
+def _safe_error_text(exc: BaseException) -> str:
+    """Exception text for the toast, tooltip and error dialog. It can quote
+    server or network data, so control characters go; line breaks stay,
+    the error dialog reads the text line by line."""
+    return "\n".join(display_safe(line) for line in str(exc).splitlines())
+
+
 async def run_stream(app: FirewallLogApp) -> None:
     """Connect to Event Hub and stream events; reconnects automatically on error."""
     from azure.eventhub.aio import EventHubConsumerClient
@@ -420,19 +429,35 @@ async def run_stream(app: FirewallLogApp) -> None:
                     try:
                         body = json.loads(event.body_as_str())
                     except (ValueError, TypeError):
+                        app._skip_pending += 1
+                        return
+                    # The body is untrusted: anything that is not the
+                    # documented {"records": [{...}]} shape is dropped here,
+                    # since an exception out of this callback stops the receiver.
+                    records = body.get("records") if isinstance(body, dict) else None
+                    if not isinstance(records, list):
+                        app._skip_pending += 1
                         return
                     has_real = False
-                    for rec in body.get("records", []):
+                    for rec in records:
+                        if not isinstance(rec, dict):
+                            app._skip_pending += 1
+                            continue
                         if not app._fw_name_set:
                             rid: str = rec.get("resourceId", "")
-                            if "/AZUREFIREWALLS/" in rid.upper():
+                            # Only a well-formed firewall id may reach ARM, never a URL.
+                            if is_firewall_resource_id(rid):
                                 # Diagnostic resourceIds are upper-cased by Azure; the
                                 # real name is lost. Lower-case is right for the usual
                                 # kebab-case firewall names.
                                 app.sub_title = rid.split("/")[-1].lower()
                                 app._fw_name_set = True
                                 app.request_mgmt_load(rid)
-                        row = parse_record(rec)
+                        try:
+                            row = parse_record(rec)
+                        except Exception:  # odd field types in a forged record
+                            app._skip_pending += 1
+                            continue
                         if row is None:
                             continue
                         if "SKIP:" in row.category:
@@ -463,7 +488,7 @@ async def run_stream(app: FirewallLogApp) -> None:
             # The error text is too long for the bar: tooltip plus a toast,
             # the bar itself only carries the state and the countdown. Set
             # before the short-circuit below, so a terminal error shows too.
-            status.eh_error = str(exc)
+            status.eh_error = _safe_error_text(exc)
 
             # Auth / configuration errors will not fix themselves — skip retries.
             if isinstance(exc, PermissionError) or any(
@@ -479,7 +504,8 @@ async def run_stream(app: FirewallLogApp) -> None:
                 app.sub_title = "Live Log Monitor  |  connection lost"
                 status.eh_state = "reconnecting"
                 if attempt == 1:
-                    app.notify(f"Connection lost: {exc}", title="Event Hub", severity="warning")
+                    app.notify(f"Connection lost: {status.eh_error}", title="Event Hub", severity="warning",
+                               markup=False)
                 for remaining in range(delay, 0, -1):
                     status.eh_detail = f"attempt {attempt} in {remaining}s"
                     await asyncio.sleep(1)
@@ -491,7 +517,8 @@ async def run_stream(app: FirewallLogApp) -> None:
             delay = _BACKOFF[attempt - 1]
             status.eh_state = "retrying"
             if attempt == 1:
-                app.notify(f"Connection error: {exc}", title="Event Hub", severity="warning")
+                app.notify(f"Connection error: {status.eh_error}", title="Event Hub", severity="warning",
+                           markup=False)
             for remaining in range(delay, 0, -1):
                 status.eh_detail = f"attempt {attempt}/{_MAX_ATTEMPTS} in {remaining}s"
                 await asyncio.sleep(1)
@@ -517,4 +544,4 @@ async def run_stream(app: FirewallLogApp) -> None:
         if _splash_shown:
             _splash_shown = False
             await _remove_splash(app)
-        await app.push_screen(ErrorDialog(str(last_exc), hint))
+        await app.push_screen(ErrorDialog(_safe_error_text(last_exc), hint))

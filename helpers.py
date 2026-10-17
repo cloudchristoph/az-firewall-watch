@@ -7,6 +7,7 @@ from functools import lru_cache
 from pathlib import Path
 
 from dotenv import load_dotenv
+from rich.markup import escape as rich_escape
 from rich.text import Text
 
 
@@ -79,6 +80,56 @@ def _category_text(category: str, term: str = "") -> Text:
     if term:
         t.highlight_regex(f"(?i){re.escape(term)}", style="bold reverse")
     return t
+
+
+# ── display sanitising: log and ARM text on its way to the terminal ───────────
+# Rich and Textual drop only BEL, BS, VT, FF and CR; every other control
+# character reaches the terminal as written, so an ESC in an FQDN would run as
+# an escape sequence (clipboard write, cursor moves, hyperlinks). C0 (tab
+# aside), DEL and C1 (0x9B CSI, 0x9D OSC) become a visible U+FFFD, and so do
+# the bidi embeddings, overrides and isolates, which reorder a row on screen.
+DISPLAY_PLACEHOLDER = "�"
+_UNSAFE_CODEPOINTS = (
+    *range(0x00, 0x09), *range(0x0A, 0x20),   # C0 controls, tab aside
+    *range(0x7F, 0xA0),                       # DEL and C1 controls
+    *range(0x202A, 0x202F),                   # bidi embeddings and overrides
+    *range(0x2066, 0x206A),                   # bidi isolates
+)
+_DISPLAY_TABLE = {cp: DISPLAY_PLACEHOLDER for cp in _UNSAFE_CODEPOINTS} | {0x09: " "}
+
+
+def display_safe(value: str) -> str:
+    """*value* with no character a terminal would act on: a tab becomes a
+    space, other control and bidi override characters become U+FFFD.
+
+    Ordinary text (addresses, FQDNs, URLs, names) comes back unchanged.
+    """
+    if not value:
+        return value
+    return value.translate(_DISPLAY_TABLE)
+
+
+def escape_markup(value: str) -> str:
+    """*value* made safe for Textual markup (``Static``, ``Static.update``, a
+    border title): sanitised, and every ``[`` backslash-escaped.
+
+    Textual opens a tag at any ``[`` not preceded by a backslash, so Rich's
+    ``escape`` (only ``[`` plus a lower-case letter, ``#``, ``/`` or ``@``)
+    leaves ``[/x``, ``[ @click=…]`` and ``[X=…]`` live. A trailing backslash
+    would escape the template's next tag; a zero-width space after it keeps
+    that tag a tag.
+    """
+    safe = display_safe(value).replace("[", "\\[")
+    if safe.endswith("\\"):
+        safe += "​"
+    return safe
+
+
+def escape_rich_markup(value: str) -> str:
+    """*value* made safe for Rich markup (``Text.from_markup``, Tree labels,
+    ``str`` cells of a DataTable): sanitised, then Rich's own ``escape``,
+    which matches Rich's tag syntax exactly."""
+    return rich_escape(display_safe(value))
 
 
 def _is_ipv6(address: str) -> bool:

@@ -6,11 +6,13 @@ from collections import Counter
 from dataclasses import dataclass
 from datetime import date, timedelta
 
-from rich.markup import escape
 from rich.text import Text
 from textual.app import ComposeResult
 from textual.containers import Grid, Vertical
+from textual.content import Content
 from textual.widgets import DataTable, Static
+
+from helpers import display_safe, escape_markup, escape_rich_markup
 
 from ..azure_resources import (
     ROUTE_SERVER_KEY,
@@ -46,7 +48,7 @@ _HANDLED_KEYS = {ROUTE_SERVER_KEY, FAT_FLOW_KEY, DNS_FLOW_TRACE_KEY, ACTIVE_FTP_
 
 
 def _v(value: str) -> str:
-    return escape(value) if value else "-"
+    return escape_markup(value) if value else "-"
 
 
 _STATE_WIDTH = 12   # "autoscaling" is the longest state word a row starts with
@@ -64,7 +66,7 @@ def _row(label: str, value: str, detail: str = "") -> str:
     line = f"[dim]{label.ljust(_LABEL_WIDTH)}[/]  {value}"
     if not detail:
         return line
-    width = Text.from_markup(value).cell_len
+    width = Content.from_markup(value).cell_length   # the Static parses it the same way
     if width <= _STATE_WIDTH:
         return f"{line}{' ' * (_STATE_WIDTH - width + 2)}[dim]{detail}[/]"
     return f"{line}\n{_note(detail)}"
@@ -80,9 +82,10 @@ def _short(resource_id: str) -> str:
 
 
 # ── 0.6.0 rows: one function per fact the tab used to be silent about ─────────
-# Each returns ready Rich-markup lines (via _row / _note). Everything dynamic
-# must go through escape(); every uncertain statement stays a statement about
-# what is *not* known, never a guess.
+# Each returns ready Textual-markup lines (via _row / _note). Everything
+# dynamic must go through escape_markup() (Rich's escape leaves tags Textual
+# still parses); every uncertain statement stays a statement about what is
+# *not* known, never a guess.
 
 def _scaling_rows(fw: FirewallInfo) -> list[str]:
     """Instance panel: how the firewall scales (``autoscaleConfiguration``).
@@ -147,7 +150,7 @@ _MAINTENANCE_SENTINEL_YEAR = 9999  # expirationDateTime "9999-12-31 23:59" means
 
 def _maintenance_window_rows(w: MaintenanceWindow) -> list[str]:
     """The row (and, for a readable window, its note) for one assignment."""
-    name = escape(w.configuration_name or w.assignment_name)
+    name = escape_markup(w.configuration_name or w.assignment_name)
     if not w.readable:
         if not w.configuration_id:
             # An assignment that points at no configuration: nothing to read,
@@ -173,7 +176,7 @@ def _maintenance_window_rows(w: MaintenanceWindow) -> list[str]:
         # A configuration without a start, a duration or a time zone is not a
         # window anyone can read off a sentence; say what is missing and show
         # the rest raw rather than assembling "daily  for , ".
-        present = " · ".join(f"{label} {escape(value)}" for label, value in
+        present = " · ".join(f"{label} {escape_markup(value)}" for label, value in
                              (("start", w.start), ("duration", w.duration), ("zone", w.time_zone), ("recurs", w.recur_every))
                              if value)
         return [_row("Maintenance", f"[yellow]assigned, but the configuration names no {', '.join(missing)}[/]",
@@ -181,13 +184,13 @@ def _maintenance_window_rows(w: MaintenanceWindow) -> list[str]:
 
     start_date, start_time = _split_start(w.start)
     prefix = f"from {start_date.isoformat()}, " if start_date is not None and start_date > date.today() else ""
-    recur = "daily" if w.recur_every == "Day" else (f"every {escape(w.recur_every)}" if w.recur_every else "")
-    body = " ".join(filter(None, [recur, escape(start_time)]))
-    value = f"{prefix}{body} for {_duration_human(w.duration)}, {escape(w.time_zone)}"
+    recur = "daily" if w.recur_every == "Day" else (f"every {escape_markup(w.recur_every)}" if w.recur_every else "")
+    body = " ".join(filter(None, [recur, escape_markup(start_time)]))
+    value = f"{prefix}{body} for {escape_markup(_duration_human(w.duration))}, {escape_markup(w.time_zone)}"
     if exp_open and exp_date is not None:
-        value += f" until {exp_date.isoformat()} {escape(exp_time)}".rstrip()
+        value += f" until {exp_date.isoformat()} {escape_markup(exp_time)}".rstrip()
     if w.sub_scope and w.sub_scope != "NetworkSecurity":
-        value += f"   [yellow]subscope {escape(w.sub_scope)}: not a firewall maintenance window[/]"
+        value += f"   [yellow]subscope {escape_markup(w.sub_scope)}: not a firewall maintenance window[/]"
     return [
         _row("Maintenance", value, name),
         _note("covers guest OS and service updates; host updates and urgent security fixes can fall outside the window"),
@@ -202,7 +205,7 @@ def _on_off(value: str) -> str:
         return "on"
     if low == "false":
         return "off"
-    return escape(value)
+    return escape_markup(value)
 
 
 def _additional_property_rows(fw: FirewallInfo) -> list[str]:
@@ -222,14 +225,14 @@ def _additional_property_rows(fw: FirewallInfo) -> list[str]:
     if ACTIVE_FTP_KEY in props:
         rows.append(_row("Active FTP", _on_off(props[ACTIVE_FTP_KEY])))
     if CLASSIC_DNS_PROXY_KEY in props or CLASSIC_DNS_SERVERS_KEY in props:
-        servers = escape(props.get(CLASSIC_DNS_SERVERS_KEY, "")) or "Azure DNS"
+        servers = escape_markup(props.get(CLASSIC_DNS_SERVERS_KEY, "")) or "Azure DNS"
         state = _on_off(props[CLASSIC_DNS_PROXY_KEY]) if CLASSIC_DNS_PROXY_KEY in props else "servers set"
         rows.append(_row("DNS proxy (classic)", state, f"servers: {servers}"))
     if CLASSIC_SNAT_KEY in props:
-        rows.append(_row("SNAT ranges (classic)", escape(props[CLASSIC_SNAT_KEY]) or "-"))
+        rows.append(_row("SNAT ranges (classic)", escape_markup(props[CLASSIC_SNAT_KEY]) or "-"))
     leftovers = {k: v for k, v in props.items() if k not in _HANDLED_KEYS}
     if leftovers:
-        rows.append(_row("Additional", ", ".join(f"{escape(k)}={escape(v)}" for k, v in sorted(leftovers.items()))))
+        rows.append(_row("Additional", ", ".join(f"{escape_markup(k)}={escape_markup(v)}" for k, v in sorted(leftovers.items()))))
     return rows
 
 
@@ -259,17 +262,17 @@ def _nat_gateway_address_text(gw: NatGatewayInfo) -> str:
     names every unreadable address instead of looking complete.
     """
     resolved = list(gw.public_ip_addresses) + [""] * (len(gw.public_ip_names) - len(gw.public_ip_addresses))
-    addresses = [escape(addr) if addr else f"{escape(name)} (address not readable)"
+    addresses = [escape_markup(addr) if addr else f"{escape_markup(name)} (address not readable)"
                  for name, addr in zip(gw.public_ip_names, resolved, strict=False)]
-    addresses += [escape(a) for a in gw.public_ip_addresses[len(gw.public_ip_names):] if a]  # addresses without names
-    addresses += [f"prefix {escape(n)}" for n in gw.public_ip_prefix_names]
+    addresses += [escape_markup(a) for a in gw.public_ip_addresses[len(gw.public_ip_names):] if a]  # addresses without names
+    addresses += [f"prefix {escape_markup(n)}" for n in gw.public_ip_prefix_names]
     if not addresses:
         return "an unknown address (the gateway lists no public IP)"
     return ", ".join(addresses)
 
 
 def _one_nat_gateway_rows(gw: NatGatewayInfo) -> list[str]:
-    location = f"{escape(gw.name)} on {escape(gw.subnet_name)}"
+    location = f"{escape_markup(gw.name)} on {escape_markup(gw.subnet_name)}"
     if not gw.readable:
         return [
             _row("NAT gateway", location, "gateway not readable: its public IPs are unknown"),
@@ -354,7 +357,7 @@ def _explicit_proxy_rows(policy: FirewallPolicyInfo) -> list[str]:
         pac_port = policy.explicit_proxy_pac_port
         pac_file = policy.explicit_proxy_pac_file
         if pac_port and pac_file:
-            rows.append(_row("PAC file", "on", f"port {pac_port} · {escape(pac_file)}"))
+            rows.append(_row("PAC file", "on", f"port {pac_port} · {escape_markup(pac_file)}"))
         elif pac_port:
             rows.append(_row("PAC file", "on", f"port {pac_port} · no file URL set"))
         else:
@@ -377,7 +380,7 @@ def _snat_rows(policy: FirewallPolicyInfo, fw: FirewallInfo) -> list[str]:
     BGP every 30 minutes and is not readable from here (a POST action).
     """
     rows = [
-        _row("SNAT ranges", escape(", ".join(policy.snat_private_ranges))) if policy.snat_private_ranges
+        _row("SNAT ranges", escape_markup(", ".join(policy.snat_private_ranges))) if policy.snat_private_ranges
         else _row("SNAT ranges", "default", "RFC 1918 and RFC 6598"),
         _note("network rules only, application rules always SNAT"),
     ]
@@ -388,7 +391,7 @@ def _snat_rows(policy: FirewallPolicyInfo, fw: FirewallInfo) -> list[str]:
         rows.append(_row("Auto-learn SNAT", "on", "via the hub's built-in Route Server"))
         rows.append(_note(_LEARNED_NOTE))
     elif fw.route_server_id:
-        rs_name = escape(_short(fw.route_server_id))
+        rs_name = escape_markup(_short(fw.route_server_id))
         rows.append(_row("Auto-learn SNAT", "on", f"via Route Server {rs_name}"))
         rows.append(_note(_LEARNED_NOTE))
     else:
@@ -475,8 +478,11 @@ class FirewallView(Vertical):
         self.query_one("#fw-title", Static).update("[b]Policy context could not be loaded[/b]")
         self.query_one("#fw-grid", Grid).display = False
         error = self.query_one("#fw-error", Static)
+        # Line by line: an error text may span lines, and escape_markup
+        # would show each newline as U+FFFD.
+        lines = "\n".join(escape_markup(line) for line in reason.splitlines())
         error.update(
-            f"[yellow]{escape(reason)}[/]\n\n"
+            f"[yellow]{lines}[/]\n\n"
             "[dim]The firewall is read from Azure Resource Manager with your Azure identity "
             "(DefaultAzureCredential, then the az CLI). Check that you are signed in and hold Reader on the "
             "firewall; Ctrl+R tries again. The Policy and IP Groups tabs come back once this succeeds.[/]"
@@ -503,7 +509,7 @@ class FirewallView(Vertical):
             grid.display = False
             return
         tier = policy.sku_tier if policy and policy.sku_tier else firewall.sku_tier
-        title.update(f"{escape(firewall.name)}   [dim]{escape(' · '.join(filter(None, [tier, firewall.sku_name, firewall.location])))}[/]")
+        title.update(f"{escape_markup(firewall.name)}   [dim]{escape_markup(' · '.join(filter(None, [tier, firewall.sku_name, firewall.location])))}[/]")
         grid.display = True
         self.query_one("#fw-instance", Static).update(
             "\n".join(self._instance(firewall, maintenance or [], maintenance_readable)))
@@ -516,8 +522,8 @@ class FirewallView(Vertical):
     def _instance(fw: FirewallInfo, maintenance: list[MaintenanceWindow], maintenance_readable: bool = True) -> list[str]:
         state = fw.provisioning_state or "-"
         if state not in ("Succeeded", "-"):
-            state = f"[red]{escape(state)}[/]"
-        tags = ", ".join(f"{escape(k)}={escape(v)}" for k, v in sorted(fw.tags.items()))
+            state = f"[red]{escape_markup(state)}[/]"
+        tags = ", ".join(f"{escape_markup(k)}={escape_markup(v)}" for k, v in sorted(fw.tags.items()))
         return [
             _row("SKU", _v(" · ".join(filter(None, [fw.sku_tier, fw.sku_name])))),
             _row("Zones", _v(", ".join(fw.zones)) if fw.zones else "none (regional)"),
@@ -541,19 +547,21 @@ class FirewallView(Vertical):
             rows.append(("management", fw.management_ip))
         for label, cfg in rows:
             # name on the first line, address on the second: half a screen is narrow
-            public = Text(cfg.public_ip_name or "-")
+            public = Text(display_safe(cfg.public_ip_name) or "-")
             if cfg.public_ip_name:
-                public.append("\n" + (cfg.public_ip_address or "address not readable"),
+                public.append("\n" + (display_safe(cfg.public_ip_address) or "address not readable"),
                               style="" if cfg.public_ip_address else "dim")
             # The addresses are what the reader came for; the configuration
-            # name is a label and sits last.
-            tbl.add_row(cfg.private_ip or "-", public, Text(label, style="dim"), height=2 if cfg.public_ip_name else 1)
+            # name is a label and sits last. str cells are Rich markup.
+            tbl.add_row(escape_rich_markup(cfg.private_ip) or "-", public, Text(display_safe(label), style="dim"),
+                        height=2 if cfg.public_ip_name else 1)
         if not rows:
-            tbl.add_row(", ".join(fw.private_ips) or "-", "-", Text("no IP configurations", style="dim"))
+            tbl.add_row(escape_rich_markup(", ".join(fw.private_ips)) or "-", "-",
+                        Text("no IP configurations", style="dim"))
         subnet_names = ", ".join(f"{_short(s)}" for s in fw.subnet_ids) or "-"
         note = self.query_one("#fw-network-note", Static)
         note.update("\n".join([
-            _row("Subnets", escape(subnet_names)),
+            _row("Subnets", escape_markup(subnet_names)),
             _row("CIDRs", _v(", ".join(subnet_cidrs))),
             # The configuration only: whether a route tunnels anything is not read here.
             _row("Management", "own subnet and public IP" if fw.management_ip else "none"),
@@ -572,7 +580,7 @@ class FirewallView(Vertical):
         inherited = len(policy.parent.all_groups()) if policy.parent else 0
         groups = f"{own} rule collection groups" + (f" (+{inherited} inherited)" if inherited else "")
         state = policy.provisioning_state
-        state = f"   [red]{escape(state)}[/]" if state and state != "Succeeded" else ""
+        state = f"   [red]{escape_markup(state)}[/]" if state and state != "Succeeded" else ""
         base = policy.parent.name if policy.parent else _short(policy.base_policy_id)
         allow = []
         if policy.threat_intel_allow_fqdns:
@@ -580,8 +588,8 @@ class FirewallView(Vertical):
         if policy.threat_intel_allow_ips:
             allow.append(f"{len(policy.threat_intel_allow_ips)} IPs")
         out = [
-            _row("Policy", f"{escape(policy.name)}{state}"),
-            _row("Groups", escape(groups)),
+            _row("Policy", f"{escape_markup(policy.name)}{state}"),
+            _row("Groups", escape_markup(groups)),
             _row("Base policy", _v(base) if base else "none"),
         ]
         if policy.child_policy_count:
@@ -589,12 +597,12 @@ class FirewallView(Vertical):
         out += [
             _row("Threat intel", _v(policy.threat_intel_mode),
                  f"allowlist: {', '.join(allow)}" if allow else "no allowlist"),
-            (_row("DNS proxy", "on", f"servers: {', '.join(escape(s) for s in policy.dns_servers) or 'Azure DNS'}")
+            (_row("DNS proxy", "on", f"servers: {', '.join(escape_markup(s) for s in policy.dns_servers) or 'Azure DNS'}")
              if policy.dns_proxy else _row("DNS proxy", "off")),
-            (_row("IDPS", escape(policy.idps_mode),
+            (_row("IDPS", escape_markup(policy.idps_mode),
                   f"{policy.idps_bypass_count} bypass rules · {policy.idps_override_count} signature overrides")
              if policy.idps_mode else _row("IDPS", "off")),
-            _row("TLS inspection", "on", f"CA: {escape(policy.tls_ca_name)}") if policy.tls_ca_name else _row("TLS inspection", "off"),
+            _row("TLS inspection", "on", f"CA: {escape_markup(policy.tls_ca_name)}") if policy.tls_ca_name else _row("TLS inspection", "off"),
             *_snat_rows(policy, fw),
             *_explicit_proxy_rows(policy),
         ]
@@ -619,7 +627,7 @@ class FirewallView(Vertical):
         others = sorted({c for d in diagnostics for c in d.categories} - set(VIEWER_CATEGORIES))
         for cat in VIEWER_CATEGORIES + others:
             style = "" if cat in VIEWER_CATEGORIES else "dim"
-            cells: list[Text] = [Text(cat, style=style)]
+            cells: list[Text] = [Text(display_safe(cat), style=style)]
             for t in targets:
                 cells.append(Text("✓", style="green", justify="center") if t.setting.forwards(cat)
                              else Text("·", style="dim", justify="center"))
@@ -628,8 +636,8 @@ class FirewallView(Vertical):
         # Header, target, and the setting's name: the name is secondary and
         # long, so _row puts it on a note line under the target.
         legend = [
-            _row(t.header, f"{escape(t.name)}{' · connected' if identified and t in connected else ''}",
-                 f"{t.long_kind} · {escape(t.setting.name)}")
+            _row(t.header, f"{escape_markup(t.name)}{' · connected' if identified and t in connected else ''}",
+                 f"{t.long_kind} · {escape_markup(t.setting.name)}")
             for t in targets
         ]
         note.update("\n".join([_coverage_row(connected, policy, fw), *legend]))
@@ -735,7 +743,7 @@ def _coverage_row(connected: list[LoggingTarget], policy: FirewallPolicyInfo | N
     with the missing names when it does not."""
     if not connected:
         ns, hub = connected_event_hub()
-        where = f"the connected Event Hub {escape(ns + '/' + hub if ns else hub)}" if hub else "an Event Hub"
+        where = f"the connected Event Hub {escape_markup(ns + '/' + hub if ns else hub)}" if hub else "an Event Hub"
         return _row("Event Hub coverage", f"[yellow]incomplete: no diagnostic setting targets {where}[/]")
     forwarded = {c for t in connected for c in VIEWER_CATEGORIES if t.setting.forwards(c)}
     missing = [c for c in expected_categories(policy, fw) if c not in forwarded]

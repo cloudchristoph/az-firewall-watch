@@ -118,7 +118,7 @@ async def test_off_means_logs_only_and_no_arm(arm_calls):
         await pilot.pause()
         assert not app.query(TabbedContent)
         assert app.query_one("#log-table", DataTable).has_focus
-        app.request_mgmt_load("/subscriptions/s/resourceGroups/rg/providers/Microsoft.Network/azureFirewalls/fw")
+        app.request_mgmt_load("/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg/providers/Microsoft.Network/azureFirewalls/fw")
         await pilot.pause()
         await pilot.pause()
         assert arm_calls == []
@@ -190,13 +190,13 @@ async def test_notice_keep_persists_on(tmp_path: Path, arm_calls):
         await pilot.click("#btn-keep")
         await wait_until(pilot, lambda: not isinstance(app.screen, PolicyContextNoticeDialog))
         assert app.query_one(TabbedContent)
-        app.request_mgmt_load("/subscriptions/s/resourceGroups/rg/providers/Microsoft.Network/azureFirewalls/fw")
+        app.request_mgmt_load("/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg/providers/Microsoft.Network/azureFirewalls/fw")
         await wait_until(pilot, lambda: len(arm_calls) == 1)
     assert _values(env)["POLICY_CONTEXT"] == "on"
     assert _values(env)["EVENT_HUB_CONNECTION_STRING"] == CONN
 
 
-FW = "/subscriptions/s/resourceGroups/rg/providers/Microsoft.Network/azureFirewalls/fw"
+FW = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg/providers/Microsoft.Network/azureFirewalls/fw"
 
 
 async def test_notice_blocks_arm_until_kept(tmp_path: Path, arm_calls):
@@ -266,7 +266,7 @@ async def test_notice_disable_removes_tabs_and_persists_off(tmp_path: Path, arm_
         tabs = app.query_one(TabbedContent)
         assert [p.id for p in tabs.query("TabPane")] == ["tab-logs"]
         assert app.query_one("#status", StatusBar).ctx_state == "off"
-        app.request_mgmt_load("/subscriptions/s/resourceGroups/rg/providers/Microsoft.Network/azureFirewalls/fw")
+        app.request_mgmt_load("/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg/providers/Microsoft.Network/azureFirewalls/fw")
         await pilot.pause()
         await pilot.pause()
         assert arm_calls == []

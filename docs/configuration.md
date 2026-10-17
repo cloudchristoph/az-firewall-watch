@@ -78,7 +78,7 @@ As soon as either `EVENT_HUB_CONNECTION_STRING` or
 | `EVENT_HUB_CONSUMER_GROUP`    | Consumer group                                                                            | `$Default` |
 | `EVENT_HUB_START_POSITION`    | `latest` (only new events) or `earliest` (replay the hub's full retention first), case-insensitive and also accepted as the SDK spellings `@latest` / `@earliest`, with `-1` as a synonym for earliest. Anything else is passed to the SDK unchanged, so a raw offset or sequence number works | `latest`   |
 | `POLICY_CONTEXT`              | `on` / `off`: [policy context](policy-context.md) via Azure Resource Manager (tabs, trace, cache). If the key is missing, the viewer asks once at start-up and saves your answer | `on`       |
-| `UPDATE_CHECK`                | `on` / `off`: at start-up, ask `api.github.com` whether a newer release exists. Nothing about you is sent | `on`       |
+| `UPDATE_CHECK`                | `on` / `off`: at start-up, ask `api.github.com` whether a newer release exists. No logs or credentials are sent | `on`       |
 <!-- markdownlint-enable MD060 -->
 
 > [!NOTE]

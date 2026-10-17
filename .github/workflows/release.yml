@@ -21,6 +21,9 @@ jobs:
 
   build:
     needs: validate-changelog
+    permissions:
+      contents: read
+      actions: read   # SignPath reads the uploaded artifact through GITHUB_TOKEN
     strategy:
       fail-fast: false
       matrix:
@@ -89,7 +92,8 @@ jobs:
         if: runner.os == 'Windows' && vars.SIGNPATH_ENABLED == 'true'
         uses: actions/upload-artifact@v4
         with:
-          name: az-firewall-watch-unsigned
+          # Outside the az-firewall-watch* pattern the release job downloads
+          name: unsigned-windows-exe
           path: dist/az-firewall-watch.exe
           if-no-files-found: error
 
@@ -103,6 +107,8 @@ jobs:
           signing-policy-slug: release-signing
           github-artifact-id: ${{ steps.upload-unsigned.outputs.artifact-id }}
           wait-for-completion: true
+          # Room for the manual approval in SignPath (default is 10 minutes)
+          wait-for-completion-timeout-in-seconds: 10800
           output-artifact-directory: signed
 
       - name: Replace binary with the signed one
@@ -142,6 +148,7 @@ jobs:
 
       - uses: actions/download-artifact@v4
         with:
+          pattern: az-firewall-watch*   # the release binaries, not unsigned-windows-exe
           path: dist
           merge-multiple: true
 

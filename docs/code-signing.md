@@ -1,9 +1,9 @@
 # Code signing policy
 
-The Windows binary of Azure Firewall Watch is signed with a certificate issued to the
-SignPath Foundation, which provides free code signing for open source projects. Signing
-starts with the first release after the project is approved; until then the binary is
-unsigned (see [Blocked by your organisation's security policy?](getting-started.md#blocked-by-your-organisations-security-policy)).
+The Windows binary of Azure Firewall Watch will be signed with a certificate issued to
+the SignPath Foundation, which provides free code signing for open source projects.
+Signing starts with the first release after the project is approved; until then the
+binary is unsigned (see [Blocked by your organisation's security policy?](getting-started.md#blocked-by-your-organisations-security-policy)).
 
 > Free code signing provided by [SignPath.io](https://signpath.io), certificate by
 > [SignPath Foundation](https://signpath.org).
@@ -38,7 +38,7 @@ Azure Resource Manager, with the credentials you sign in with. It talks to these
 
 - your Event Hub namespace and the Microsoft Entra sign-in endpoints, to stream logs;
 - `management.azure.com`, to read firewall, policy and IP group definitions;
-- `api.github.com`, to check whether a newer release exists (no data about you is sent).
+- `api.github.com`, to check whether a newer release exists (no logs or credentials are sent).
 
 The update check is the only request to a host you did not configure. It asks for the
 latest release and sends only a `User-Agent` with the app version; GitHub sees your IP

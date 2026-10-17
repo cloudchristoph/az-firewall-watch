@@ -81,7 +81,7 @@ class WelcomeScreen(Screen):
                 )
             yield Static(
                 "At start-up the viewer asks api.github.com whether a newer release exists; "
-                "nothing about you is sent. UPDATE_CHECK=off in .env turns that off.",
+                "no logs or credentials are sent. UPDATE_CHECK=off in .env turns that off.",
                 classes="wiz-info",
                 id="welcome-update-note",
             )

@@ -41,8 +41,8 @@ _POLICY_CONTEXT_COMMENT = (
     "# (Reader role), may use an Azure CLI token, and caches the result in your user cache directory.\n"
 )
 _UPDATE_CHECK_COMMENT = (
-    "# At start-up the viewer asks api.github.com whether a newer release exists (nothing about\n"
-    "# you is sent). Uncomment to turn that off:\n"
+    "# At start-up the viewer asks api.github.com whether a newer release exists (no logs or\n"
+    "# credentials are sent). Uncomment to turn that off:\n"
     "# UPDATE_CHECK=off\n"
 )
 

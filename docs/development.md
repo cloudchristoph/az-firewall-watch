@@ -32,7 +32,7 @@ launch `main.py`. Python 3.10 or newer is required.
 ## Building the binary
 
 ```bash
-pip install -r requirements.txt -r requirements-build.txt
+pip install --require-hashes -r requirements-build.lock.txt
 
 pyinstaller \
   --onefile \
@@ -70,9 +70,12 @@ a failure here is as blocking as a failing test.
 ## 🧪 Running tests
 
 ```bash
-pip install -r requirements.txt -r requirements-dev.txt
+pip install --require-hashes -r requirements-dev.lock.txt
 pytest
 ```
+
+`pip install -r requirements.txt -r requirements-dev.txt` works too, but resolves
+the newest versions the ranges allow instead of the set CI tests against.
 
 The suite covers the log parser (structured and legacy formats), the filter logic,
 rendering helpers, the Event Hub streaming worker (against a fake client), the
@@ -142,6 +145,51 @@ firewall must be carrying traffic, or no record can arrive. Budget about ten
 minutes for the SAS variant and up to forty for the Entra ID one: a new
 diagnostic setting delivers its first batch anywhere between five and twenty
 minutes after it was created, and the test waits for that.
+
+## Dependencies and lock files
+
+The `requirements*.txt` files are the ones you edit: they hold the ranges the app
+needs and are what `start.sh` / `start.bat` install from source. CI and the release
+build never install from them directly. They install from lock files with exact
+versions and SHA256 hashes, using `pip install --require-hashes`, so a new or
+replaced release on PyPI cannot slip into a test run or a shipped binary.
+
+| Lock file                     | Generated from (`.lock.in`)                        | Used by                          |
+| ----------------------------- | -------------------------------------------------- | -------------------------------- |
+| `requirements-build.lock.txt` | `requirements.txt` + `requirements-build.txt`      | release build, dependency audit  |
+| `requirements-dev.lock.txt`   | `requirements.txt` + `requirements-dev.txt`        | lint and test jobs               |
+| `requirements-audit.lock.txt` | `requirements-audit.lock.in` (pip-audit itself)    | the pip-audit tool install       |
+
+Each `.lock.in` only includes the `.txt` files with `-r`; do not put versions in
+it (except `requirements-audit.lock.in`, which names the CI tool directly). The
+locks are universal: one file covers Linux, Windows and macOS on Python 3.10 and
+newer, with environment markers on the entries that only apply to some of them
+(for example `pefile ; sys_platform == 'win32'`).
+
+To add or bump a dependency:
+
+1. Edit the range in `requirements.txt`, `requirements-dev.txt` or `requirements-build.txt`.
+2. Regenerate the locks with [uv](https://docs.astral.sh/uv/), from the repository root:
+
+   ```bash
+   uv pip compile --universal --generate-hashes --python-version 3.10 --output-file=requirements-build.lock.txt requirements-build.lock.in
+   uv pip compile --universal --generate-hashes --python-version 3.10 --output-file=requirements-dev.lock.txt requirements-dev.lock.in
+   uv pip compile --universal --generate-hashes --python-version 3.10 --output-file=requirements-audit.lock.txt requirements-audit.lock.in
+   ```
+
+   Existing pins are kept where the ranges still allow them. Add
+   `--upgrade-package <name>` to move one package to its newest allowed version,
+   or `--upgrade` to refresh everything.
+3. Commit the edited `.txt` and the regenerated `.lock.txt` files together.
+
+Keep the exact flags: Dependabot reads them from the header of each lock and
+regenerates the files the same way. It opens weekly pull requests (grouped minor
+and patch bumps for Python packages and for the workflow actions) configured in
+`.github/dependabot.yml`, and waits seven days after a release before proposing it.
+
+Workflow actions are pinned to full commit SHAs with the version as a comment
+(`uses: actions/checkout@<sha> # v6.1.0`). When adding a step, pin it the same
+way: `gh api repos/<owner>/<repo>/commits/<tag> --jq .sha` gives the commit.
 
 ## Releasing
 

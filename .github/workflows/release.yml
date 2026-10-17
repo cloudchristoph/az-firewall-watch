@@ -25,7 +25,9 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: ubuntu-latest
+          # Pinned: a PyInstaller binary needs at least the build host's glibc,
+          # so ubuntu-latest moving to a newer release would drop older distros.
+          - os: ubuntu-24.04
             artifact: az-firewall-watch-linux
           - os: ubuntu-24.04-arm
             artifact: az-firewall-watch-linux-arm64

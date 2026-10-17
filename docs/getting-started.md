@@ -32,11 +32,14 @@ I recommend **Windows Terminal**, the default terminal on Windows 11 since 22H2.
 In the classic console (conhost), button borders may show as boxes; use Windows
 Terminal instead.
 
-Double-click `az-firewall-watch.exe` or run it from Windows Terminal:
+Run it from Windows Terminal:
 
 ```powershell
 .\az-firewall-watch.exe
 ```
+
+Double-clicking the `.exe` also works when Windows Terminal is your default
+terminal app; on Windows 10 it opens in conhost.
 
 > [!NOTE]
 > **Windows SmartScreen** may warn on first launch. Click **More info → Run anyway**.

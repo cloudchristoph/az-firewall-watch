@@ -73,6 +73,7 @@ jobs:
             --onefile \
             --name az-firewall-watch \
             --collect-all textual \
+            --collect-all mcp \
             --hidden-import azure.eventhub \
             --hidden-import azure.eventhub.aio \
             --hidden-import azure.eventhub._transport._pyamqp_transport \
@@ -89,6 +90,7 @@ jobs:
             --onefile `
             --name az-firewall-watch `
             --collect-all textual `
+            --collect-all mcp `
             --hidden-import azure.eventhub `
             --hidden-import azure.eventhub.aio `
             "--hidden-import" "azure.eventhub._transport._pyamqp_transport" `

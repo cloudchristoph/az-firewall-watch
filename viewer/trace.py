@@ -19,9 +19,13 @@ from __future__ import annotations
 
 import ipaddress
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 
 from .azure_resources import FirewallPolicyInfo, IpGroupInfo, Rule, RuleCollection, RuleCollectionGroup
 from .enrichment import _fqdn_matches, _port_matches, find_containing_entry, parse_address_entries
+
+if TYPE_CHECKING:
+    from fw_parser import FirewallDataRow
 
 MATCH, MISS, UNKNOWN, NA = "match", "miss", "unknown", "n/a"
 PASS_ORDER = ("dnat", "network", "application")
@@ -459,3 +463,64 @@ def build_trace(flow: Flow, policy: FirewallPolicyInfo, ip_groups: dict[str, IpG
         outcome = "default action: Deny (no rule matched)"
     return Trace(flow=flow, logged=logged, threat_intel=threat_intel, passes=passes,
                  infrastructure=infrastructure, outcome=outcome, warnings=warnings)
+
+
+# ── log rows → trace inputs ──────────────────────────────────────────────────
+# The TUI keeps its own copies of these as ``FirewallLogApp._flow_from_row``,
+# ``_logged_from_row``, ``_TRACEABLE`` and ``_NO_DECISION`` until the open
+# change to ``viewer/app.py`` (PR #35) has landed; then the app delegates here.
+
+def flow_from_row(row: FirewallDataRow) -> Flow:
+    """The flow a log row describes, in the shape :func:`build_trace` evaluates."""
+    target, port = row.targetip or "", row.targetport
+    if row.category.lower() == "natrule" and row.nat_dst_ip:
+        # The DNAT log carries the translated target; the rule matched the public one.
+        target, port = row.nat_dst_ip, row.nat_dst_port
+    try:
+        ipaddress.ip_address(target)
+        is_fqdn = False
+    except ValueError:
+        is_fqdn = bool(target) and target != "-"  # AppRule, DNS and FQDN-based ThreatIntel rows
+    return Flow(
+        category=row.category,
+        protocol=row.protocol if row.protocol != "-" else "",
+        src_ip=row.sourceip,
+        dst_ip="" if is_fqdn else target,
+        dst_fqdn=target if is_fqdn else "",
+        dst_port="" if port == "-" else port,
+        action=row.action if row.action != "-" else "",
+        explicit_proxy=row.explicit_proxy == "yes",
+        tls_inspected={"yes": True, "no": False}.get(row.tls_inspected),   # "" (no column) stays unknown
+    )
+
+
+def logged_from_row(row: FirewallDataRow) -> LoggedMatch | None:
+    """The rule the firewall reported in a log row, ``None`` when the row names none."""
+    if not (row.rule_collection_group and row.rule_collection and row.rule_name):
+        return None
+    return LoggedMatch(policy=row.fw_policy, group=row.rule_collection_group,
+                       collection=row.rule_collection, rule=row.rule_name, action=row.action)
+
+
+# Only rows that *are* a policy decision get an evaluation trace. Flow traces,
+# fat flows, DNS proxy rows and IDPS hits are observations, not rule matches.
+TRACEABLE_CATEGORIES = frozenset({"networkrule", "apprule", "natrule", "threatintel"})
+
+# Why an observation row has no trace: what the category records instead of a
+# rule decision. The wording must not read as "the firewall skipped the
+# policy": it did not, the log simply does not carry its decision here.
+NO_DECISION_REASONS = {
+    "flowtrace": "FlowTrace records the handshake and flags of a connection, not a rule decision.",
+    "fatflow": "FatFlow records the top flows by rate, not a rule decision.",
+    "dnsquery": "DNS proxy rows record the query and its answer, not a rule decision.",
+    "dnsfailure": "DNS proxy rows record a failed resolution, not a rule decision.",
+    "idps": "IDPS rows record a signature hit; the rule decision for the flow is a separate row.",
+}
+
+
+def no_decision_reason(category: str) -> str | None:
+    """Why a row of ``category`` has no trace, or ``None`` when it is a rule decision."""
+    cat = category.lower()
+    if cat in TRACEABLE_CATEGORIES:
+        return None
+    return NO_DECISION_REASONS.get(cat, f"{category} rows record observations, not a rule decision.")

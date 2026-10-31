@@ -4,8 +4,14 @@ from __future__ import annotations
 import ipaddress
 from collections.abc import Iterable
 from functools import lru_cache
+from typing import TYPE_CHECKING, Any
 
 from .azure_resources import IpGroupInfo
+
+if TYPE_CHECKING:
+    from fw_parser import FirewallDataRow
+
+    from .azure_resources import FirewallPolicyInfo
 
 
 @lru_cache(maxsize=32)
@@ -171,3 +177,41 @@ def _port_matches(port: str, spec: str) -> bool:
         return p == int(spec)
     except ValueError:
         return False
+
+
+def enrich_row(row: FirewallDataRow, *, subnet_cidrs: Iterable[str], ip_groups: dict[str, IpGroupInfo],
+               policy: FirewallPolicyInfo | None) -> dict[str, Any]:
+    """What the policy context adds to one log row: firewall instances, IP groups, rule priorities.
+
+    The same payload the detail dialog shows (``FirewallLogApp._compute_enrichment``
+    keeps its own copy until PR #35 has landed). Keys are present only when
+    they carry something; the caller decides whether the context is loaded at all.
+    """
+    from .trace import find_logged_rule, logged_from_row  # trace imports this module
+
+    cidrs = list(subnet_cidrs)
+    out: dict[str, Any] = {}
+    if cidrs:
+        src_lbl = resolve_fw_instance(row.sourceip, cidrs)
+        dst_lbl = resolve_fw_instance(row.targetip, cidrs)
+        if src_lbl:
+            out["source_fw_instance"] = src_lbl
+        if dst_lbl:
+            out["dest_fw_instance"] = dst_lbl
+    if ip_groups:
+        src_groups = find_matching_ip_groups(row.sourceip, ip_groups)
+        dst_groups = find_matching_ip_groups(row.targetip, ip_groups)
+        if src_groups:
+            out["source_ip_groups"] = src_groups
+        if dst_groups:
+            out["dest_ip_groups"] = dst_groups
+    if policy is not None:
+        # Exact lookup of the rule the firewall reported, no guessing.
+        found = find_logged_rule(policy, logged_from_row(row))
+        if found is not None:
+            policy_name, grp, rc, _rule = found
+            out["rule_priority"] = f"RCG:{grp.priority} \u00bb RC:{rc.priority}"
+            out["rule_action"] = rc.action
+            if policy_name and policy_name != policy.name:
+                out["rule_policy"] = f"{policy_name} (inherited)"
+    return out

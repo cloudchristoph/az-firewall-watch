@@ -148,9 +148,10 @@ def _fqdn_matches(fqdn: str, patterns: Iterable[str]) -> bool:
         p = p.lower()
         if p in ("*", fqdn):
             return True
-        if p.startswith("*."):
-            if fqdn == p[2:] or fqdn.endswith(p[1:]):
-                return True
+        # Azure: a leading "*" matches anything to its left, so "*.contoso.com"
+        # excludes the apex while "*contoso.com" includes it.
+        if p.startswith("*") and fqdn.endswith(p[1:]):
+            return True
     return False
 
 

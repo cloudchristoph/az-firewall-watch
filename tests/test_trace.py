@@ -348,6 +348,25 @@ def test_trace_computed_match_without_log_is_flagged():
     assert deny.verdict == MATCH and "computed match" in deny.note
 
 
+def test_deny_collection_with_a_wildcard_does_not_match_the_apex():
+    """Azure: *.contoso.com does not match contoso.com, so the deny collection
+    is a plain miss, not a local match the firewall later "continued" past."""
+    deny = rc("deny-apps", 100, "Deny", app("deny-contoso", destination_fqdns=["*.contoso.com"]))
+    allow = rc("allow-apps", 200, "Allow", app("allow-apex", destination_fqdns=["contoso.com"]))
+    pol = policy(rcg("rcg", 100, deny, allow))
+    flow = Flow(category="AppRule", protocol="HTTPS", src_ip="10.0.1.4", dst_fqdn="contoso.com", dst_port="443")
+    logged = LoggedMatch(policy="pol", group="rcg", collection="allow-apps", rule="allow-apex", action="Allow")
+    cols = build_trace(flow, pol, {}, logged).passes[2].collections
+    assert cols[0].verdict == MISS and not cols[0].note
+    assert cols[1].rules[0].logged
+    # no logged rule: the deny collection is no "computed match" either
+    cols = build_trace(flow, pol, {}, None).passes[2].collections
+    assert cols[0].verdict == MISS and cols[1].verdict == MATCH
+    # the left-most asterisk without a dot does include the apex
+    wild = policy(rcg("rcg", 100, rc("deny-apps", 100, "Deny", app("deny-contoso", destination_fqdns=["*contoso.com"]))))
+    assert build_trace(flow, wild, {}, None).passes[2].collections[0].verdict == MATCH
+
+
 def test_trace_parent_policy_groups_come_first_per_pass():
     parent = policy(rcg("base-net", 9000, rc("base-allow", 100, "Allow", net("base-rule"))), name="base")
     child = policy(rcg("child-net", 100, rc("child-allow", 100, "Allow", net("child-rule"))), name="child", parent=parent)

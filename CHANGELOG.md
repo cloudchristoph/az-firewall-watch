@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **FQDN wildcards in the trace follow Azure Firewall.** `*.contoso.com` no longer matches the apex `contoso.com` (Azure: "If you want to specifically allow `contoso.com`, you must include contoso.com in the rule"), and a leading `*` without a dot such as `*contoso.com` now matches `contoso.com`, `www.contoso.com` and `anycontoso.com`. Before, a deny collection with `*.contoso.com` showed as a local match for the apex, and `*contoso.com` as a miss. ([#55](https://github.com/cloudchristoph/az-firewall-watch/issues/55))
+- **Network rules with FQDN targets are never compared with the logged host name.** The firewall matches those rules against the IP it resolved for the FQDN, not the host name or SNI of an application-rule row, so the trace now answers *unknown* instead of a definite match or miss. ([#56](https://github.com/cloudchristoph/az-firewall-watch/issues/56))
+
 ## [0.7.0] - 2026-10-17
 
 ### Added

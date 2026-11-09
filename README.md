@@ -128,6 +128,10 @@ Platform notes (Gatekeeper, SmartScreen) and the full wizard walkthrough are in
 [Getting started](docs/getting-started.md). The Windows binary's
 [code signing policy](docs/code-signing.md) names who signs it and what it sends.
 
+Code signing for Windows: free code signing provided by [SignPath.io](https://signpath.io),
+certificate by [SignPath Foundation](https://signpath.org). Signing starts with the first
+release after the project is approved; until then the `.exe` is unsigned.
+
 ## 📚 Documentation
 
 | Page | What's in it |

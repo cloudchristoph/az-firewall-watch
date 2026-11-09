@@ -141,7 +141,9 @@ verdicts.
 nor rejects them:
 
 - service tags such as `AzureMonitor`
-- FQDNs in network rules, FQDN tags and web categories
+- FQDNs in network rules (Azure matches them against the IP the firewall resolved,
+  so even the host name of an application-rule row decides nothing), FQDN tags and
+  web categories
 - target URLs
 - IP groups your identity is not allowed to read
 - an address entry the viewer cannot read, in a rule's address list or in an IP

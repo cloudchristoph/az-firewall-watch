@@ -31,7 +31,9 @@ from .config import BASE_DIR
 DEFAULT_TTL_SECONDS = 60 * 60
 # v5: subnets with NAT gateways, maintenance windows, explicit proxy ports,
 # auto-learn SNAT, autoscale, HTTP header insertion
-_CACHE_VERSION = 5
+# v6: parent_unreadable. A v5 policy with a base policy but no parent looks like
+# a complete chain, so the trace would claim a default deny it cannot prove.
+_CACHE_VERSION = 6
 
 
 @dataclass

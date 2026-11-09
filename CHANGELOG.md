@@ -8,6 +8,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **An unreadable parent policy is reported as unknown.** When a policy's `basePolicy` cannot be loaded (no Reader role, deleted, another tenant, a read error, or a chain longer than four policies), the evaluation trace warns about it and shows an unknown placeholder collection at the start of every pass, because inherited collections are evaluated first. A row that matched no rule now ends in *unknown: the parent policy was not evaluated* instead of *default action: Deny*, and a logged rule that is not loaded is said to probably live in the parent instead of pointing at a stale cache. The policy cache format changed, so the first start after the update loads the policy again. ([#57](https://github.com/cloudchristoph/az-firewall-watch/issues/57))
+
 ## [0.7.0] - 2026-10-17
 
 ### Added

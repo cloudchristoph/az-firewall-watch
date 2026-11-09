@@ -372,12 +372,20 @@ def _child_with_unread_parent():
 
 def test_unreadable_parent_is_reported_and_no_match_is_unknown_not_default_deny():
     t = build_trace(TCP443, _child_with_unread_parent(), GROUPS, None)
-    assert any("parent-policy" in w and "could not be read" in w for w in t.warnings)
+    assert any("parent-policy" in w and "could not be loaded" in w and "read error" in w for w in t.warnings)
     placeholder = t.passes[1].collections[0]
     assert placeholder.verdict == UNKNOWN and "parent-policy" in placeholder.group.name and not placeholder.rules
     assert t.passes[1].collections[1].verdict == MISS   # the child's own miss stays a miss
     assert t.outcome.startswith("unknown:") and "default" not in t.outcome.replace("a default deny is not proven", "")
     assert t.infrastructure is None
+
+
+def test_unreadable_parent_placeholder_is_labelled_with_the_kind_of_its_pass():
+    flow = Flow(category="AppRule", protocol="HTTPS", src_ip="10.3.5.4", dst_fqdn="example.com", dst_port="443")
+    t = build_trace(flow, _child_with_unread_parent(), GROUPS, None)
+    kinds = {p_.kind: p_.collections[0] for p_ in t.passes if p_.collections}
+    assert {k: c.collection.kind for k, c in kinds.items()} == {k: k for k in ("dnat", "network", "application")}
+    assert all(not c.rules and c.verdict == UNKNOWN for c in kinds.values())
 
 
 def test_unreadable_parent_explains_a_logged_rule_that_is_not_loaded():

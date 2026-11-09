@@ -363,8 +363,13 @@ def find_logged_rule(policy: FirewallPolicyInfo | None, logged: LoggedMatch | No
 def _unread_parent_placeholder(parent_name: str, kind: str) -> CollectionTrace:
     """Stands in for the collections of a parent policy we could not load."""
     group = RuleCollectionGroup(id="", name=f"inherited from {parent_name}", priority=0)
+    # RuleCollection.kind is derived from its rules, so an empty filter collection
+    # would show as "network" in every pass. One nameless rule of the right type
+    # pins the display kind; it is never evaluated (CollectionTrace.rules stays empty).
+    rule_type = {"dnat": "NatRule", "network": "NetworkRule", "application": "ApplicationRule"}[kind]
     rc_type = "FirewallPolicyNatRuleCollection" if kind == "dnat" else "FirewallPolicyFilterRuleCollection"
-    collection = RuleCollection(name="not readable", rule_collection_type=rc_type)
+    collection = RuleCollection(name="not readable", rule_collection_type=rc_type,
+                                rules=[Rule(name="", rule_type=rule_type)])
     return CollectionTrace(policy_name=parent_name, group=group, collection=collection, verdict=UNKNOWN,
                            note="parent policy not readable: its collections are evaluated first and are unknown")
 
@@ -377,7 +382,7 @@ def build_trace(flow: Flow, policy: FirewallPolicyInfo, ip_groups: dict[str, IpG
     unread_name = unread.rstrip("/").rsplit("/", 1)[-1] if unread else ""
     missing: LoggedMatch | None = None  # the firewall's decision when we cannot locate its rule
     if logged and not logged_found:
-        reason = (f"it probably lives in the parent policy {unread_name}, which could not be read"
+        reason = (f"it probably lives in the parent policy {unread_name}, which could not be loaded"
                   if unread else "the cache may be stale (Ctrl+R) or the rule was renamed")
         warnings.append(
             f"Logged rule {logged.group} » {logged.collection} » {logged.rule} is not in the "
@@ -401,8 +406,9 @@ def build_trace(flow: Flow, policy: FirewallPolicyInfo, ip_groups: dict[str, IpG
         # Inherited groups run first in every pass, so until the parent is
         # known nothing before our first collection is known either.
         warnings.append(
-            f"Parent policy {unread_name} could not be read (no access, deleted or beyond the "
-            "supported depth). Its collections are evaluated first and are not part of this trace."
+            f"Parent policy {unread_name} could not be loaded (for example no access, deleted, a "
+            "read error, or beyond the supported depth). Its collections are evaluated first and "
+            "are not part of this trace."
         )
 
     passes: list[PassTrace] = []

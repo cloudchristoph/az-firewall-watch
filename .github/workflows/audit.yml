@@ -31,8 +31,10 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: ${{ matrix.python-version }}
+      # python -m pip, not pip: the lock pins pip itself (pip-audit depends on it), and on
+      # Windows a running pip.exe cannot replace its own files, only the module form can.
       - name: Install pip-audit
-        run: pip install --require-hashes -r requirements-audit.lock.txt
+        run: python -m pip install --require-hashes -r requirements-audit.lock.txt
       # Audits the hashed release lock (runtime plus build) as pinned, without resolving,
       # so pip-audit and bootstrap packages of this runner are not part of the audit
       - name: pip-audit

@@ -315,6 +315,8 @@ class TracePanel(Vertical):
                 root.add_leaf(f"{_LEAF_PAD}Built-in infrastructure FQDNs   [dim]{escape_rich_markup(t.infrastructure)}[/]")
             if t.matched_rule is not None:
                 root.add_leaf(f"{_LEAF_PAD}[green]✓[/] evaluation stopped at the logged rule")
+            elif t.outcome.startswith("unknown"):
+                root.add_leaf(f"{_LEAF_PAD}[yellow]?[/] {escape_rich_markup(t.outcome)}")
             else:
                 root.add_leaf(f"{_LEAF_PAD}[red]✗[/] {escape_rich_markup(t.outcome)}")
         root.expand()

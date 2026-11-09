@@ -145,6 +145,13 @@ def test_ttl(cache_file):
     assert old.is_fresh(ttl=10 ** 9)
 
 
+def test_unreadable_parent_survives_the_cache(cache_file):
+    snap = _snapshot()
+    snap.policy.base_policy_id = snap.policy.parent_unreadable = "/parent"
+    cache.save(FW_ID, snap)
+    assert cache.load(FW_ID).policy.unread_parent() == "/parent"
+
+
 def test_policy_less_snapshot(cache_file):
     snap = _snapshot()
     snap.policy = None

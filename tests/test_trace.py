@@ -360,6 +360,40 @@ def test_trace_parent_policy_groups_come_first_per_pass():
     assert cols[1].rules[0].logged
 
 
+PARENT_ID = "/subscriptions/0/resourceGroups/rg/providers/Microsoft.Network/firewallPolicies/parent-policy"
+
+
+def _child_with_unread_parent():
+    child = policy(rcg("rcg", 100, rc("cn", 100, "Allow", net("r", source_addresses=["10.9.0.0/16"], destination_addresses=["*"]))),
+                   name="child")
+    child.base_policy_id = child.parent_unreadable = PARENT_ID
+    return child
+
+
+def test_unreadable_parent_is_reported_and_no_match_is_unknown_not_default_deny():
+    t = build_trace(TCP443, _child_with_unread_parent(), GROUPS, None)
+    assert any("parent-policy" in w and "could not be read" in w for w in t.warnings)
+    placeholder = t.passes[1].collections[0]
+    assert placeholder.verdict == UNKNOWN and "parent-policy" in placeholder.group.name and not placeholder.rules
+    assert t.passes[1].collections[1].verdict == MISS   # the child's own miss stays a miss
+    assert t.outcome.startswith("unknown:") and "default" not in t.outcome.replace("a default deny is not proven", "")
+    assert t.infrastructure is None
+
+
+def test_unreadable_parent_explains_a_logged_rule_that_is_not_loaded():
+    logged = LoggedMatch(policy="parent-policy", group="g", collection="c", rule="r", action="Allow")
+    t = build_trace(TCP443, _child_with_unread_parent(), GROUPS, logged)
+    assert any("probably lives in the parent policy parent-policy" in w for w in t.warnings)
+    assert not any("stale" in w for w in t.warnings)
+    assert "rule not in loaded policy" in t.outcome
+
+
+def test_trace_without_an_unread_parent_is_unchanged():
+    t = build_trace(TCP443, LAB, GROUPS, None)
+    assert t.outcome == "default action: Deny (no rule matched)"
+    assert not t.warnings and all(c.policy_name == "pol" for p in t.passes for c in p.collections)
+
+
 def test_dnat_rule_against_a_named_destination_is_a_destination_miss_not_a_port_question():
     """An application-rule row names its destination; a DNAT rule matches the
     firewall's own public IP, so the miss is the destination, not the port."""

@@ -1,7 +1,7 @@
 """Real IPv6 records from the dual-stack lab firewall (``tests/fixtures/ipv6``).
 
 Captured 2026-09-07 against ``fw-hub-gwc`` from both Event Hubs, strings verbatim
-(see CC-AzureLab ``firewall-mon-app/samples/ipv6/README.md``). They pin down what
+(see ``tools/ipv6-samples/README.md``). They pin down what
 the preview really writes: structured ``AZFWNetworkRule`` rows carry the address
 bracketed and fully expanded (``[fd10:0003:0005:0001:0000:0000:0000:0004]``),
 ``AZFWDnsQuery`` rows compressed and bare, legacy messages bracketed with the

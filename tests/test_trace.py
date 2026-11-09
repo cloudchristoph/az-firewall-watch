@@ -158,16 +158,16 @@ def test_network_rule_with_fqdn_destination_is_unknown():
     assert next(c for c in r.checks if c.name == "destination").result == UNKNOWN
 
 
-def test_network_rule_fqdn_target_is_compared_with_a_logged_fqdn():
-    """An application-rule log has an FQDN but no IP; a network rule targeting
-    FQDNs is then compared by name instead of reporting 'no address in log'."""
-    rule = net("r", destination_addresses=[], destination_fqdns=["ifconfig.me"])
-    miss = replace(TCP443, category="AppRule", protocol="HTTPS", dst_ip="", dst_fqdn="www.facebook.com")
-    c = next(c for c in evaluate_rule(rule, miss, GROUPS).checks if c.name == "destination")
-    assert c.result == MISS and c.detail == "www.facebook.com not in ifconfig.me"
-    hit = replace(miss, dst_fqdn="ifconfig.me")
-    c = next(c for c in evaluate_rule(rule, hit, GROUPS).checks if c.name == "destination")
-    assert c.result == MATCH and "ifconfig.me" in c.detail
+def test_network_rule_fqdn_target_is_never_compared_with_a_logged_fqdn():
+    """Network rules match the IP the firewall resolved for their FQDN, not the
+    host name or SNI of an application-rule row, so the name decides nothing."""
+    rule = net("r", destination_addresses=[], destination_fqdns=["www.contoso.com"])
+    for name in ("www.contoso.com", "cdn.contoso.com"):
+        row = replace(TCP443, category="AppRule", protocol="HTTPS", dst_ip="", dst_fqdn=name)
+        r = evaluate_rule(rule, row, GROUPS)
+        c = next(c for c in r.checks if c.name == "destination")
+        assert c.result == UNKNOWN and "not the logged host name" in c.detail
+        assert r.verdict == UNKNOWN
 
 
 @pytest.mark.parametrize("flow_proto, rule_protos, expected, detail", [
@@ -346,6 +346,25 @@ def test_trace_computed_match_without_log_is_flagged():
     t = build_trace(flow, LAB, GROUPS, None)
     deny = t.passes[1].collections[0]
     assert deny.verdict == MATCH and "computed match" in deny.note
+
+
+def test_deny_collection_with_a_wildcard_does_not_match_the_apex():
+    """Azure: *.contoso.com does not match contoso.com, so the deny collection
+    is a plain miss, not a local match the firewall later "continued" past."""
+    deny = rc("deny-apps", 100, "Deny", app("deny-contoso", destination_fqdns=["*.contoso.com"]))
+    allow = rc("allow-apps", 200, "Allow", app("allow-apex", destination_fqdns=["contoso.com"]))
+    pol = policy(rcg("rcg", 100, deny, allow))
+    flow = Flow(category="AppRule", protocol="HTTPS", src_ip="10.0.1.4", dst_fqdn="contoso.com", dst_port="443")
+    logged = LoggedMatch(policy="pol", group="rcg", collection="allow-apps", rule="allow-apex", action="Allow")
+    cols = build_trace(flow, pol, {}, logged).passes[2].collections
+    assert cols[0].verdict == MISS and not cols[0].note
+    assert cols[1].rules[0].logged
+    # no logged rule: the deny collection is no "computed match" either
+    cols = build_trace(flow, pol, {}, None).passes[2].collections
+    assert cols[0].verdict == MISS and cols[1].verdict == MATCH
+    # the left-most asterisk without a dot does include the apex
+    wild = policy(rcg("rcg", 100, rc("deny-apps", 100, "Deny", app("deny-contoso", destination_fqdns=["*contoso.com"]))))
+    assert build_trace(flow, wild, {}, None).passes[2].collections[0].verdict == MATCH
 
 
 def test_trace_parent_policy_groups_come_first_per_pass():

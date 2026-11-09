@@ -269,14 +269,14 @@ def _destination_check(rule: Rule, flow: Flow, ip_groups: dict[str, IpGroupInfo]
         return Check("destination", MISS, f"{flow.dst_fqdn} is a name; DNAT matches {targets}")
     result, detail = _address_check(ip, rule.destination_addresses, rule.destination_ip_groups, ip_groups)
     if result != MATCH and rule.destination_fqdns:
-        if flow.dst_fqdn and flow.dst_fqdn != "-":
-            # Application-rule logs carry the FQDN, not the IP. A network rule's
-            # FQDN target is resolved by the firewall's DNS, so compare names.
-            if _fqdn_matches(flow.dst_fqdn, rule.destination_fqdns):
-                return Check("destination", MATCH, f"{flow.dst_fqdn} (FQDN target)")
-            return Check("destination", MISS, f"{flow.dst_fqdn} not in {', '.join(rule.destination_fqdns)}")
-        # An IP in the log: we cannot know what the rule's FQDNs resolved to at the time.
-        return Check("destination", UNKNOWN, "cannot evaluate: FQDN " + ", ".join(rule.destination_fqdns))
+        # A network rule's FQDN target is resolved by the firewall's DNS and
+        # compared with the packet's destination IP; the host name or SNI of an
+        # application-rule row plays no part. Neither the name in the log nor an
+        # IP in the log says what the FQDNs resolved to at the time, so never
+        # answer with a definite match or miss.
+        return Check("destination", UNKNOWN,
+                     "cannot evaluate: FQDN " + ", ".join(rule.destination_fqdns)
+                     + " (a network rule matches the IP the firewall resolved, not the logged host name)")
     return Check("destination", result, detail)
 
 

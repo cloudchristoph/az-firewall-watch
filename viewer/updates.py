@@ -1,7 +1,6 @@
 """GitHub release update check for the viewer TUI."""
 from __future__ import annotations
 
-import asyncio
 import json
 import urllib.request
 from typing import TYPE_CHECKING
@@ -10,6 +9,7 @@ from dialogs import UpdateDialog
 
 from .config import INSTALL_SOURCE, UPGRADE_COMMANDS
 from .management import arm_ssl_context
+from .streaming import _run_in_daemon_thread
 
 if TYPE_CHECKING:
     from .app import FirewallLogApp
@@ -38,7 +38,7 @@ async def check_for_update(app: FirewallLogApp, current_version: str) -> None:
             return json.loads(resp.read())
 
     try:
-        data: dict = await asyncio.get_event_loop().run_in_executor(None, _fetch)
+        data: dict = await _run_in_daemon_thread(_fetch, "update-check")
         tag = data.get("tag_name", "").lstrip("v")
         release_url: str = data.get(
             "html_url",

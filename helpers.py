@@ -19,19 +19,12 @@ def load_env(path: Path, override: bool = False) -> None:
         load_dotenv(path, encoding="latin-1", override=override)
 
 
-# Azure emits 7-digit fractional seconds; Python < 3.11 only parses exactly 3 or 6.
-_FRACTION_RE = re.compile(r"\.(\d+)")
-
-
-def _normalise_fraction(match: re.Match[str]) -> str:
-    return "." + match.group(1)[:6].ljust(6, "0")
-
-
+# Azure emits 7-digit fractional seconds and a trailing ``Z``; since Python 3.11
+# ``datetime.fromisoformat`` parses both (extra digits are truncated).
 def _to_local(ts: str) -> str:
     """Convert a UTC ISO-8601 timestamp to the local system timezone."""
     try:
-        normalised = _FRACTION_RE.sub(_normalise_fraction, ts.replace("Z", "+00:00"), count=1)
-        dt = datetime.fromisoformat(normalised)
+        dt = datetime.fromisoformat(ts)
         return dt.astimezone().strftime("%Y-%m-%d %H:%M:%S")
     except (ValueError, TypeError):
         return ts[:19]
@@ -43,8 +36,7 @@ def _utc_short(ts: str) -> str:
     Azure writes up to seven fractional digits; nobody reads them in a dialog.
     """
     try:
-        normalised = _FRACTION_RE.sub(_normalise_fraction, ts.replace("Z", "+00:00"), count=1)
-        dt = datetime.fromisoformat(normalised)
+        dt = datetime.fromisoformat(ts)
         if dt.tzinfo is not None:
             dt = dt.astimezone(UTC)
         return dt.strftime("%Y-%m-%dT%H:%M:%SZ")

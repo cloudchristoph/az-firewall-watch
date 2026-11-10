@@ -23,8 +23,13 @@ from __future__ import annotations
 import os
 import sys
 
-from viewer import FirewallLogApp
-from viewer.config import BASE_DIR, load_env, policy_context_setting, update_check_enabled
+# Checked before the first import that needs 3.11 (``datetime.UTC``, ...), so an
+# older interpreter gets this message instead of an ImportError traceback.
+if sys.version_info < (3, 11):  # noqa: UP036  (deliberate: the supported floor is what this guards)
+    sys.exit(f"Azure Firewall Watch needs Python 3.11 or newer; this is {sys.version.split()[0]}.")
+
+from viewer import FirewallLogApp  # noqa: E402
+from viewer.config import BASE_DIR, load_env, policy_context_setting, update_check_enabled  # noqa: E402
 
 
 def _maybe_run_wizard() -> bool:

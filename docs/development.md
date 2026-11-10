@@ -87,7 +87,7 @@ and headless runs of both the viewer and the whole setup wizard via Textual's
 test pilot with the Azure CLI mocked out.
 
 **No Azure connection is required.** The same suite runs in CI on every push and
-pull request: Linux on Python 3.11, 3.12 and 3.13, plus Windows and macOS on 3.12.
+pull request: Linux on Python 3.11, 3.12, 3.13 and 3.14, plus Windows and macOS on 3.12.
 
 Before committing, the full local round is `ruff check .`, `mypy`, `pytest`.
 

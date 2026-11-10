@@ -17,7 +17,6 @@ from datetime import UTC, datetime
 from typing import Any
 
 from fw_parser import FirewallDataRow
-from helpers import _FRACTION_RE, _normalise_fraction
 
 MALFORMED_REASON = "MalformedEvent"
 
@@ -25,18 +24,14 @@ MALFORMED_REASON = "MalformedEvent"
 def parse_log_time(ts: str) -> float | None:
     """Epoch seconds of an ISO 8601 timestamp, ``None`` when it is not one.
 
-    Azure writes seven fractional digits, which ``datetime.fromisoformat``
-    rejects before Python 3.11; the fraction is cut to six like the TUI does.
+    Azure writes seven fractional digits and a trailing ``Z``; since Python
+    3.11 ``datetime.fromisoformat`` parses both (extra digits are truncated).
     A timestamp without a zone is taken as UTC, which is what Azure means.
     """
     if not ts or not isinstance(ts, str):
         return None
-    text = ts.strip()
-    if text.endswith(("Z", "z")):
-        text = text[:-1] + "+00:00"
-    text = _FRACTION_RE.sub(_normalise_fraction, text, count=1)
     try:
-        dt = datetime.fromisoformat(text)
+        dt = datetime.fromisoformat(ts.strip())
     except ValueError:
         return None
     if dt.tzinfo is None:

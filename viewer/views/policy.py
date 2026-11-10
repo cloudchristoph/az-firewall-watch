@@ -320,8 +320,30 @@ class PolicyView(Static):
 
         if rc is not None and _rule_category(rule, rc) == "apprule":
             lines.extend(self._app_rule_extra_lines(rule))
+        elif rc is not None and _rule_category(rule, rc) == "natrule":
+            lines.extend(self._dnat_extra_lines(rule))
 
         return "\n".join(lines)
+
+    @staticmethod
+    def _dnat_extra_lines(rule: Rule) -> list[str]:
+        """Where a DNAT rule sends the traffic. ``Target addrs`` above is the
+        public side the client connects to; the translated target is the
+        backend. An FQDN there is resolved by the firewall (Azure DNS or a custom
+        DNS server) and the mapping refreshed every 15 seconds, so the address
+        behind it can change."""
+        port = f":{escape_markup(rule.translated_port)}" if rule.translated_port else ""
+        lines: list[str] = [""]
+        if rule.translated_address:
+            addr = rule.translated_address
+            host = f"[{addr}]" if ":" in addr and port else addr    # IPv6 literal before a port
+            lines.append(f"[dim]Translated[/]     {escape_markup(host)}{port}")
+        if rule.translated_fqdn:
+            lines.append(f"[dim]Translated[/]     {escape_markup(rule.translated_fqdn)}{port}")
+            lines.append("[dim]                 FQDN, resolved by the firewall's DNS[/]")
+        if len(lines) == 1:
+            lines.append("[dim]Translated[/]     not set")
+        return lines
 
     def _app_rule_extra_lines(self, rule: Rule) -> list[str]:
         """TLS inspection and HTTP header insertion, application rules only."""

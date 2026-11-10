@@ -33,7 +33,9 @@ DEFAULT_TTL_SECONDS = 60 * 60
 # auto-learn SNAT, autoscale, HTTP header insertion
 # v6: parent_unreadable. A v5 policy with a base policy but no parent looks like
 # a complete chain, so the trace would claim a default deny it cannot prove.
-_CACHE_VERSION = 6
+# v7: dns_proxy is None when the policy does not set it. A v6 False can mean
+# "absent", which would hide an inherited proxy behind a stated "off".
+_CACHE_VERSION = 7
 
 
 @dataclass

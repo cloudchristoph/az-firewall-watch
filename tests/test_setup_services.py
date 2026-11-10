@@ -1,5 +1,4 @@
 """setup/services.py, setup/utils.py and the run_wizard() entry decision."""
-
 from __future__ import annotations
 
 import subprocess
@@ -16,7 +15,6 @@ CONN = "Endpoint=sb://ns.servicebus.windows.net/;SharedAccessKeyName=l;SharedAcc
 
 
 # ── write / read .env ────────────────────────────────────────────────────────
-
 
 def test_write_env_sas(tmp_path: Path):
     env = tmp_path / ".env"
@@ -71,12 +69,11 @@ def test_entra_requires_both_namespace_and_name(tmp_path: Path):
 def test_env_with_cp1252_encoding_is_readable(tmp_path: Path):
     """Regression for the Windows crash on non-UTF-8 .env files (0.2.1)."""
     env = tmp_path / ".env"
-    env.write_bytes((f"# Überschrift\nEVENT_HUB_CONNECTION_STRING={CONN}\n").encode("cp1252"))
+    env.write_bytes(("# Überschrift\n" f"EVENT_HUB_CONNECTION_STRING={CONN}\n").encode("cp1252"))
     assert get_existing_conn_str(env) == CONN
 
 
 # ── utils ────────────────────────────────────────────────────────────────────
-
 
 @pytest.mark.parametrize(
     "location, short",
@@ -132,10 +129,7 @@ _AZ_STDERR = (
 
 def test_cli_error_text_shows_the_cli_reason():
     exc = subprocess.CalledProcessError(
-        1,
-        ["/opt/homebrew/bin/az", "eventhubs", "eventhub", "create", "--name", "h"],
-        output="",
-        stderr=_AZ_STDERR,
+        1, ["/opt/homebrew/bin/az", "eventhubs", "eventhub", "create", "--name", "h"], output="", stderr=_AZ_STDERR,
     )
     text = utils.cli_error_text(exc)
     assert text.startswith("az eventhubs eventhub create failed: (MessagingGatewayBadRequest)")
@@ -157,7 +151,6 @@ def test_find_az_missing(monkeypatch):
 
 
 # ── run_wizard entry decision ────────────────────────────────────────────────
-
 
 @pytest.fixture
 def fake_wizard(monkeypatch):

@@ -4,7 +4,6 @@ All functions take an :class:`viewer.arm.ArmClient` and return plain dataclasses
 that are JSON-serialisable via :func:`dataclasses.asdict`. The cache layer
 relies on this.
 """
-
 from __future__ import annotations
 
 import asyncio
@@ -17,10 +16,10 @@ from .arm import ArmClient, ArmError
 # 2024-03-01 is the first version that returns autoscaleConfiguration on the
 # firewall; an older one silently drops it and a prescaled firewall would read
 # as "service default". Policies and IP groups are unchanged between the two.
-_API_FW = "2024-03-01"  # azureFirewalls, firewallPolicies, ipGroups
-_API_NET = "2024-01-01"  # virtualNetworks / subnets / publicIPAddresses / natGateways
+_API_FW = "2024-03-01"          # azureFirewalls, firewallPolicies, ipGroups
+_API_NET = "2024-01-01"         # virtualNetworks / subnets / publicIPAddresses / natGateways
 _API_DIAG = "2021-05-01-preview"  # Microsoft.Insights/diagnosticSettings
-_API_MAINT = "2023-04-01"  # Microsoft.Maintenance configurationAssignments / maintenanceConfigurations
+_API_MAINT = "2023-04-01"       # Microsoft.Maintenance configurationAssignments / maintenanceConfigurations
 
 # The firewall's association with an Azure Route Server (needed for auto-learn
 # SNAT) is not a field of its own but an entry in the free-form property bag.
@@ -42,7 +41,6 @@ class HttpHeader:
     ARM names the fields ``headerName`` / ``headerValue``; the value may carry
     a token or a tenant id, so views show it only on request.
     """
-
     name: str
     value: str = ""
 
@@ -50,7 +48,7 @@ class HttpHeader:
 @dataclass
 class Rule:
     name: str
-    rule_type: str = ""  # NetworkRule | ApplicationRule | NatRule
+    rule_type: str = ""                     # NetworkRule | ApplicationRule | NatRule
     source_addresses: list[str] = field(default_factory=list)
     source_ip_groups: list[str] = field(default_factory=list)
     destination_addresses: list[str] = field(default_factory=list)
@@ -67,8 +65,8 @@ class Rule:
     translated_fqdn: str = ""
     translated_port: str = ""
     # application-rule extras that change what the rule *does* to a flow
-    http_headers: list[HttpHeader] = field(default_factory=list)  # httpHeadersToInsert
-    terminate_tls: bool = False  # terminateTLS (TLS inspection on this rule)
+    http_headers: list[HttpHeader] = field(default_factory=list)   # httpHeadersToInsert
+    terminate_tls: bool = False                                      # terminateTLS (TLS inspection on this rule)
 
     @property
     def kind(self) -> str:
@@ -120,7 +118,7 @@ class RuleCollectionGroup:
 class FirewallPolicyInfo:
     id: str
     name: str
-    sku_tier: str = ""  # Standard | Premium | Basic
+    sku_tier: str = ""           # Standard | Premium | Basic
     threat_intel_mode: str = ""
     base_policy_id: str = ""
     rule_collection_groups: list[RuleCollectionGroup] = field(default_factory=list)
@@ -137,7 +135,7 @@ class FirewallPolicyInfo:
     idps_override_count: int = 0
     tls_ca_name: str = ""
     snat_private_ranges: list[str] = field(default_factory=list)
-    snat_auto_learn: str = ""  # snat.autoLearnPrivateRanges: "Enabled" | "Disabled" | "" when absent
+    snat_auto_learn: str = ""    # snat.autoLearnPrivateRanges: "Enabled" | "Disabled" | "" when absent
     explicit_proxy: bool = False
     # explicitProxy.* — 0 / "" when absent. pac_file keeps the blob URL without
     # its query string: Azure stores it as a SAS URL and the token must never
@@ -195,25 +193,23 @@ class FirewallPolicyInfo:
 @dataclass
 class IpConfig:
     """One firewall IP configuration (data plane or management)."""
-
     name: str
     private_ip: str = ""
     public_ip_id: str = ""
     public_ip_name: str = ""
-    public_ip_address: str = ""  # filled by fetch_public_ips (needs Reader on the PIP)
+    public_ip_address: str = ""   # filled by fetch_public_ips (needs Reader on the PIP)
     subnet_id: str = ""
 
 
 @dataclass
 class DiagnosticSetting:
     """A diagnostic setting on the firewall: where which log categories go."""
-
     name: str
-    event_hub: str = ""  # "namespace/hub" when the setting targets an Event Hub
-    workspace: str = ""  # Log Analytics workspace name
-    storage: str = ""  # storage account name
-    categories: list[str] = field(default_factory=list)  # enabled categories
-    all_logs: bool = False  # categoryGroup allLogs / audit covers everything
+    event_hub: str = ""           # "namespace/hub" when the setting targets an Event Hub
+    workspace: str = ""           # Log Analytics workspace name
+    storage: str = ""             # storage account name
+    categories: list[str] = field(default_factory=list)   # enabled categories
+    all_logs: bool = False        # categoryGroup allLogs / audit covers everything
 
     def forwards(self, category: str) -> bool:
         """Whether this setting sends ``category`` to its targets."""
@@ -223,24 +219,22 @@ class DiagnosticSetting:
 @dataclass
 class SubnetInfo:
     """A firewall subnet: its prefixes and, if attached, the NAT gateway."""
-
     id: str
     name: str = ""
     cidrs: list[str] = field(default_factory=list)
-    nat_gateway_id: str = ""  # properties.natGateway.id
+    nat_gateway_id: str = ""      # properties.natGateway.id
 
 
 @dataclass
 class NatGatewayInfo:
     """A NAT gateway attached to a firewall subnet (outbound SNAT leaves through it)."""
-
     id: str
     name: str = ""
-    subnet_name: str = ""  # the firewall subnet it is attached to
-    readable: bool = False  # False: only the id from the subnet is known (no Reader on the gateway)
+    subnet_name: str = ""         # the firewall subnet it is attached to
+    readable: bool = False        # False: only the id from the subnet is known (no Reader on the gateway)
     public_ip_ids: list[str] = field(default_factory=list)
     public_ip_names: list[str] = field(default_factory=list)
-    public_ip_addresses: list[str] = field(default_factory=list)  # resolved best effort
+    public_ip_addresses: list[str] = field(default_factory=list)   # resolved best effort
     public_ip_prefix_names: list[str] = field(default_factory=list)
 
 
@@ -251,18 +245,17 @@ class MaintenanceWindow:
     Built from a ``Microsoft.Maintenance/configurationAssignments`` entry under
     the firewall and, when readable, the maintenance configuration it points to.
     """
-
     assignment_name: str
     configuration_id: str = ""
     configuration_name: str = ""
-    readable: bool = False  # the configuration itself could be read (Reader on its resource group)
-    start: str = ""  # maintenanceWindow.startDateTime, "YYYY-MM-DD hh:mm" as Azure writes it
-    duration: str = ""  # maintenanceWindow.duration, "hh:mm"
-    time_zone: str = ""  # maintenanceWindow.timeZone, e.g. "W. Europe Standard Time"
-    recur_every: str = ""  # maintenanceWindow.recurEvery, "Day" for firewalls
-    expiration: str = ""  # maintenanceWindow.expirationDateTime
-    scope: str = ""  # maintenanceScope, "Resource" for firewalls
-    sub_scope: str = ""  # extensionProperties.maintenanceSubScope, "NetworkSecurity"
+    readable: bool = False        # the configuration itself could be read (Reader on its resource group)
+    start: str = ""               # maintenanceWindow.startDateTime, "YYYY-MM-DD hh:mm" as Azure writes it
+    duration: str = ""            # maintenanceWindow.duration, "hh:mm"
+    time_zone: str = ""           # maintenanceWindow.timeZone, e.g. "W. Europe Standard Time"
+    recur_every: str = ""         # maintenanceWindow.recurEvery, "Day" for firewalls
+    expiration: str = ""          # maintenanceWindow.expirationDateTime
+    scope: str = ""               # maintenanceScope, "Resource" for firewalls
+    sub_scope: str = ""           # extensionProperties.maintenanceSubScope, "NetworkSecurity"
 
 
 @dataclass
@@ -278,10 +271,10 @@ class FirewallInfo:
     subnet_cidrs: list[str] = field(default_factory=list)
     policy_id: str = ""
     # instance details (all from the same GET)
-    sku_name: str = ""  # AZFW_VNet | AZFW_Hub
+    sku_name: str = ""            # AZFW_VNet | AZFW_Hub
     zones: list[str] = field(default_factory=list)
     provisioning_state: str = ""
-    threat_intel_mode: str = ""  # firewall-level (classic) mode; the policy's wins when a policy is attached
+    threat_intel_mode: str = ""   # firewall-level (classic) mode; the policy's wins when a policy is attached
     ip_configs: list[IpConfig] = field(default_factory=list)
     management_ip: IpConfig | None = None
     additional_properties: dict[str, str] = field(default_factory=dict)
@@ -304,12 +297,8 @@ class FirewallInfo:
         reads in ARM is not documented, so ``AZFW_Hub`` is never reported as
         stopped. A firewall still being created or updated is not either.
         """
-        return (
-            self.sku_name == "AZFW_VNet"
-            and not self.ip_configs
-            and self.management_ip is None
-            and self.provisioning_state == "Succeeded"
-        )
+        return (self.sku_name == "AZFW_VNet" and not self.ip_configs
+                and self.management_ip is None and self.provisioning_state == "Succeeded")
 
 
 def parse_resource_id(resource_id: str) -> dict[str, str]:
@@ -447,16 +436,14 @@ async def fetch_diagnostic_settings(arm: ArmClient, firewall_id: str) -> list[Di
                 all_logs = True
             elif log.get("category"):
                 categories.append(log["category"])
-        out.append(
-            DiagnosticSetting(
-                name=item.get("name") or "",
-                event_hub=f"{ns}/{hub}" if ns and hub else (ns or hub),
-                workspace=(props.get("workspaceId") or "").rsplit("/", 1)[-1],
-                storage=(props.get("storageAccountId") or "").rsplit("/", 1)[-1],
-                categories=categories,
-                all_logs=all_logs,
-            )
-        )
+        out.append(DiagnosticSetting(
+            name=item.get("name") or "",
+            event_hub=f"{ns}/{hub}" if ns and hub else (ns or hub),
+            workspace=(props.get("workspaceId") or "").rsplit("/", 1)[-1],
+            storage=(props.get("storageAccountId") or "").rsplit("/", 1)[-1],
+            categories=categories,
+            all_logs=all_logs,
+        ))
     return out
 
 
@@ -564,24 +551,16 @@ async def fetch_nat_gateways(arm: ArmClient, subnets: list[SubnetInfo]) -> list[
     )
     # An optional detail must never abort the metadata fetch: anything that
     # still went wrong leaves the gateway named but unreadable.
-    return [
-        r
-        if isinstance(r, NatGatewayInfo)
-        else NatGatewayInfo(
-            id=s.nat_gateway_id, name=s.nat_gateway_id.rsplit("/", 1)[-1], subnet_name=s.name, readable=False
-        )
-        for s, r in zip(targets, results, strict=True)
-    ]
+    return [r if isinstance(r, NatGatewayInfo)
+            else NatGatewayInfo(id=s.nat_gateway_id, name=s.nat_gateway_id.rsplit("/", 1)[-1],
+                                subnet_name=s.name, readable=False)
+            for s, r in zip(targets, results, strict=True)]
 
 
 # Errors on the assignment list that mean "no assignment exists" (provider not
 # registered, nothing under the firewall), as opposed to "could not read".
-_MAINT_ABSENT_CODES = {
-    "MissingSubscriptionRegistration",
-    "SubscriptionNotRegistered",
-    "NoRegisteredProviderFound",
-    "ResourceNotFound",
-}
+_MAINT_ABSENT_CODES = {"MissingSubscriptionRegistration", "SubscriptionNotRegistered",
+                       "NoRegisteredProviderFound", "ResourceNotFound"}
 
 
 async def fetch_maintenance(arm: ArmClient, firewall_id: str) -> list[MaintenanceWindow] | None:
@@ -597,7 +576,8 @@ async def fetch_maintenance(arm: ArmClient, firewall_id: str) -> list[Maintenanc
     could not be read, so the tab can still name it.
     """
     try:
-        items = await arm.get_all(f"{firewall_id}/providers/Microsoft.Maintenance/configurationAssignments", _API_MAINT)
+        items = await arm.get_all(
+            f"{firewall_id}/providers/Microsoft.Maintenance/configurationAssignments", _API_MAINT)
     except ArmError as exc:
         if exc.status == 404 or exc.code in _MAINT_ABSENT_CODES:
             return []
@@ -607,12 +587,10 @@ async def fetch_maintenance(arm: ArmClient, firewall_id: str) -> list[Maintenanc
         props = item.get("properties") or {}
         if not isinstance(props, dict):
             props = {}
-        windows.append(
-            MaintenanceWindow(
-                assignment_name=item.get("name") or "",
-                configuration_id=props.get("maintenanceConfigurationId") or "",
-            )
-        )
+        windows.append(MaintenanceWindow(
+            assignment_name=item.get("name") or "",
+            configuration_id=props.get("maintenanceConfigurationId") or "",
+        ))
     await asyncio.gather(*(_fill_maintenance_configuration(arm, w) for w in windows))
     return windows
 
@@ -681,11 +659,8 @@ def _parse_rule(raw: dict) -> Rule:
         translated_address=str(raw.get("translatedAddress") or ""),
         translated_fqdn=str(raw.get("translatedFqdn") or ""),
         translated_port=str(raw.get("translatedPort") or ""),
-        http_headers=[
-            HttpHeader(name=str(h.get("headerName") or ""), value=str(h.get("headerValue") or ""))
-            for h in (raw.get("httpHeadersToInsert") or [])
-            if isinstance(h, dict)
-        ],
+        http_headers=[HttpHeader(name=str(h.get("headerName") or ""), value=str(h.get("headerValue") or ""))
+                      for h in (raw.get("httpHeadersToInsert") or []) if isinstance(h, dict)],
         terminate_tls=bool(raw.get("terminateTLS")),
     )
 
@@ -714,7 +689,7 @@ async def fetch_policy(arm: ArmClient, policy_id: str) -> FirewallPolicyInfo:
     allow = props.get("threatIntelWhitelist") or {}
     idps = props.get("intrusionDetection") or {}
     idps_cfg = idps.get("configuration") or {}
-    tls = (props.get("transportSecurity") or {}).get("certificateAuthority") or {}
+    tls = ((props.get("transportSecurity") or {}).get("certificateAuthority") or {})
     snat = props.get("snat") or {}
     explicit = props.get("explicitProxy") or {}
 
@@ -722,14 +697,13 @@ async def fetch_policy(arm: ArmClient, policy_id: str) -> FirewallPolicyInfo:
     groups: list[RuleCollectionGroup] = []
     for item in rcg_items:
         gprops = item.get("properties") or {}
-        groups.append(
-            RuleCollectionGroup(
-                id=item.get("id") or "",
-                name=item.get("name") or "",
-                priority=int(gprops.get("priority") or 0),
-                rule_collections=[_parse_rule_collection(rc) for rc in (gprops.get("ruleCollections") or [])],
-            )
-        )
+        groups.append(RuleCollectionGroup(
+            id=item.get("id") or "",
+            name=item.get("name") or "",
+            priority=int(gprops.get("priority") or 0),
+            rule_collections=[_parse_rule_collection(rc)
+                              for rc in (gprops.get("ruleCollections") or [])],
+        ))
     groups.sort(key=lambda g: g.priority)
 
     ids = parse_resource_id(policy_id)
@@ -832,35 +806,15 @@ async def fetch_ip_groups(arm: ArmClient, ip_group_ids: list[str]) -> dict[str, 
 
 
 __all__ = [
-    "ArmError",
-    "ROUTE_SERVER_KEY",
-    "IpGroupInfo",
-    "HttpHeader",
-    "Rule",
-    "RuleCollection",
-    "RuleCollectionGroup",
-    "FirewallPolicyInfo",
-    "FirewallInfo",
-    "IpConfig",
-    "DiagnosticSetting",
-    "SubnetInfo",
-    "NatGatewayInfo",
-    "MaintenanceWindow",
+    "ArmError", "ROUTE_SERVER_KEY",
+    "IpGroupInfo", "HttpHeader", "Rule", "RuleCollection", "RuleCollectionGroup",
+    "FirewallPolicyInfo", "FirewallInfo", "IpConfig", "DiagnosticSetting",
+    "SubnetInfo", "NatGatewayInfo", "MaintenanceWindow",
     "parse_resource_id",
-    "fetch_firewall",
-    "fetch_subnet",
-    "fetch_subnets",
-    "subnet_cidrs",
-    "fetch_subnet_cidrs",
-    "fetch_all_subnet_cidrs",
-    "fetch_nat_gateway",
-    "fetch_nat_gateways",
-    "fetch_maintenance",
-    "fetch_public_ips",
-    "fetch_diagnostic_settings",
-    "fetch_policy",
-    "fetch_policy_chain",
-    "fetch_ip_group",
-    "fetch_ip_groups",
+    "fetch_firewall", "fetch_subnet", "fetch_subnets", "subnet_cidrs",
+    "fetch_subnet_cidrs", "fetch_all_subnet_cidrs",
+    "fetch_nat_gateway", "fetch_nat_gateways", "fetch_maintenance",
+    "fetch_public_ips", "fetch_diagnostic_settings",
+    "fetch_policy", "fetch_policy_chain", "fetch_ip_group", "fetch_ip_groups",
     "collect_ip_group_ids",
 ]

@@ -12,7 +12,6 @@ Requirements: an identity that ``DefaultAzureCredential`` (or the Azure CLI)
 can use, with Reader on the firewall, its policy and IP groups, and
 *Azure Event Hubs Data Receiver* on the hub. Only read operations are made.
 """
-
 from __future__ import annotations
 
 import asyncio
@@ -30,8 +29,7 @@ EH_NAME = os.environ.get("AZFW_LIVE_EVENTHUB_NAME", "")
 
 needs_firewall = pytest.mark.skipif(not FIREWALL_ID, reason="set AZFW_LIVE_FIREWALL_ID to run")
 needs_eventhub = pytest.mark.skipif(
-    not (EH_NAMESPACE and EH_NAME),
-    reason="set AZFW_LIVE_EVENTHUB_NAMESPACE and AZFW_LIVE_EVENTHUB_NAME to run",
+    not (EH_NAMESPACE and EH_NAME), reason="set AZFW_LIVE_EVENTHUB_NAMESPACE and AZFW_LIVE_EVENTHUB_NAME to run",
 )
 
 
@@ -66,13 +64,8 @@ async def test_arm_roundtrip_firewall_policy_ip_groups(private_cache):
     if fw.policy_id:
         assert snap.policy is not None and snap.policy.name
         assert snap.policy.sku_tier in ("Standard", "Premium", "Basic")
-        for gid in {
-            g
-            for grp in snap.policy.rule_collection_groups
-            for rc in grp.rule_collections
-            for r in rc.rules
-            for g in r.source_ip_groups + r.destination_ip_groups
-        }:
+        for gid in {g for grp in snap.policy.rule_collection_groups for rc in grp.rule_collections
+                    for r in rc.rules for g in r.source_ip_groups + r.destination_ip_groups}:
             # every referenced group we could read has a name and parses as a network list
             if gid in snap.ip_groups:
                 assert snap.ip_groups[gid].name
@@ -98,10 +91,8 @@ async def test_eventhub_delivers_parseable_firewall_records():
 
     credential = DefaultAzureCredential(transport=AsyncioRequestsTransport())
     client = EventHubConsumerClient(
-        fully_qualified_namespace=EH_NAMESPACE,
-        eventhub_name=EH_NAME,
-        consumer_group=os.environ.get("AZFW_LIVE_CONSUMER_GROUP", "$Default"),
-        credential=credential,
+        fully_qualified_namespace=EH_NAMESPACE, eventhub_name=EH_NAME,
+        consumer_group=os.environ.get("AZFW_LIVE_CONSUMER_GROUP", "$Default"), credential=credential,
     )
     parsed: list = []
     skipped: list = []
@@ -115,9 +106,7 @@ async def test_eventhub_delivers_parseable_firewall_records():
 
     try:
         async with client:
-            task = asyncio.ensure_future(
-                client.receive(on_event=on_event, starting_position=resolve_start_position("earliest"))
-            )
+            task = asyncio.ensure_future(client.receive(on_event=on_event, starting_position=resolve_start_position("earliest")))
             deadline = time.time() + 45
             while time.time() < deadline and len(parsed) < 20:
                 await asyncio.sleep(0.5)
@@ -131,17 +120,7 @@ async def test_eventhub_delivers_parseable_firewall_records():
 
     assert parsed, "no firewall records received within 45 s — is the diagnostic setting active?"
     categories = {r.category for r in parsed}
-    assert categories <= {
-        "NetworkRule",
-        "AppRule",
-        "NATRule",
-        "DnsQuery",
-        "DnsFailure",
-        "IDPS",
-        "ThreatIntel",
-        "FlowTrace",
-        "FatFlow",
-    }
+    assert categories <= {"NetworkRule", "AppRule", "NATRule", "DnsQuery", "DnsFailure", "IDPS", "ThreatIntel", "FlowTrace", "FatFlow"}
     assert all(r.time and r.sourceip for r in parsed)
     # Unknown categories are allowed (e.g. aggregation logs) but parse errors are not.
     assert not [r for r in skipped if r.category.startswith("SKIP:ParseErr")], "parser rejected real records"

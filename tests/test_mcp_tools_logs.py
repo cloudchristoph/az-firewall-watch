@@ -1,5 +1,4 @@
 """Log tools through the MCP protocol (in-memory client against the real server object)."""
-
 from __future__ import annotations
 
 import asyncio
@@ -26,68 +25,28 @@ from viewer.azure_resources import (
 from viewer.cache import CachedSnapshot
 from viewer.eventhub import EventHubSettings
 
-SAS_CONN = (
-    "Endpoint=sb://lab-ns.servicebus.windows.net/;SharedAccessKeyName=listen;"
-    "SharedAccessKey=SUPERSECRET;EntityPath=firewall-logs"
-)
+SAS_CONN = ("Endpoint=sb://lab-ns.servicebus.windows.net/;SharedAccessKeyName=listen;"
+            "SharedAccessKey=SUPERSECRET;EntityPath=firewall-logs")
 
-SUMMARY_KEYS = {
-    "id",
-    "time",
-    "category",
-    "protocol",
-    "source",
-    "src_port",
-    "destination",
-    "dst_port",
-    "action",
-    "rule",
-    "info",
-}
-FULL_KEYS = SUMMARY_KEYS | {
-    "resource_id",
-    "policy",
-    "rule_collection_group",
-    "rule_collection",
-    "rule_name",
-    "nat_dst_ip",
-    "nat_dst_port",
-    "explicit_proxy",
-    "tls_inspected",
-    "received_at",
-}
+SUMMARY_KEYS = {"id", "time", "category", "protocol", "source", "src_port", "destination", "dst_port", "action",
+                "rule", "info"}
+FULL_KEYS = SUMMARY_KEYS | {"resource_id", "policy", "rule_collection_group", "rule_collection", "rule_name",
+                            "nat_dst_ip", "nat_dst_port", "explicit_proxy", "tls_inspected", "received_at"}
 
 
 def snapshot(*, with_policy: bool = True) -> CachedSnapshot:
     policy = None
     if with_policy:
-        rule = Rule(
-            name="allow-web",
-            rule_type="NetworkRule",
-            source_addresses=["10.0.0.0/8"],
-            destination_addresses=["*"],
-            destination_ports=["443"],
-            protocols=["TCP"],
-        )
-        rc = RuleCollection(
-            name="rc-allow",
-            priority=200,
-            action="Allow",
-            rule_collection_type="FirewallPolicyFilterRuleCollection",
-            rules=[rule],
-        )
-        policy = FirewallPolicyInfo(
-            id="/pol",
-            name="fw-pol",
-            rule_collection_groups=[
-                RuleCollectionGroup(id="/rcg", name="rcg-net", priority=100, rule_collections=[rc])
-            ],
-        )
+        rule = Rule(name="allow-web", rule_type="NetworkRule", source_addresses=["10.0.0.0/8"],
+                    destination_addresses=["*"], destination_ports=["443"], protocols=["TCP"])
+        rc = RuleCollection(name="rc-allow", priority=200, action="Allow",
+                            rule_collection_type="FirewallPolicyFilterRuleCollection", rules=[rule])
+        policy = FirewallPolicyInfo(id="/pol", name="fw-pol", rule_collection_groups=[
+            RuleCollectionGroup(id="/rcg", name="rcg-net", priority=100, rule_collections=[rc])])
     fw = FirewallInfo(id="/fw", name="fw-hub", subscription_id="sub", resource_group="rg", location="gwc")
     groups = {"/g/spokes": IpGroupInfo(id="/g/spokes", name="ipg-spokes", location="gwc", ip_addresses=["10.0.0.0/16"])}
-    return CachedSnapshot(
-        firewall=fw, policy=policy, ip_groups=groups, subnet_cidrs=["10.1.0.0/26"], fetched_at=time.time()
-    )
+    return CachedSnapshot(firewall=fw, policy=policy, ip_groups=groups, subnet_cidrs=["10.1.0.0/26"],
+                          fetched_at=time.time())
 
 
 class Seeder:
@@ -95,58 +54,23 @@ class Seeder:
         self.state = state
         self.record = structured_record
 
-    def network(
-        self,
-        source: str = "10.0.0.1",
-        action: str = "Allow",
-        port: int = 443,
-        src_port: int = 50000,
-        time: str = "2026-09-05T08:00:00Z",
-        dest: str = "10.1.0.1",
-        **extra: Any,
-    ):
-        rec = self.record(
-            "AZFWNetworkRule",
-            time=time,
-            Protocol="TCP",
-            SourceIp=source,
-            SourcePort=src_port,
-            DestinationIp=dest,
-            DestinationPort=port,
-            Action=action,
-            **extra,
-        )
+    def network(self, source: str = "10.0.0.1", action: str = "Allow", port: int = 443, src_port: int = 50000,
+                time: str = "2026-09-05T08:00:00Z", dest: str = "10.1.0.1", **extra: Any):
+        rec = self.record("AZFWNetworkRule", time=time, Protocol="TCP", SourceIp=source, SourcePort=src_port,
+                          DestinationIp=dest, DestinationPort=port, Action=action, **extra)
         return self._add(rec)
 
     def ruled(self, **kw: Any):
-        return self.network(
-            Policy="fw-pol", RuleCollectionGroup="rcg-net", RuleCollection="rc-allow", Rule="allow-web", **kw
-        )
+        return self.network(Policy="fw-pol", RuleCollectionGroup="rcg-net", RuleCollection="rc-allow",
+                            Rule="allow-web", **kw)
 
     def flow(self):
-        return self._add(
-            self.record(
-                "AZFWFlowTrace",
-                Protocol="TCP",
-                SourceIp="10.0.0.9",
-                SourcePort=1,
-                DestinationIp="10.1.0.1",
-                DestinationPort=443,
-                Flag="SYN",
-            )
-        )
+        return self._add(self.record("AZFWFlowTrace", Protocol="TCP", SourceIp="10.0.0.9", SourcePort=1,
+                                     DestinationIp="10.1.0.1", DestinationPort=443, Flag="SYN"))
 
     def dns(self):
-        return self._add(
-            self.record(
-                "AZFWDnsQuery",
-                SourceIp="fd10:3:5:1::4",
-                SourcePort=40000,
-                QueryType="AAAA",
-                QueryName="example.com.",
-                ResponseCode="NOERROR",
-            )
-        )
+        return self._add(self.record("AZFWDnsQuery", SourceIp="fd10:3:5:1::4", SourcePort=40000, QueryType="AAAA",
+                                     QueryName="example.com.", ResponseCode="NOERROR"))
 
     def _add(self, rec: dict):
         row = parse_record(rec)
@@ -155,11 +79,9 @@ class Seeder:
 
 
 def make_state(*, settings: EventHubSettings | None = None, context: ContextHolder | None = None) -> AppState:
-    config = ServerConfig(
-        eventhub=settings or EventHubSettings(fq_namespace="lab-ns.servicebus.windows.net", hub_name="firewall-logs"),
-        policy_context=context is not None and context.enabled,
-        buffer_size=1000,
-    )
+    config = ServerConfig(eventhub=settings or EventHubSettings(fq_namespace="lab-ns.servicebus.windows.net",
+                                                                hub_name="firewall-logs"),
+                          policy_context=context is not None and context.enabled, buffer_size=1000)
     state = AppState.create(config)
     if context is not None:
         state.context = context
@@ -187,16 +109,8 @@ def start_replay(state: AppState, structured_record, *, rows: int = 300) -> None
     stream.clock = lambda: now
     stream.state = "connected"
     stream.connected_since = now - 1
-    rec = structured_record(
-        "AZFWNetworkRule",
-        time="2026-09-05T08:00:00Z",
-        Protocol="TCP",
-        SourceIp="10.0.0.7",
-        SourcePort=1,
-        DestinationIp="10.1.0.1",
-        DestinationPort=443,
-        Action="Allow",
-    )
+    rec = structured_record("AZFWNetworkRule", time="2026-09-05T08:00:00Z", Protocol="TCP", SourceIp="10.0.0.7",
+                            SourcePort=1, DestinationIp="10.1.0.1", DestinationPort=443, Action="Allow")
     stream.handle_body(json.dumps({"records": [rec] * rows}))
 
 
@@ -217,7 +131,6 @@ async def call_error(state: AppState, name: str, args: dict[str, Any]) -> str:
 
 # ── tool list ────────────────────────────────────────────────────────────────
 
-
 async def test_tools_carry_annotations_and_argument_docs(state):
     async with Client(build_server(state.config, state=state)) as client:
         tools = {t.name: t for t in (await client.list_tools()).tools}
@@ -229,23 +142,8 @@ async def test_tools_carry_annotations_and_argument_docs(state):
     clear = tools["clear_logs"].annotations
     assert clear is not None and clear.destructive_hint is True and clear.read_only_hint is False
     props = tools["query_logs"].input_schema["properties"]
-    assert {
-        "category",
-        "action",
-        "source",
-        "destination",
-        "protocol",
-        "dst_port",
-        "src_port",
-        "rule",
-        "text",
-        "since",
-        "until",
-        "after_id",
-        "limit",
-        "order",
-        "detail",
-    } <= set(props)
+    assert {"category", "action", "source", "destination", "protocol", "dst_port", "src_port", "rule", "text",
+            "since", "until", "after_id", "limit", "order", "detail"} <= set(props)
     assert "CIDR" in props["source"]["description"]
     assert "ctx" not in props
     assert "detail" in tools["tail_logs"].input_schema["properties"]
@@ -257,7 +155,6 @@ async def test_tools_carry_annotations_and_argument_docs(state):
 
 # ── get_status ───────────────────────────────────────────────────────────────
 
-
 async def test_get_status_shape(state, seed, firewall_id):
     seed.network()
     state.buffer.count_skip("ResourceType")
@@ -265,12 +162,8 @@ async def test_get_status_shape(state, seed, firewall_id):
     status = await call(state, "get_status")
     eh = status["event_hub"]
     assert eh["namespace"] == "lab-ns.servicebus.windows.net" and eh["hub"] == "firewall-logs"
-    assert (eh["auth"], eh["consumer_group"], eh["start_position"], eh["state"]) == (
-        "entra",
-        "$Default",
-        "@latest",
-        "stopped",
-    )
+    assert (eh["auth"], eh["consumer_group"], eh["start_position"], eh["state"]) == ("entra", "$Default", "@latest",
+                                                                                    "stopped")
     assert status["events"]["received"] == 1
     assert status["events"]["skipped"] == {"ResourceType": 1}
     assert status["events"]["per_category"] == {"NetworkRule": 1}
@@ -298,10 +191,8 @@ async def test_get_status_never_returns_the_sas_key():
     state.stream.last_error = f"connect failed for {SAS_CONN}"
     status = await call(state, "get_status")
     assert status["event_hub"]["auth"] == "sas"
-    assert (status["event_hub"]["namespace"], status["event_hub"]["hub"]) == (
-        "lab-ns.servicebus.windows.net",
-        "firewall-logs",
-    )
+    assert (status["event_hub"]["namespace"], status["event_hub"]["hub"]) == ("lab-ns.servicebus.windows.net",
+                                                                              "firewall-logs")
     assert "SUPERSECRET" not in json.dumps(status)
     assert "SharedAccessKey=<redacted>" in status["event_hub"]["last_error"]
 
@@ -315,7 +206,6 @@ async def test_get_status_uses_the_arm_name_once_loaded(firewall_id):
 
 
 # ── query_logs ───────────────────────────────────────────────────────────────
-
 
 async def test_query_defaults_newest_first_summary(state, seed):
     for i in range(3):
@@ -339,56 +229,34 @@ async def test_query_row_values_drop_placeholders(state, seed):
     assert flow["rule"] is None and flow["action"] == "SYN"
 
 
-@pytest.mark.parametrize(
-    "args, expected",
-    [
-        ({"category": "NetworkRule"}, [1, 2, 3, 4]),
-        ({"category": "traffic"}, [5]),
-        ({"category": ["dns", "flowtrace"]}, [5, 6]),
-        ({"action": "deny"}, [2]),
-        ({"source": "10.0.0.0/30"}, [1, 2]),
-        ({"source": "fd10::/16"}, [6]),
-        ({"destination": "example.com"}, [6]),
-        ({"protocol": "udp"}, []),
-        ({"dst_port": "8443"}, [3]),
-        ({"dst_port": 443}, [1, 2, 3, 4, 5]),  # substring, like the TUI
-        ({"src_port": 61000}, [4]),
-        ({"rule": "rc-allow"}, [4]),
-        ({"text": "allow-web"}, [4]),
-        ({"since": "2026-09-05T08:30:00Z", "until": "2026-09-05T09:00:00Z"}, [3, 4, 5, 6]),
-        ({"after_id": 4}, [5, 6]),
-        ({"before_id": 3}, [1, 2]),
-        ({"source": "10.0.0.0/8", "action": "allow", "dst_port": "443"}, [1, 3, 4]),  # FlowTrace logs SYN, not Allow
-    ],
-)
+@pytest.mark.parametrize("args, expected", [
+    ({"category": "NetworkRule"}, [1, 2, 3, 4]),
+    ({"category": "traffic"}, [5]),
+    ({"category": ["dns", "flowtrace"]}, [5, 6]),
+    ({"action": "deny"}, [2]),
+    ({"source": "10.0.0.0/30"}, [1, 2]),
+    ({"source": "fd10::/16"}, [6]),
+    ({"destination": "example.com"}, [6]),
+    ({"protocol": "udp"}, []),
+    ({"dst_port": "8443"}, [3]),
+    ({"dst_port": 443}, [1, 2, 3, 4, 5]),     # substring, like the TUI
+    ({"src_port": 61000}, [4]),
+    ({"rule": "rc-allow"}, [4]),
+    ({"text": "allow-web"}, [4]),
+    ({"since": "2026-09-05T08:30:00Z", "until": "2026-09-05T09:00:00Z"}, [3, 4, 5, 6]),
+    ({"after_id": 4}, [5, 6]),
+    ({"before_id": 3}, [1, 2]),
+    ({"source": "10.0.0.0/8", "action": "allow", "dst_port": "443"}, [1, 3, 4]),   # FlowTrace logs SYN, not Allow
+])
 async def test_query_filters(state, seed, args, expected):
     seed.network(source="10.0.0.1")
     seed.network(source="10.0.0.2", action="Deny")
     seed.network(source="10.0.0.10", port=8443, time="2026-09-05T08:30:00Z")
     seed.ruled(source="10.0.1.1", src_port=61000, time="2026-09-05T08:40:00Z")
-    seed._add(
-        seed.record(
-            "AZFWFlowTrace",
-            time="2026-09-05T08:50:00Z",
-            Protocol="TCP",
-            SourceIp="10.0.0.9",
-            SourcePort=1,
-            DestinationIp="10.1.0.1",
-            DestinationPort=443,
-            Flag="SYN",
-        )
-    )
-    seed._add(
-        seed.record(
-            "AZFWDnsQuery",
-            time="2026-09-05T08:55:00Z",
-            SourceIp="fd10:3:5:1::4",
-            SourcePort=40000,
-            QueryType="AAAA",
-            QueryName="example.com.",
-            ResponseCode="NOERROR",
-        )
-    )
+    seed._add(seed.record("AZFWFlowTrace", time="2026-09-05T08:50:00Z", Protocol="TCP", SourceIp="10.0.0.9",
+                          SourcePort=1, DestinationIp="10.1.0.1", DestinationPort=443, Flag="SYN"))
+    seed._add(seed.record("AZFWDnsQuery", time="2026-09-05T08:55:00Z", SourceIp="fd10:3:5:1::4", SourcePort=40000,
+                          QueryType="AAAA", QueryName="example.com.", ResponseCode="NOERROR"))
     out = await call(state, "query_logs", {**args, "order": "asc"})
     assert [r["id"] for r in out["rows"]] == expected
     assert out["matched"] == len(expected)
@@ -420,28 +288,21 @@ async def test_query_detail_levels(state, seed):
     item = seed.ruled()
     full = (await call(state, "query_logs", {"detail": "full"}))["rows"][0]
     assert set(full) == FULL_KEYS
-    assert (full["policy"], full["rule_collection_group"], full["rule_collection"], full["rule_name"]) == (
-        "fw-pol",
-        "rcg-net",
-        "rc-allow",
-        "allow-web",
-    )
+    assert (full["policy"], full["rule_collection_group"], full["rule_collection"], full["rule_name"]) == \
+        ("fw-pol", "rcg-net", "rc-allow", "allow-web")
     assert full["received_at"].endswith("Z")
     raw = (await call(state, "query_logs", {"detail": "RAW"}))["rows"][0]
     assert set(raw) == FULL_KEYS | {"raw"}
     assert raw["raw"] == item.raw
 
 
-@pytest.mark.parametrize(
-    "args, message",
-    [
-        ({"detail": "verbose"}, "detail must be one of summary, full, raw"),
-        ({"order": "sideways"}, "order must be 'asc' or 'desc'"),
-        ({"since": "a while ago"}, "neither a relative duration"),
-        ({"source": "10.0.0.0/40"}, "not a valid network"),
-        ({"category": "bogus"}, "Unknown category"),
-    ],
-)
+@pytest.mark.parametrize("args, message", [
+    ({"detail": "verbose"}, "detail must be one of summary, full, raw"),
+    ({"order": "sideways"}, "order must be 'asc' or 'desc'"),
+    ({"since": "a while ago"}, "neither a relative duration"),
+    ({"source": "10.0.0.0/40"}, "not a valid network"),
+    ({"category": "bogus"}, "Unknown category"),
+])
 async def test_query_rejects_bad_arguments_readably(state, args, message):
     assert message in await call_error(state, "query_logs", args)
 
@@ -464,9 +325,8 @@ async def test_query_notes_the_replay_and_drops_the_note_afterwards(state, seed,
 
 # ── tail_logs ────────────────────────────────────────────────────────────────
 
-
 async def test_tail_returns_when_a_row_arrives(state, seed):
-    seed.network()  # already buffered: not part of the tail
+    seed.network()   # already buffered: not part of the tail
 
     async def later():
         await asyncio.sleep(0.2)
@@ -497,7 +357,7 @@ async def test_tail_respects_the_filter(state, seed):
 
 async def test_tail_times_out_and_moves_the_cursor(state, seed):
     seed.network(action="Allow")
-    out = await call(state, "tail_logs", {"after_id": 0, "action": "deny", "timeout_s": 0})  # clamped to 1 s
+    out = await call(state, "tail_logs", {"after_id": 0, "action": "deny", "timeout_s": 0})   # clamped to 1 s
     assert out == {**out, "rows": [], "returned": 0, "timed_out": True, "next_after_id": 1}
 
 
@@ -517,7 +377,6 @@ async def test_tail_with_after_id_returns_buffered_rows_at_once(state, seed):
 
 
 # ── get_log_entry ────────────────────────────────────────────────────────────
-
 
 async def test_entry_unknown_id_is_a_readable_error(state, seed):
     seed.network()
@@ -540,12 +399,8 @@ async def test_entry_with_context_is_enriched_and_traceable(firewall_id, structu
     seed = Seeder(state, structured_record)
     seed.ruled(source="10.0.0.5", dest="10.1.0.4")
     out = await call(state, "get_log_entry", {"id": 1})
-    assert out["enrichment"] == {
-        "dest_fw_instance": "AzFw.4",
-        "source_ip_groups": ["ipg-spokes"],
-        "rule_priority": "RCG:100 » RC:200",
-        "rule_action": "Allow",
-    }
+    assert out["enrichment"] == {"dest_fw_instance": "AzFw.4", "source_ip_groups": ["ipg-spokes"],
+                                 "rule_priority": "RCG:100 » RC:200", "rule_action": "Allow"}
     assert out["traceable"] is True and out["trace_unavailable_reason"] is None
 
 
@@ -572,7 +427,6 @@ async def test_entry_context_without_policy(firewall_id, structured_record):
 
 
 # ── clear_logs ───────────────────────────────────────────────────────────────
-
 
 async def test_clear_logs(state, seed):
     for _ in range(3):

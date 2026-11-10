@@ -197,10 +197,7 @@ class PolicyContextNoticeDialog(ModalScreen[bool]):
                 "IP Groups tabs, enriched rows and the evaluation trace.",
                 id="enr-body",
             )
-            yield Static(
-                "Saved to .env as POLICY_CONTEXT=on|off — change it there or run with --no-policy-context.",
-                id="enr-hint",
-            )
+            yield Static("Saved to .env as POLICY_CONTEXT=on|off — change it there or run with --no-policy-context.", id="enr-hint")
             with Horizontal(classes="btn-row"):
                 yield Button("Keep enabled  (Enter)", variant="success", id="btn-keep")
                 yield Button("Disable", variant="default", id="btn-disable")
@@ -208,6 +205,7 @@ class PolicyContextNoticeDialog(ModalScreen[bool]):
     def recreate(self) -> PolicyContextNoticeDialog:
         """Fresh copy for re-pushing after the connecting splash is removed."""
         return PolicyContextNoticeDialog()
+
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         self.dismiss(event.button.id == "btn-keep")
@@ -230,10 +228,10 @@ def _ago(seconds: float) -> str:
 
 # One glyph per kind of state, single-width everywhere (emoji are not).
 _GLYPHS: dict[str, tuple[str, str]] = {
-    "ok": ("●", "green"),  # working as intended
-    "busy": ("◐", "yellow"),  # something is in progress
-    "off": ("○", "dim"),  # off, idle or not available; no error
-    "error": ("✖", "red"),  # needs the operator
+    "ok": ("●", "green"),      # working as intended
+    "busy": ("◐", "yellow"),   # something is in progress
+    "off": ("○", "dim"),       # off, idle or not available; no error
+    "error": ("✖", "red"),     # needs the operator
 }
 
 
@@ -251,7 +249,7 @@ class StatusBar(Static):
     eh_state: reactive[str] = reactive("connecting")
     # connecting | verifying | connected | retrying | reconnecting | failed | stopped | unconfigured
     eh_detail: reactive[str] = reactive("")  # short, e.g. "attempt 2 in 9s"
-    eh_error: reactive[str] = reactive("")  # last error text: tooltip only, never in the line
+    eh_error: reactive[str] = reactive("")   # last error text: tooltip only, never in the line
 
     # Events
     total: reactive[int] = reactive(0)
@@ -264,7 +262,7 @@ class StatusBar(Static):
     ctx_state: reactive[str] = reactive("off")
     # off | pending | loading | loaded | refreshing | unavailable
     ctx_detail: reactive[str] = reactive("")  # "new rule x", "refresh failed"
-    ctx_error: reactive[str] = reactive("")  # last ARM error text: tooltip only, the Firewall tab shows it whole
+    ctx_error: reactive[str] = reactive("")   # last ARM error text: tooltip only, the Firewall tab shows it whole
     ctx_fetched_at: reactive[float | None] = reactive(None)  # time.time() the snapshot was fetched
 
     IDLE_AFTER = 60.0  # seconds without a record before "receiving" turns into "idle"
@@ -363,7 +361,7 @@ class StatusBar(Static):
     def _update_tooltip(self) -> None:
         errors = [(label, text) for label, text in (("Event Hub", self.eh_error), ("Context", self.ctx_error)) if text]
         if len(errors) > 1:
-            self.tooltip = "\n".join(f"{label}: {text}" for label, text in errors)  # both: say which is which
+            self.tooltip = "\n".join(f"{label}: {text}" for label, text in errors)   # both: say which is which
         else:
             self.tooltip = errors[0][1] if errors else None
 

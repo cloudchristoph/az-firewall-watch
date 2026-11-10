@@ -6,7 +6,6 @@ know the table's conventions. And nothing secret leaves: no SAS connection
 string, no inserted HTTP header *values* (only their names), no query string
 of a PAC file URL.
 """
-
 from __future__ import annotations
 
 import re
@@ -87,20 +86,18 @@ def row_to_dict(item: BufferedRow, detail: str = "summary") -> dict[str, Any]:
     }
     if level == "summary":
         return out
-    out.update(
-        {
-            "resource_id": _value(row.resource_id),
-            "policy": _value(row.fw_policy),
-            "rule_collection_group": _value(row.rule_collection_group),
-            "rule_collection": _value(row.rule_collection),
-            "rule_name": _value(row.rule_name),
-            "nat_dst_ip": _value(row.nat_dst_ip),
-            "nat_dst_port": _value(row.nat_dst_port),
-            "explicit_proxy": _flag(row.explicit_proxy),
-            "tls_inspected": _flag(row.tls_inspected),
-            "received_at": iso_utc(item.received_at),
-        }
-    )
+    out.update({
+        "resource_id": _value(row.resource_id),
+        "policy": _value(row.fw_policy),
+        "rule_collection_group": _value(row.rule_collection_group),
+        "rule_collection": _value(row.rule_collection),
+        "rule_name": _value(row.rule_name),
+        "nat_dst_ip": _value(row.nat_dst_ip),
+        "nat_dst_port": _value(row.nat_dst_port),
+        "explicit_proxy": _flag(row.explicit_proxy),
+        "tls_inspected": _flag(row.tls_inspected),
+        "received_at": iso_utc(item.received_at),
+    })
     if level == "raw":
         out["raw"] = item.raw
     return out
@@ -121,9 +118,8 @@ def status_to_dict(state: AppState, *, version: str) -> dict[str, Any]:
     namespace, hub = state.config.eventhub.display_endpoint
     snap = state.context.snapshot
     firewall_id = state.context.firewall_id or stream.firewall_id
-    firewall_name = (
-        snap.firewall.name if snap is not None and snap.firewall.name else firewall_name_from_id(firewall_id)
-    )
+    firewall_name = (snap.firewall.name if snap is not None and snap.firewall.name
+                     else firewall_name_from_id(firewall_id))
     return {
         "server": {"name": "az-firewall-watch", "version": version, "started_at": iso_utc(state.started_at)},
         "event_hub": {
@@ -145,12 +141,8 @@ def status_to_dict(state: AppState, *, version: str) -> dict[str, Any]:
             "newest_log_lag_s": _round_lag(stream.newest_log_lag_s),
             "replaying": stream.replaying,
         },
-        "buffer": {
-            "size": buf.size,
-            "capacity": buf.capacity,
-            "first_id": buf.first_id,
-            "last_id": buf.last_id or None,
-        },
+        "buffer": {"size": buf.size, "capacity": buf.capacity, "first_id": buf.first_id,
+                   "last_id": buf.last_id or None},
         "firewall_id": firewall_id,
         "firewall_name": firewall_name,
         "policy_context": state.context.status(),
@@ -185,10 +177,8 @@ def replay_note(state: AppState) -> str | None:
         return None
     lag = stream.newest_log_lag_s
     behind = f" (newest buffered log is {format_lag(lag)} behind now)" if lag is not None else ""
-    return (
-        f"The server is still replaying the hub's retention{behind}; counts will grow for a few more "
-        "seconds. Call again shortly or check get_status (events.replaying)."
-    )
+    return (f"The server is still replaying the hub's retention{behind}; counts will grow for a few more "
+            "seconds. Call again shortly or check get_status (events.replaying).")
 
 
 def with_replay_note(state: AppState, answer: dict[str, Any]) -> dict[str, Any]:
@@ -202,7 +192,6 @@ def with_replay_note(state: AppState, answer: dict[str, Any]) -> dict[str, Any]:
 # ── Phase B: policy, firewall and trace shapes ──────────────────────────────
 # The signatures are fixed here so the log tools and the policy tools agree on
 # names; the bodies arrive with the policy and analysis tools.
-
 
 def _opt(text: str | None) -> str | None:
     """An empty ARM string as ``None``: absent, not an empty value."""
@@ -250,9 +239,8 @@ def _autoscale(firewall: FirewallInfo) -> dict[str, Any]:
     return {"min": lo, "max": hi, "mode": "not_understood"}
 
 
-def firewall_to_dict(
-    firewall: FirewallInfo, *, cache_age_s: float | None = None, snapshot: CachedSnapshot | None = None
-) -> dict[str, Any]:
+def firewall_to_dict(firewall: FirewallInfo, *, cache_age_s: float | None = None,
+                     snapshot: CachedSnapshot | None = None) -> dict[str, Any]:
     """The ``get_firewall`` shape (subnets, NAT gateways, public IPs, diagnostics, ...).
 
     Subnets, NAT gateways, maintenance windows and diagnostic settings live on
@@ -285,67 +273,49 @@ def firewall_to_dict(
     if snapshot is None:
         out["subnet_cidrs"] = list(firewall.subnet_cidrs)
         return out
-    subnets = [
-        {"id": sn.id, "name": _opt(sn.name), "cidrs": list(sn.cidrs), "nat_gateway_id": _opt(sn.nat_gateway_id)}
-        for sn in snapshot.subnets
-    ]
+    subnets = [{"id": sn.id, "name": _opt(sn.name), "cidrs": list(sn.cidrs), "nat_gateway_id": _opt(sn.nat_gateway_id)}
+               for sn in snapshot.subnets]
     if not subnets:
         # An older cache entry knows only the ids and the flat CIDR list.
-        subnets = [
-            {"id": sid, "name": sid.rstrip("/").split("/")[-1] or None, "cidrs": [], "nat_gateway_id": None}
-            for sid in firewall.subnet_ids
-        ]
-    out.update(
-        {
-            "fetched_at": iso_utc(snapshot.fetched_at) if snapshot.fetched_at else None,
-            "subnet_cidrs": list(snapshot.subnet_cidrs or firewall.subnet_cidrs),
-            "subnets": subnets,
-            "nat_gateways": [
-                {
-                    "id": gw.id,
-                    "name": _opt(gw.name) or gw.id.rstrip("/").split("/")[-1],
-                    "subnet": _opt(gw.subnet_name),
-                    "readable": gw.readable,
-                    "public_ip_names": list(gw.public_ip_names),
-                    "public_ip_addresses": list(gw.public_ip_addresses),
-                    "public_ip_prefix_names": list(gw.public_ip_prefix_names),
-                }
-                for gw in snapshot.nat_gateways
-            ],
-            # False: the assignment list itself could not be read, so an empty
-            # list means "unknown", not "no maintenance window".
-            "maintenance_readable": snapshot.maintenance_readable,
-            "maintenance_windows": [
-                {
-                    "assignment": mw.assignment_name,
-                    "configuration_name": _opt(mw.configuration_name),
-                    "configuration_id": _opt(mw.configuration_id),
-                    "readable": mw.readable,
-                    "start": _opt(mw.start),
-                    "duration": _opt(mw.duration),
-                    "time_zone": _opt(mw.time_zone),
-                    "recur_every": _opt(mw.recur_every),
-                    "expiration": _opt(mw.expiration),
-                    "scope": _opt(mw.scope),
-                    "sub_scope": _opt(mw.sub_scope),
-                }
-                for mw in snapshot.maintenance
-            ],
-            "diagnostic_settings": [
-                {
-                    "name": ds.name,
-                    "targets": {
-                        "event_hub": _opt(ds.event_hub),
-                        "workspace": _opt(ds.workspace),
-                        "storage": _opt(ds.storage),
-                    },
-                    "categories": list(ds.categories),
-                    "all_logs": ds.all_logs,
-                }
-                for ds in snapshot.diagnostics
-            ],
-        }
-    )
+        subnets = [{"id": sid, "name": sid.rstrip("/").split("/")[-1] or None, "cidrs": [], "nat_gateway_id": None}
+                   for sid in firewall.subnet_ids]
+    out.update({
+        "fetched_at": iso_utc(snapshot.fetched_at) if snapshot.fetched_at else None,
+        "subnet_cidrs": list(snapshot.subnet_cidrs or firewall.subnet_cidrs),
+        "subnets": subnets,
+        "nat_gateways": [{
+            "id": gw.id,
+            "name": _opt(gw.name) or gw.id.rstrip("/").split("/")[-1],
+            "subnet": _opt(gw.subnet_name),
+            "readable": gw.readable,
+            "public_ip_names": list(gw.public_ip_names),
+            "public_ip_addresses": list(gw.public_ip_addresses),
+            "public_ip_prefix_names": list(gw.public_ip_prefix_names),
+        } for gw in snapshot.nat_gateways],
+        # False: the assignment list itself could not be read, so an empty
+        # list means "unknown", not "no maintenance window".
+        "maintenance_readable": snapshot.maintenance_readable,
+        "maintenance_windows": [{
+            "assignment": mw.assignment_name,
+            "configuration_name": _opt(mw.configuration_name),
+            "configuration_id": _opt(mw.configuration_id),
+            "readable": mw.readable,
+            "start": _opt(mw.start),
+            "duration": _opt(mw.duration),
+            "time_zone": _opt(mw.time_zone),
+            "recur_every": _opt(mw.recur_every),
+            "expiration": _opt(mw.expiration),
+            "scope": _opt(mw.scope),
+            "sub_scope": _opt(mw.sub_scope),
+        } for mw in snapshot.maintenance],
+        "diagnostic_settings": [{
+            "name": ds.name,
+            "targets": {"event_hub": _opt(ds.event_hub), "workspace": _opt(ds.workspace),
+                        "storage": _opt(ds.storage)},
+            "categories": list(ds.categories),
+            "all_logs": ds.all_logs,
+        } for ds in snapshot.diagnostics],
+    })
     return out
 
 
@@ -358,17 +328,12 @@ def _policy_settings(policy: FirewallPolicyInfo) -> dict[str, Any]:
         "provisioning_state": _opt(policy.provisioning_state),
         "base_policy_id": _opt(policy.base_policy_id),
         "child_policy_count": policy.child_policy_count,
-        "threat_intel": {
-            "mode": _opt(policy.threat_intel_mode),
-            "allow_fqdns": list(policy.threat_intel_allow_fqdns),
-            "allow_ips": list(policy.threat_intel_allow_ips),
-        },
+        "threat_intel": {"mode": _opt(policy.threat_intel_mode),
+                         "allow_fqdns": list(policy.threat_intel_allow_fqdns),
+                         "allow_ips": list(policy.threat_intel_allow_ips)},
         "dns": {"proxy": policy.dns_proxy, "servers": list(policy.dns_servers)},
-        "idps": {
-            "mode": _opt(policy.idps_mode),
-            "bypass_count": policy.idps_bypass_count,
-            "signature_override_count": policy.idps_override_count,
-        },
+        "idps": {"mode": _opt(policy.idps_mode), "bypass_count": policy.idps_bypass_count,
+                 "signature_override_count": policy.idps_override_count},
         "tls_inspection_ca": _opt(policy.tls_ca_name),
         "snat": {"private_ranges": list(policy.snat_private_ranges), "auto_learn": _opt(policy.snat_auto_learn)},
         "explicit_proxy": {
@@ -388,9 +353,8 @@ def _parent_summary(policy: FirewallPolicyInfo | None) -> dict[str, Any] | None:
     return {**_policy_settings(policy), "parent": _parent_summary(policy.parent)}
 
 
-def policy_to_dict(
-    policy: FirewallPolicyInfo, *, include_rules: bool = False, ip_groups: dict[str, IpGroupInfo] | None = None
-) -> dict[str, Any]:
+def policy_to_dict(policy: FirewallPolicyInfo, *, include_rules: bool = False,
+                   ip_groups: dict[str, IpGroupInfo] | None = None) -> dict[str, Any]:
     """The ``get_policy`` shape: summary always, the full group/collection/rule tree with ``include_rules``.
 
     ``groups`` lists the whole chain in evaluation order (inherited groups
@@ -401,31 +365,22 @@ def policy_to_dict(
     for policy_name, group in policy.all_groups():
         collections: list[dict[str, Any]] = []
         for rc in sorted(group.rule_collections, key=lambda c: c.priority):
-            entry: dict[str, Any] = {
-                "name": rc.name,
-                "priority": rc.priority,
-                "action": _opt(rc.action),
-                "kind": rc.kind,
-                "rule_count": len(rc.rules),
-            }
+            entry: dict[str, Any] = {"name": rc.name, "priority": rc.priority, "action": _opt(rc.action),
+                                     "kind": rc.kind, "rule_count": len(rc.rules)}
             if include_rules:
                 prefix = " » ".join((policy_name, group.name, rc.name))
-                entry["rules"] = [
-                    rule_to_dict(r, ref=f"{prefix} » {r.name}", ip_groups=ip_groups, sku_tier=policy.sku_tier)
-                    for r in rc.rules
-                ]
+                entry["rules"] = [rule_to_dict(r, ref=f"{prefix} » {r.name}", ip_groups=ip_groups,
+                                               sku_tier=policy.sku_tier) for r in rc.rules]
             collections.append(entry)
-        groups.append(
-            {
-                "name": group.name,
-                "priority": group.priority,
-                "policy": policy_name,
-                "inherited": policy_name != policy.name,
-                "collection_count": len(group.rule_collections),
-                "rule_count": sum(len(rc.rules) for rc in group.rule_collections),
-                "collections": collections,
-            }
-        )
+        groups.append({
+            "name": group.name,
+            "priority": group.priority,
+            "policy": policy_name,
+            "inherited": policy_name != policy.name,
+            "collection_count": len(group.rule_collections),
+            "rule_count": sum(len(rc.rules) for rc in group.rule_collections),
+            "collections": collections,
+        })
     return {
         **_policy_settings(policy),
         "parent": _parent_summary(policy.parent),
@@ -472,14 +427,8 @@ def headers_land_in(rule: Rule, sku_tier: str | None) -> str | None:
     return f"{why}: no traffic this rule matches gets the headers"
 
 
-def rule_to_dict(
-    rule: Rule,
-    *,
-    ref: str,
-    ip_groups: dict[str, IpGroupInfo] | None = None,
-    sku_tier: str | None = None,
-    compact: bool = False,
-) -> dict[str, Any]:
+def rule_to_dict(rule: Rule, *, ref: str, ip_groups: dict[str, IpGroupInfo] | None = None,
+                 sku_tier: str | None = None, compact: bool = False) -> dict[str, Any]:
     """One rule with its ``ref`` (``policy » group » collection » rule``); header values never included.
 
     ``compact`` (the list shape): IP groups as names (the id when unreadable),
@@ -490,11 +439,8 @@ def rule_to_dict(
     dst_groups = [_ip_group_ref(g, ip_groups) for g in rule.destination_ip_groups]
     translated = None
     if rule.translated_address or rule.translated_fqdn or rule.translated_port:
-        translated = {
-            "address": _opt(rule.translated_address),
-            "fqdn": _opt(rule.translated_fqdn),
-            "port": _opt(rule.translated_port),
-        }
+        translated = {"address": _opt(rule.translated_address), "fqdn": _opt(rule.translated_fqdn),
+                      "port": _opt(rule.translated_port)}
     if compact:
         out: dict[str, Any] = {
             "ref": ref,
@@ -507,11 +453,8 @@ def rule_to_dict(
             "destination_fqdns": list(rule.destination_fqdns),
             "destination_ports": list(rule.destination_ports),
         }
-        for key, values in (
-            ("target_urls", rule.target_urls),
-            ("fqdn_tags", rule.fqdn_tags),
-            ("web_categories", rule.web_categories),
-        ):
+        for key, values in (("target_urls", rule.target_urls), ("fqdn_tags", rule.fqdn_tags),
+                            ("web_categories", rule.web_categories)):
             if values:
                 out[key] = list(values)
         if translated is not None:
@@ -544,9 +487,8 @@ def rule_to_dict(
     }
 
 
-def ip_group_to_dict(
-    group: IpGroupInfo, *, used_by: int | None = None, include_addresses: bool = True
-) -> dict[str, Any]:
+def ip_group_to_dict(group: IpGroupInfo, *, used_by: int | None = None,
+                     include_addresses: bool = True) -> dict[str, Any]:
     """One IP group: id, name, location, addresses, how many rules use it."""
     out: dict[str, Any] = {
         "id": group.id,
@@ -568,18 +510,7 @@ def trace_to_dict(trace: Trace, *, full_tree: bool = False) -> dict[str, Any]:
 
 
 __all__ = [
-    "DETAIL_LEVELS",
-    "row_to_dict",
-    "status_to_dict",
-    "iso_utc",
-    "redact",
-    "rule_path",
-    "check_detail",
-    "firewall_name_from_id",
-    "firewall_to_dict",
-    "policy_to_dict",
-    "rule_to_dict",
-    "ip_group_to_dict",
-    "headers_land_in",
-    "trace_to_dict",
+    "DETAIL_LEVELS", "row_to_dict", "status_to_dict", "iso_utc", "redact", "rule_path", "check_detail",
+    "firewall_name_from_id", "firewall_to_dict", "policy_to_dict", "rule_to_dict", "ip_group_to_dict",
+    "headers_land_in", "trace_to_dict",
 ]

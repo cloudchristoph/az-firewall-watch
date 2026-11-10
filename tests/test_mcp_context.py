@@ -1,5 +1,4 @@
 """ContextHolder (mcp_server/context.py) with the ARM loader replaced by a fake."""
-
 from __future__ import annotations
 
 import time
@@ -17,28 +16,13 @@ from viewer.cache import DEFAULT_TTL_SECONDS, CachedSnapshot
 def snapshot(*, age: float = 0.0, with_policy: bool = True) -> CachedSnapshot:
     policy = None
     if with_policy:
-        rule = Rule(
-            name="allow-web",
-            rule_type="NetworkRule",
-            source_addresses=["*"],
-            destination_addresses=["*"],
-            destination_ports=["443"],
-            protocols=["TCP"],
-        )
-        rc = RuleCollection(
-            name="rc-allow",
-            priority=200,
-            action="Allow",
-            rule_collection_type="FirewallPolicyFilterRuleCollection",
-            rules=[rule],
-        )
-        policy = FirewallPolicyInfo(
-            id="/pol",
-            name="fw-pol",
-            rule_collection_groups=[
-                RuleCollectionGroup(id="/rcg", name="rcg-net", priority=100, rule_collections=[rc])
-            ],
-        )
+        rule = Rule(name="allow-web", rule_type="NetworkRule", source_addresses=["*"],
+                    destination_addresses=["*"], destination_ports=["443"], protocols=["TCP"])
+        rc = RuleCollection(name="rc-allow", priority=200, action="Allow",
+                            rule_collection_type="FirewallPolicyFilterRuleCollection", rules=[rule])
+        policy = FirewallPolicyInfo(id="/pol", name="fw-pol",
+                                    rule_collection_groups=[RuleCollectionGroup(id="/rcg", name="rcg-net", priority=100,
+                                                                                 rule_collections=[rc])])
     fw = FirewallInfo(id="/fw", name="fw-hub", subscription_id="sub", resource_group="rg", location="gwc")
     return CachedSnapshot(firewall=fw, policy=policy, fetched_at=time.time() - age)
 
@@ -61,19 +45,9 @@ class FakeLoader:
 
 
 def logged_row(structured_record, rule: str = "allow-web"):
-    rec = structured_record(
-        "AZFWNetworkRule",
-        Protocol="TCP",
-        SourceIp="10.0.0.1",
-        SourcePort=1,
-        DestinationIp="10.1.0.1",
-        DestinationPort=443,
-        Action="Allow",
-        Policy="fw-pol",
-        RuleCollectionGroup="rcg-net",
-        RuleCollection="rc-allow",
-        Rule=rule,
-    )
+    rec = structured_record("AZFWNetworkRule", Protocol="TCP", SourceIp="10.0.0.1", SourcePort=1,
+                            DestinationIp="10.1.0.1", DestinationPort=443, Action="Allow", Policy="fw-pol",
+                            RuleCollectionGroup="rcg-net", RuleCollection="rc-allow", Rule=rule)
     row = parse_record(rec)
     assert row is not None
     buf = LogBuffer(10)
@@ -107,7 +81,7 @@ async def test_waits_for_firewall_id_then_loads(firewall_id):
     assert holder.known_rules == {("rcg-net", "rc-allow", "allow-web")}
     status = holder.status()
     assert status["reason"] is None and status["age_s"] is not None and status["fetched_at"].endswith("Z")
-    holder.set_firewall_id(firewall_id.replace("FW-HUB", "FW-OTHER"))  # only the first id counts
+    holder.set_firewall_id(firewall_id.replace("FW-HUB", "FW-OTHER"))   # only the first id counts
     await holder.wait_idle()
     assert len(loader.calls) == 1 and holder.firewall_id == firewall_id
 
@@ -166,12 +140,11 @@ async def test_snapshot_without_policy_is_loaded(firewall_id):
 
 # ── automatic refresh on an unknown rule ─────────────────────────────────────
 
-
 async def test_unknown_rule_refreshes_once_per_minute(firewall_id, structured_record):
     loader = FakeLoader(snapshot(age=120), snapshot(age=120), snapshot())
     holder = ContextHolder(enabled=True, firewall_id=firewall_id, loader=loader)
     await holder.refresh(force=False)
-    assert holder.note_rows(logged_row(structured_record, "allow-web")) is False  # known rule
+    assert holder.note_rows(logged_row(structured_record, "allow-web")) is False   # known rule
     assert holder.note_rows(logged_row(structured_record, "brand-new")) is True
     await holder.wait_idle()
     assert loader.calls[-1] == (firewall_id, True)
@@ -212,7 +185,7 @@ async def test_expired_cache_refreshes(firewall_id):
     assert holder.check_cache_age() is True
     await holder.wait_idle()
     assert loader.calls[-1] == (firewall_id, True)
-    assert holder.check_cache_age() is False  # fresh now
+    assert holder.check_cache_age() is False   # fresh now
 
 
 async def test_default_loader_is_viewer_management(monkeypatch, firewall_id):
@@ -243,7 +216,7 @@ async def test_aclose_cancels_a_running_load(firewall_id):
     holder.start()
     await asyncio.wait_for(started.wait(), 1)
     await holder.aclose()
-    assert holder.state == "loading" and holder.reason is None  # cancelled, not failed
+    assert holder.state == "loading" and holder.reason is None   # cancelled, not failed
 
 
 @pytest.mark.parametrize("enabled, fid, expected", [(False, None, "off"), (True, None, "waiting_for_firewall_id")])

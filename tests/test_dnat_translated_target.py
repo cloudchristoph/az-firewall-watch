@@ -1,5 +1,4 @@
 """The translated target of a DNAT rule on the Policy tab (issue #59)."""
-
 from __future__ import annotations
 
 import asyncio
@@ -19,14 +18,8 @@ def _summary(rule: Rule, collection_type: str = "FirewallPolicyNatRuleCollection
 
 
 def _dnat(**kw) -> Rule:
-    base = dict(
-        name="web-in",
-        rule_type="NatRule",
-        source_addresses=["*"],
-        destination_addresses=["198.51.100.10"],
-        destination_ports=["443"],
-        protocols=["TCP"],
-    )
+    base = dict(name="web-in", rule_type="NatRule", source_addresses=["*"],
+                destination_addresses=["198.51.100.10"], destination_ports=["443"], protocols=["TCP"])
     base.update(kw)
     return Rule(**base)
 
@@ -69,39 +62,14 @@ def test_other_rule_kinds_get_no_translated_line():
 
 
 def test_the_fields_are_read_from_arm():
-    group = {
-        "id": f"{POLICY_ID}/ruleCollectionGroups/g",
-        "name": "g",
-        "properties": {
-            "priority": 100,
-            "ruleCollections": [
-                {
-                    "name": "dnat",
-                    "priority": 100,
-                    "ruleCollectionType": "FirewallPolicyNatRuleCollection",
-                    "action": {"type": "Dnat"},
-                    "rules": [
-                        {
-                            "name": "web-in",
-                            "ruleType": "NatRule",
-                            "sourceAddresses": ["*"],
-                            "destinationAddresses": ["198.51.100.10"],
-                            "destinationPorts": ["443"],
-                            "ipProtocols": ["TCP"],
-                            "translatedFqdn": "app.contoso.com",
-                            "translatedPort": "8443",
-                        }
-                    ],
-                }
-            ],
-        },
-    }
-    arm = FakeArm(
-        {
-            POLICY_ID: {"id": POLICY_ID, "name": "p", "properties": {}},
-            f"{POLICY_ID}/ruleCollectionGroups": {"value": [group]},
-        }
-    )
+    group = {"id": f"{POLICY_ID}/ruleCollectionGroups/g", "name": "g", "properties": {"priority": 100, "ruleCollections": [
+        {"name": "dnat", "priority": 100, "ruleCollectionType": "FirewallPolicyNatRuleCollection",
+         "action": {"type": "Dnat"},
+         "rules": [{"name": "web-in", "ruleType": "NatRule", "sourceAddresses": ["*"],
+                    "destinationAddresses": ["198.51.100.10"], "destinationPorts": ["443"], "ipProtocols": ["TCP"],
+                    "translatedFqdn": "app.contoso.com", "translatedPort": "8443"}]}]}}
+    arm = FakeArm({POLICY_ID: {"id": POLICY_ID, "name": "p", "properties": {}},
+                   f"{POLICY_ID}/ruleCollectionGroups": {"value": [group]}})
     pol = asyncio.run(fetch_policy(arm, POLICY_ID))
     rule = pol.rule_collection_groups[0].rule_collections[0].rules[0]
     assert rule.translated_fqdn == "app.contoso.com" and rule.translated_port == "8443" and not rule.translated_address

@@ -62,13 +62,13 @@ def _highlight(text: str, term: str) -> Text:
 
 _CATEGORY_STYLES: dict[str, str] = {
     "networkrule": "cyan",
-    "apprule": "bright_blue",
-    "natrule": "yellow",
-    "dnsquery": "dark_orange3",
-    "dnsfailure": "bold dark_orange3",
-    "flowtrace": "bright_black",
-    "fatflow": "bold cyan",
-    "idps": "bold red",
+    "apprule":     "bright_blue",
+    "natrule":     "yellow",
+    "dnsquery":    "dark_orange3",
+    "dnsfailure":  "bold dark_orange3",
+    "flowtrace":   "bright_black",
+    "fatflow":     "bold cyan",
+    "idps":        "bold red",
     "threatintel": "bold magenta",
 }
 
@@ -90,11 +90,10 @@ def _category_text(category: str, term: str = "") -> Text:
 # the bidi embeddings, overrides and isolates, which reorder a row on screen.
 DISPLAY_PLACEHOLDER = "�"
 _UNSAFE_CODEPOINTS = (
-    *range(0x00, 0x09),
-    *range(0x0A, 0x20),  # C0 controls, tab aside
-    *range(0x7F, 0xA0),  # DEL and C1 controls
-    *range(0x202A, 0x202F),  # bidi embeddings and overrides
-    *range(0x2066, 0x206A),  # bidi isolates
+    *range(0x00, 0x09), *range(0x0A, 0x20),   # C0 controls, tab aside
+    *range(0x7F, 0xA0),                       # DEL and C1 controls
+    *range(0x202A, 0x202F),                   # bidi embeddings and overrides
+    *range(0x2066, 0x206A),                   # bidi isolates
 )
 _DISPLAY_TABLE = {cp: DISPLAY_PLACEHOLDER for cp in _UNSAFE_CODEPOINTS} | {0x09: " "}
 
@@ -276,7 +275,7 @@ def address_matches(needle: str, value: str) -> bool:
     if "/" in needle:
         net = parse_network(needle)
         if net is None:
-            return needle in haystack  # not a CIDR after all: plain text
+            return needle in haystack   # not a CIDR after all: plain text
         addr = parse_address(haystack)
         return addr is not None and addr.version == net.version and addr in net
     if needle in haystack:
@@ -293,7 +292,7 @@ def _parse_eventhub_endpoint(conn_str: str) -> tuple[str, str]:
     for part in conn_str.split(";"):
         low = part.lower()
         if low.startswith("endpoint=sb://"):
-            namespace = part[len("Endpoint=sb://") :].rstrip("/")
+            namespace = part[len("Endpoint=sb://"):].rstrip("/")
         elif low.startswith("entitypath="):
-            hub = part[part.index("=") + 1 :]
+            hub = part[part.index("=") + 1:]
     return namespace or "unknown", hub or "unknown"

@@ -7,7 +7,6 @@ and the Policy tab's reveal-on-request UI (hidden by default, "v" toggles,
 a re-render hides again, the tree label never carries names or values, and
 the three SKU/TLS scope lines).
 """
-
 from __future__ import annotations
 
 import time
@@ -39,7 +38,6 @@ RULE_REF = "fwp-hub-premium-gwc|rcg-app|rc-app|insert-headers"
 
 
 # ── ARM parsing ─────────────────────────────────────────────────────────────
-
 
 def test_parse_rule_headers_present_and_terminate_tls_true():
     raw = {
@@ -96,33 +94,15 @@ def cache_file(tmp_path, monkeypatch):
 
 
 def test_cache_round_trip_keeps_http_headers_as_httpheader_objects(cache_file):
-    fw = FirewallInfo(
-        id=CACHE_FW_ID, name="fw", subscription_id="s", resource_group="rg", location="gwc", sku_tier="Premium"
-    )
-    rule = Rule(
-        name="insert-headers",
-        rule_type="ApplicationRule",
-        protocols=["Https"],
-        http_headers=[HttpHeader(name="X-Tenant-Id", value=TENANT_ID_VALUE)],
-        terminate_tls=True,
-    )
-    policy = FirewallPolicyInfo(
-        id="/p",
-        name="pol",
-        sku_tier="Premium",
-        rule_collection_groups=[
-            RuleCollectionGroup(
-                id="/g",
-                name="rcg",
-                priority=100,
-                rule_collections=[
-                    RuleCollection(
-                        name="rc", priority=200, action="Allow", rule_collection_type="Filter", rules=[rule]
-                    ),
-                ],
-            ),
-        ],
-    )
+    fw = FirewallInfo(id=CACHE_FW_ID, name="fw", subscription_id="s", resource_group="rg", location="gwc",
+                      sku_tier="Premium")
+    rule = Rule(name="insert-headers", rule_type="ApplicationRule", protocols=["Https"],
+                http_headers=[HttpHeader(name="X-Tenant-Id", value=TENANT_ID_VALUE)], terminate_tls=True)
+    policy = FirewallPolicyInfo(id="/p", name="pol", sku_tier="Premium", rule_collection_groups=[
+        RuleCollectionGroup(id="/g", name="rcg", priority=100, rule_collections=[
+            RuleCollection(name="rc", priority=200, action="Allow", rule_collection_type="Filter", rules=[rule]),
+        ]),
+    ])
     snap = cache.CachedSnapshot(firewall=fw, policy=policy, fetched_at=time.time())
     cache.save(CACHE_FW_ID, snap)
 
@@ -136,10 +116,8 @@ def test_cache_round_trip_keeps_http_headers_as_httpheader_objects(cache_file):
 
 # ── Policy tab UI ─────────────────────────────────────────────────────────────
 
-
-def _apprule_snapshot(
-    *, sku_tier: str = "Premium", terminate_tls: bool = False, protocols: tuple[str, ...] = ("Https",)
-) -> cache.CachedSnapshot:
+def _apprule_snapshot(*, sku_tier: str = "Premium", terminate_tls: bool = False,
+                      protocols: tuple[str, ...] = ("Https",)) -> cache.CachedSnapshot:
     """The shared 0.6.0 test snapshot plus one application rule that inserts
     two HTTP headers — one with a plausible tenant-id value, one whose value
     contains Rich markup characters to prove reveal escapes it."""
@@ -148,16 +126,9 @@ def _apprule_snapshot(
         HttpHeader(name="X-Tenant-Id", value=TENANT_ID_VALUE),
         HttpHeader(name="X-Forwarded-Tenant", value=MARKUP_VALUE),
     ]
-    rule = Rule(
-        name="insert-headers",
-        rule_type="ApplicationRule",
-        source_addresses=["*"],
-        destination_fqdns=["*.example.com"],
-        destination_ports=["443"],
-        protocols=list(protocols),
-        http_headers=headers,
-        terminate_tls=terminate_tls,
-    )
+    rule = Rule(name="insert-headers", rule_type="ApplicationRule", source_addresses=["*"],
+                destination_fqdns=["*.example.com"], destination_ports=["443"],
+                protocols=list(protocols), http_headers=headers, terminate_tls=terminate_tls)
     rc = RuleCollection(name="rc-app", priority=100, action="Allow", rule_collection_type="Filter", rules=[rule])
     rcg = RuleCollectionGroup(id="/p/app", name="rcg-app", priority=1000, rule_collections=[rc])
     snap.policy.sku_tier = sku_tier
@@ -306,9 +277,8 @@ async def test_rule_tree_label_never_carries_header_names_or_values(structured_r
         assert TENANT_ID_VALUE not in label and MARKUP_VALUE not in label
 
 
-async def test_trace_tree_names_inserted_headers_under_the_logged_rule_never_values(
-    structured_record, apprule_mgmt, firewall_id
-):
+async def test_trace_tree_names_inserted_headers_under_the_logged_rule_never_values(structured_record, apprule_mgmt,
+                                                                                    firewall_id):
     """The header leaf moved out of the tree in the trace_screen redesign
     (docs/detail-dialog-plan.md, package 4): names now live in the selection
     detail under the tree, never in the tree label — and values never
@@ -324,21 +294,11 @@ async def test_trace_tree_names_inserted_headers_under_the_logged_rule_never_val
     async with app.run_test(size=(160, 45)) as pilot:
         await pilot.pause()
         await _load(app, pilot, firewall_id)
-        row = parse_record(
-            structured_record(
-                "AZFWApplicationRule",
-                Protocol="HTTPS",
-                SourceIp="10.3.5.4",
-                SourcePort=1,
-                DestinationPort=443,
-                Fqdn="www.example.com",
-                Action="Allow",
-                Policy="fwp-hub-premium-gwc",
-                RuleCollectionGroup="rcg-app",
-                RuleCollection="rc-app",
-                Rule="insert-headers",
-            )
-        )
+        row = parse_record(structured_record(
+            "AZFWApplicationRule", Protocol="HTTPS", SourceIp="10.3.5.4", SourcePort=1, DestinationPort=443,
+            Fqdn="www.example.com", Action="Allow", Policy="fwp-hub-premium-gwc",
+            RuleCollectionGroup="rcg-app", RuleCollection="rc-app", Rule="insert-headers",
+        ))
         screen = await _open_trace(app, pilot, row)
         tree = screen.query_one("#trace-tree", TreeWidget)
         labels = []
@@ -373,36 +333,20 @@ async def test_revealed_value_with_markup_characters_is_escaped(structured_recor
         assert "[b]x[/]" not in details
 
 
-@pytest.mark.parametrize(
-    "sku_tier, terminate_tls, protocols, expected",
-    [
-        # a rule that matches HTTP and HTTPS: the headers land in HTTP at least
-        ("Standard", False, ("Http", "Https"), "HTTPS on Standard/Basic: headers are inserted into HTTP only"),
-        (
-            "Premium",
-            False,
-            ("Http", "Https"),
-            "HTTPS without TLS inspection on this rule: headers are inserted into HTTP only",
-        ),
-        ("Premium", True, ("Http", "Https"), "inserted into HTTP and TLS-inspected HTTPS"),
-        # an HTTPS-only rule matches no HTTP, so "HTTP only" would name traffic it never sees
-        ("Standard", False, ("Https",), "HTTPS on Standard/Basic: no traffic this rule matches gets the headers"),
-        (
-            "Premium",
-            False,
-            ("Https",),
-            "HTTPS without TLS inspection on this rule: no traffic this rule matches gets the headers",
-        ),
-        ("Premium", True, ("Https",), "inserted into TLS-inspected HTTPS"),
-        ("", False, ("Https",), "policy SKU unknown: whether HTTPS gets the headers cannot be told from here"),
-    ],
-)
-async def test_sku_and_tls_scope_line(
-    structured_record, monkeypatch, firewall_id, sku_tier, terminate_tls, protocols, expected
-):
-    _install_snapshot(
-        monkeypatch, _apprule_snapshot(sku_tier=sku_tier, terminate_tls=terminate_tls, protocols=protocols)
-    )
+@pytest.mark.parametrize("sku_tier, terminate_tls, protocols, expected", [
+    # a rule that matches HTTP and HTTPS: the headers land in HTTP at least
+    ("Standard", False, ("Http", "Https"), "HTTPS on Standard/Basic: headers are inserted into HTTP only"),
+    ("Premium", False, ("Http", "Https"), "HTTPS without TLS inspection on this rule: headers are inserted into HTTP only"),
+    ("Premium", True, ("Http", "Https"), "inserted into HTTP and TLS-inspected HTTPS"),
+    # an HTTPS-only rule matches no HTTP, so "HTTP only" would name traffic it never sees
+    ("Standard", False, ("Https",), "HTTPS on Standard/Basic: no traffic this rule matches gets the headers"),
+    ("Premium", False, ("Https",), "HTTPS without TLS inspection on this rule: no traffic this rule matches gets the headers"),
+    ("Premium", True, ("Https",), "inserted into TLS-inspected HTTPS"),
+    ("", False, ("Https",), "policy SKU unknown: whether HTTPS gets the headers cannot be told from here"),
+])
+async def test_sku_and_tls_scope_line(structured_record, monkeypatch, firewall_id, sku_tier, terminate_tls, protocols,
+                                      expected):
+    _install_snapshot(monkeypatch, _apprule_snapshot(sku_tier=sku_tier, terminate_tls=terminate_tls, protocols=protocols))
     app = FirewallLogApp()
     async with app.run_test(size=(160, 45)) as pilot:
         await pilot.pause()

@@ -3,7 +3,6 @@
 Azure CLI orchestration functions are replaced at the ``setup.screens``
 import site so the wizard can be driven end-to-end without Azure.
 """
-
 from __future__ import annotations
 
 import asyncio
@@ -41,15 +40,12 @@ from setup.services import get_existing_conn_str, has_entra_config
 
 CONN = "Endpoint=sb://ns.servicebus.windows.net/;SharedAccessKeyName=l;SharedAccessKey=K;EntityPath=h"
 FW = {
-    "name": "fw-hub",
-    "rg": "rg-hub",
-    "location": "germanywestcentral",
+    "name": "fw-hub", "rg": "rg-hub", "location": "germanywestcentral",
     "id": "/subscriptions/s1/resourceGroups/rg-hub/providers/Microsoft.Network/azureFirewalls/fw-hub",
 }
 
 
 # ── helpers ──────────────────────────────────────────────────────────────────
-
 
 async def wait_until(pilot, cond: Callable[[], bool], timeout: float = 5.0) -> None:
     loop = asyncio.get_event_loop()
@@ -155,7 +151,6 @@ def fake_ops(monkeypatch):
 
 # ── Welcome ──────────────────────────────────────────────────────────────────
 
-
 async def test_welcome_defaults_to_discover(env_file):
     app = WizardApp(env_file)
     async with app.run_test(size=(100, 40)) as pilot:
@@ -222,7 +217,6 @@ async def test_welcome_keyboard_walks_past_section_headers(env_file, fake_ops):
 
 
 # ── Paste connection string ──────────────────────────────────────────────────
-
 
 class TestPasteConnection:
     async def _open(self, app, pilot):
@@ -297,7 +291,6 @@ class TestPasteConnection:
 
 # ── Enter existing hub (Entra) ───────────────────────────────────────────────
 
-
 class TestEnterExistingHub:
     async def _open(self, app, pilot):
         await pilot.pause()
@@ -365,7 +358,6 @@ class TestEnterExistingHub:
 
 # ── Auth method modal ────────────────────────────────────────────────────────
 
-
 class TestAuthMethodScreen:
     async def _ask(self, app, pilot, action: Callable[[], Any]):
         result: list = []
@@ -410,7 +402,6 @@ class TestAuthMethodScreen:
 
 # ── Policy context modal ─────────────────────────────────────────────────────
 
-
 class TestPolicyContextScreen:
     async def _ask(self, app, pilot, action: Callable[[], Any]):
         result: list = []
@@ -450,7 +441,6 @@ class TestPolicyContextScreen:
 
 # ── Confirm rule creation modal ──────────────────────────────────────────────
 
-
 class TestConfirmCreateRuleScreen:
     @pytest.mark.parametrize("key", ["escape", "q"])
     async def test_close_keys_decline(self, env_file, key):
@@ -470,7 +460,6 @@ class TestConfirmCreateRuleScreen:
 
 
 # ── Pick existing hub (discover) ─────────────────────────────────────────────
-
 
 class TestPickExisting:
     async def _open_and_scan(self, app, pilot):
@@ -610,8 +599,7 @@ class TestPickExisting:
 
     async def test_sas_cli_failure_names_the_reason(self, env_file, fake_ops):
         fake_ops["sas_conn"] = subprocess.CalledProcessError(
-            1,
-            ["/usr/bin/az", "eventhubs", "eventhub", "authorization-rule", "create"],
+            1, ["/usr/bin/az", "eventhubs", "eventhub", "authorization-rule", "create"],
             stderr="ERROR: (AuthorizationFailed) The client does not have authorization.\n",
         )
         app = WizardApp(env_file)
@@ -681,7 +669,6 @@ class TestPickExisting:
 
 
 # ── Deploy new hub ───────────────────────────────────────────────────────────
-
 
 class TestDeployNew:
     async def _to_naming(self, app, pilot):
@@ -753,13 +740,8 @@ class TestDeployNew:
             await _pick_radio(pilot, app.screen, "#opt-sas")
         await pilot.click("#btn-next")
         await _pass_policy_context(app, pilot, enable=(auth != "entra"))
-        await wait_until(
-            pilot,
-            lambda: (
-                isinstance(app.screen, DeployNewScreen)
-                and app.screen.query_one(ContentSwitcher).current == "step-summary"
-            ),
-        )
+        await wait_until(pilot, lambda: isinstance(app.screen, DeployNewScreen)
+                         and app.screen.query_one(ContentSwitcher).current == "step-summary")
         await pilot.pause()
 
     async def test_summary_reflects_choices(self, env_file, fake_ops):
@@ -820,13 +802,8 @@ class TestDeployNew:
             await pilot.pause()
             await pilot.click("#btn-next")
             await _pass_policy_context(app, pilot)
-            await wait_until(
-                pilot,
-                lambda: (
-                    isinstance(app.screen, DeployNewScreen)
-                    and app.screen.query_one(ContentSwitcher).current == "step-summary"
-                ),
-            )
+            await wait_until(pilot, lambda: isinstance(app.screen, DeployNewScreen)
+                             and app.screen.query_one(ContentSwitcher).current == "step-summary")
             await pilot.pause()
             assert "using existing" not in str(app.screen.query_one("#summary-text", Static).content)
             await pilot.click("#btn-deploy")
@@ -850,8 +827,7 @@ class TestDeployNew:
     async def test_deploy_failure_names_the_cli_reason(self, env_file, fake_ops):
         """A failed az call must tell the user why, not only that it returned 1."""
         fake_ops["deploy_conn"] = subprocess.CalledProcessError(
-            1,
-            ["/usr/bin/az", "eventhubs", "eventhub", "create"],
+            1, ["/usr/bin/az", "eventhubs", "eventhub", "create"],
             stderr="ERROR: (MessagingGatewayBadRequest) retention not valid for the Basic tier.\nCode: X\n",
         )
         app = WizardApp(env_file)
@@ -1033,14 +1009,11 @@ async def test_welcome_tab_focuses_next_before_quit(env_file):
         assert app.focused.id == "btn-quit"
 
 
-@pytest.mark.parametrize(
-    "screen_type,input_id,values",
-    [
-        (PasteConnectionScreen, "inp-conn", {"inp-conn": CONN}),
-        (EnterExistingHubScreen, "inp-ns", {"inp-ns": "ns.servicebus.windows.net", "inp-hub": "logs"}),
-        (EnterExistingHubScreen, "inp-hub", {"inp-ns": "ns.servicebus.windows.net", "inp-hub": "logs"}),
-    ],
-)
+@pytest.mark.parametrize("screen_type,input_id,values", [
+    (PasteConnectionScreen, "inp-conn", {"inp-conn": CONN}),
+    (EnterExistingHubScreen, "inp-ns", {"inp-ns": "ns.servicebus.windows.net", "inp-hub": "logs"}),
+    (EnterExistingHubScreen, "inp-hub", {"inp-ns": "ns.servicebus.windows.net", "inp-hub": "logs"}),
+])
 async def test_input_enter_validates_then_continues(env_file, screen_type, input_id, values):
     app = WizardApp(env_file)
     async with app.run_test(size=(100, 40)) as pilot:

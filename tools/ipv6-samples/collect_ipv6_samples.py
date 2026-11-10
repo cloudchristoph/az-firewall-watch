@@ -56,9 +56,8 @@ def _has_ipv6(record: dict) -> bool:
     return False
 
 
-def collect(
-    kind: str, conn: str, hub: str, out: Path, starting: dt.datetime | str, duration: float, idle_timeout: float
-) -> dict[str, int]:
+def collect(kind: str, conn: str, hub: str, out: Path, starting: dt.datetime | str,
+            duration: float, idle_timeout: float) -> dict[str, int]:
     counts: dict[str, int] = {}
     files: dict[str, object] = {}
     target = out / kind
@@ -103,21 +102,16 @@ def collect(
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--out", default=".", help="output directory (default: current)")
-    ap.add_argument(
-        "--minutes", type=float, default=60, help="read events enqueued within the last N minutes (default 60)"
-    )
+    ap.add_argument("--minutes", type=float, default=60, help="read events enqueued within the last N minutes (default 60)")
     ap.add_argument("--from-latest", action="store_true", help="ignore history, read only new events")
     ap.add_argument("--duration", type=float, default=300, help="max seconds to read per hub (default 300)")
-    ap.add_argument(
-        "--idle-timeout", type=float, default=30, help="stop a hub after N seconds without events (default 30)"
-    )
+    ap.add_argument("--idle-timeout", type=float, default=30, help="stop a hub after N seconds without events (default 30)")
     ap.add_argument("--only", choices=list(HUBS), help="read only this hub")
     args = ap.parse_args()
 
     out = Path(args.out)
-    starting: dt.datetime | str = (
-        "@latest" if args.from_latest else (dt.datetime.now(dt.UTC) - dt.timedelta(minutes=args.minutes))
-    )
+    starting: dt.datetime | str = "@latest" if args.from_latest else (
+        dt.datetime.now(dt.UTC) - dt.timedelta(minutes=args.minutes))
 
     total: dict[str, dict[str, int]] = {}
     for kind, (env_name, hub) in HUBS.items():

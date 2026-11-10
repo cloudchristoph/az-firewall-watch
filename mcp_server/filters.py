@@ -9,7 +9,6 @@ rule path, free text, a time window and id cursors.
 Caller mistakes raise ``ValueError`` with a sentence that says what was wrong;
 the tools turn it into an error result the model can read.
 """
-
 from __future__ import annotations
 
 import re
@@ -24,17 +23,8 @@ from viewer.config import CATEGORY_GROUPS
 from .buffer import BufferedRow, parse_log_time
 
 # Every display category the parser produces, lower-case.
-KNOWN_CATEGORIES = (
-    "networkrule",
-    "apprule",
-    "natrule",
-    "dnsquery",
-    "dnsfailure",
-    "idps",
-    "threatintel",
-    "flowtrace",
-    "fatflow",
-)
+KNOWN_CATEGORIES = ("networkrule", "apprule", "natrule", "dnsquery", "dnsfailure",
+                    "idps", "threatintel", "flowtrace", "fatflow")
 
 _DURATION_RE = re.compile(r"^\s*(\d+(?:\.\d+)?)\s*([smhd])\s*$", re.IGNORECASE)
 _UNIT_SECONDS = {"s": 1, "m": 60, "h": 3600, "d": 86400}
@@ -59,16 +49,13 @@ def parse_time(value: str, *, now: float, name: str) -> float:
         return now
     epoch = parse_log_time(text)
     if epoch is None:
-        raise ValueError(
-            f"{name} {value!r} is neither a relative duration (30s, 15m, 2h, 1d) nor an "
-            f"ISO 8601 timestamp (2026-10-15T08:00:00Z)."
-        )
+        raise ValueError(f"{name} {value!r} is neither a relative duration (30s, 15m, 2h, 1d) nor an "
+                         f"ISO 8601 timestamp (2026-10-15T08:00:00Z).")
     return epoch
 
 
-def parse_window(
-    since: str | None, until: str | None, *, now: float | None = None
-) -> tuple[float | None, float | None]:
+def parse_window(since: str | None, until: str | None, *, now: float | None = None
+                 ) -> tuple[float | None, float | None]:
     """``(since, until)`` as epoch seconds; either side ``None`` when not given."""
     ref = time.time() if now is None else now
     start = parse_time(since, now=ref, name="since") if since not in (None, "") else None
@@ -92,8 +79,7 @@ def _category_entries(category: str | Iterable[str] | None) -> tuple[str, ...]:
         if text not in CATEGORY_GROUPS and not any(text in known for known in KNOWN_CATEGORIES):
             raise ValueError(
                 f"Unknown category {item!r}. Use a preset ({', '.join(sorted(CATEGORY_GROUPS))}) or one of "
-                "NetworkRule, AppRule, NATRule, DnsQuery, DnsFailure, IDPS, ThreatIntel, FlowTrace, FatFlow."
-            )
+                "NetworkRule, AppRule, NATRule, DnsQuery, DnsFailure, IDPS, ThreatIntel, FlowTrace, FatFlow.")
         out.append(text)
     return tuple(dict.fromkeys(out))
 
@@ -101,9 +87,7 @@ def _category_entries(category: str | Iterable[str] | None) -> tuple[str, ...]:
 def _address_needle(value: str | None, name: str) -> str:
     text = (value or "").strip().lower()
     if "/" in text and parse_network(text) is None:
-        raise ValueError(
-            f"{name} {value!r} looks like a CIDR but is not a valid network (e.g. 10.0.0.0/16, fd10::/16)."
-        )
+        raise ValueError(f"{name} {value!r} looks like a CIDR but is not a valid network (e.g. 10.0.0.0/16, fd10::/16).")
     return text
 
 
@@ -134,24 +118,11 @@ class LogFilter:
     before_id: int | None = None
 
     @classmethod
-    def build(
-        cls,
-        *,
-        category: str | Iterable[str] | None = None,
-        action: str | None = None,
-        source: str | None = None,
-        destination: str | None = None,
-        protocol: str | None = None,
-        dst_port: str | int | None = None,
-        src_port: str | int | None = None,
-        rule: str | None = None,
-        text: str | None = None,
-        since: str | None = None,
-        until: str | None = None,
-        after_id: int | None = None,
-        before_id: int | None = None,
-        now: float | None = None,
-    ) -> LogFilter:
+    def build(cls, *, category: str | Iterable[str] | None = None, action: str | None = None,
+              source: str | None = None, destination: str | None = None, protocol: str | None = None,
+              dst_port: str | int | None = None, src_port: str | int | None = None, rule: str | None = None,
+              text: str | None = None, since: str | None = None, until: str | None = None,
+              after_id: int | None = None, before_id: int | None = None, now: float | None = None) -> LogFilter:
         start, end = parse_window(since, until, now=now)
         return cls(
             categories=_category_entries(category),
@@ -182,33 +153,20 @@ class LogFilter:
 
     def matches(self, item: BufferedRow) -> bool:
         row = item.row
-        if self.after_id is not None and item.id <= self.after_id:
-            return False
-        if self.before_id is not None and item.id >= self.before_id:
-            return False
-        if self.categories and not self._category_ok(row.category):
-            return False
-        if self.source and not address_matches(self.source, row.sourceip):
-            return False
-        if self.destination and not address_matches(self.destination, row.targetip):
-            return False
-        if self.action and self.action not in row.action.lower():
-            return False
-        if self.protocol and self.protocol not in row.protocol.lower():
-            return False
-        if self.dst_port and self.dst_port not in row.targetport.lower():
-            return False
-        if self.src_port and self.src_port not in row.srcport.lower():
-            return False
-        if self.rule and self.rule not in row.policy.lower():
-            return False
-        if self.since is not None and item.effective_time < self.since:
-            return False
-        if self.until is not None and item.effective_time > self.until:
-            return False
-        if self.text and not any(
-            self.text in str(getattr(row, f.name) or "").lower() for f in fields(row) if f.name != "rowid"
-        ):
+        if self.after_id is not None and item.id <= self.after_id: return False
+        if self.before_id is not None and item.id >= self.before_id: return False
+        if self.categories and not self._category_ok(row.category): return False
+        if self.source and not address_matches(self.source, row.sourceip): return False
+        if self.destination and not address_matches(self.destination, row.targetip): return False
+        if self.action and self.action not in row.action.lower(): return False
+        if self.protocol and self.protocol not in row.protocol.lower(): return False
+        if self.dst_port and self.dst_port not in row.targetport.lower(): return False
+        if self.src_port and self.src_port not in row.srcport.lower(): return False
+        if self.rule and self.rule not in row.policy.lower(): return False
+        if self.since is not None and item.effective_time < self.since: return False
+        if self.until is not None and item.effective_time > self.until: return False
+        if self.text and not any(self.text in str(getattr(row, f.name) or "").lower()
+                                 for f in fields(row) if f.name != "rowid"):
             return False
         return True
 

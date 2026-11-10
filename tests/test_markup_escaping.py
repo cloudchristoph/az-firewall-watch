@@ -6,7 +6,6 @@ through Rich's escape into a ``Static`` and either crashed the Firewall tab
 (``MarkupError`` on every start while the tag existed) or rendered a click
 action or a terminal hyperlink.
 """
-
 from __future__ import annotations
 
 import pytest
@@ -68,7 +67,6 @@ def test_bracketed_ipv6_keeps_its_brackets():
 
 # ── the Firewall tab's real render path ──────────────────────────────────────
 
-
 class _FirewallApp(App):
     def compose(self) -> ComposeResult:
         yield FirewallView(id="firewall-view")
@@ -82,27 +80,12 @@ def _plain(widget: Static) -> str:
 async def test_firewall_tab_shows_hostile_tags_and_names_as_text():
     tags = {f"t{i}": payload for i, payload in enumerate(PAYLOADS)}
     tags["[/key"] = "v"
-    fw = FirewallInfo(
-        id="/fw",
-        name="fw[/x",
-        subscription_id="s",
-        resource_group="rg[X=:]",
-        location="gwc",
-        sku_tier="Premium",
-        tags=tags,
-        provisioning_state="[ @click=app.quit]Failed[/]",
-        additional_properties={"Custom.Key": "[/x", "Network.SNAT.PrivateRanges": "[$var]"},
-        private_ips=["10.2.0.4"],
-    )
-    policy = FirewallPolicyInfo(
-        id="/p",
-        name="[/policy",
-        sku_tier="Premium",
-        threat_intel_mode="[X=:]",
-        dns_proxy=True,
-        dns_servers=["[/dns"],
-        tls_ca_name='[link="https://e"]ca[/]',
-    )
+    fw = FirewallInfo(id="/fw", name="fw[/x", subscription_id="s", resource_group="rg[X=:]", location="gwc",
+                      sku_tier="Premium", tags=tags, provisioning_state="[ @click=app.quit]Failed[/]",
+                      additional_properties={"Custom.Key": "[/x", "Network.SNAT.PrivateRanges": "[$var]"},
+                      private_ips=["10.2.0.4"])
+    policy = FirewallPolicyInfo(id="/p", name="[/policy", sku_tier="Premium", threat_intel_mode="[X=:]",
+                                dns_proxy=True, dns_servers=["[/dns"], tls_ca_name='[link="https://e"]ca[/]')
     app = _FirewallApp()
     async with app.run_test(size=(200, 60)) as pilot:
         view = app.query_one(FirewallView)
@@ -139,15 +122,9 @@ def test_row_width_follows_the_textual_parse():
 
 # ── Policy tab and detail dialog formatting ──────────────────────────────────
 
-
 def test_policy_rule_summary_shows_hostile_names_as_text():
-    rule = Rule(
-        name="[/rule",
-        rule_type="ApplicationRule",
-        protocols=["[X=:]"],
-        destination_fqdns=["[ @click=app.quit]x[/]"],
-        source_addresses=["[$var]"],
-    )
+    rule = Rule(name="[/rule", rule_type="ApplicationRule", protocols=["[X=:]"],
+                destination_fqdns=["[ @click=app.quit]x[/]"], source_addresses=["[$var]"])
     rule.http_headers = []
     rc = RuleCollection(name="[/rc", priority=100, action="Allow", rule_collection_type="Filter", rules=[rule])
     rcg = RuleCollectionGroup(id="/g", name='[link="https://e"]g[/]', priority=1, rule_collections=[rc])
@@ -165,23 +142,13 @@ def test_detail_border_title_is_textual_safe():
 
 
 def test_detail_header_is_rich_safe():
-    row = FirewallDataRow(
-        rowid="1",
-        time="t",
-        category="AppRule",
-        protocol="[/x",
-        sourceip="10.0.0.1",
-        srcport="1",
-        targetip='[link="https://e"]evil[/]',
-        targetport="443",
-        action="Allow",
-    )
+    row = FirewallDataRow(rowid="1", time="t", category="AppRule", protocol="[/x", sourceip="10.0.0.1",
+                          srcport="1", targetip='[link="https://e"]evil[/]', targetport="443", action="Allow")
     plain = Text.from_markup(_header_line1(row)).plain
     assert '[link="https://e"]evil[/]' in plain and "[/x" in plain
 
 
 # ── update dialog: tag and URL come from the GitHub API ────────────────────────
-
 
 async def test_update_dialog_shows_hostile_tag_and_url_as_text():
     from dialogs import UpdateDialog

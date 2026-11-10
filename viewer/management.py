@@ -3,7 +3,6 @@
 Kept separate from :mod:`viewer.app` so the worker logic is testable and the
 app stays focused on UI.
 """
-
 from __future__ import annotations
 
 import asyncio
@@ -48,13 +47,13 @@ def arm_ssl_context() -> ssl.SSLContext:
     try:
         context.load_default_certs()
     except OSError:
-        pass  # no system store (the frozen binary's case): certifi alone
+        pass   # no system store (the frozen binary's case): certifi alone
     return context
 
 
-async def load_management_data(
-    firewall_id: str, *, force: bool = False, errors: list[str] | None = None, credential: Any | None = None
-) -> CachedSnapshot | None:
+async def load_management_data(firewall_id: str, *, force: bool = False,
+                               errors: list[str] | None = None,
+                               credential: Any | None = None) -> CachedSnapshot | None:
     """Return a cached or freshly-fetched snapshot for ``firewall_id``.
 
     Returns ``None`` if no credential is available or ARM is unreachable; the
@@ -114,9 +113,8 @@ async def load_management_data(
                 nat_gateways = await fetch_nat_gateways(arm, subnets)
                 # Distinct ids only, and none the firewall lookup already covers:
                 # every one of these is an optional GET.
-                nat_pip_ids = list(
-                    dict.fromkeys(pid for gw in nat_gateways for pid in gw.public_ip_ids if pid and pid not in pip_ids)
-                )
+                nat_pip_ids = list(dict.fromkeys(
+                    pid for gw in nat_gateways for pid in gw.public_ip_ids if pid and pid not in pip_ids))
                 try:
                     addresses = await pip_task
                 except ArmError:

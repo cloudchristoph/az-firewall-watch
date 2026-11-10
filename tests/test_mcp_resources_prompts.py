@@ -1,5 +1,4 @@
 """Resources and prompts through the MCP protocol (in-memory client against the real server object)."""
-
 from __future__ import annotations
 
 import json
@@ -15,14 +14,8 @@ from mcp_server.state import AppState
 from tests.test_mcp_tools_analysis import loaded_state, ruled
 from tests.test_mcp_tools_logs import Seeder, make_state
 
-STATIC_URIS = {
-    "azfw://status",
-    "azfw://firewall",
-    "azfw://policy",
-    "azfw://policy/rules",
-    "azfw://ip-groups",
-    "azfw://logs/recent",
-}
+STATIC_URIS = {"azfw://status", "azfw://firewall", "azfw://policy", "azfw://policy/rules", "azfw://ip-groups",
+               "azfw://logs/recent"}
 
 
 async def read(state: AppState, uri: str) -> tuple[Any, str]:
@@ -47,7 +40,6 @@ def plain() -> AppState:
 
 # ── listing ──────────────────────────────────────────────────────────────────
 
-
 async def test_resources_and_template_are_listed(plain):
     async with Client(build_server(plain.config, state=plain)) as client:
         resources = (await client.list_resources()).resources
@@ -59,7 +51,6 @@ async def test_resources_and_template_are_listed(plain):
 
 
 # ── static resources ─────────────────────────────────────────────────────────
-
 
 async def test_status_resource_is_the_status_tool(plain, structured_record):
     Seeder(plain, structured_record).network()
@@ -104,19 +95,8 @@ async def test_recent_logs_resource_is_the_newest_hundred(plain, structured_reco
     assert mime == "application/json"
     assert body["returned"] == 100 and body["matched"] == 120 and body["has_more"] is True
     assert [r["id"] for r in body["rows"]][:2] == [120, 119] and body["rows"][-1]["id"] == 21
-    assert set(body["rows"][0]) == {
-        "id",
-        "time",
-        "category",
-        "protocol",
-        "source",
-        "src_port",
-        "destination",
-        "dst_port",
-        "action",
-        "rule",
-        "info",
-    }
+    assert set(body["rows"][0]) == {"id", "time", "category", "protocol", "source", "src_port", "destination",
+                                    "dst_port", "action", "rule", "info"}
 
 
 async def test_recent_logs_resource_on_an_empty_buffer(plain):
@@ -126,7 +106,6 @@ async def test_recent_logs_resource_on_an_empty_buffer(plain):
 
 # ── the template ─────────────────────────────────────────────────────────────
 
-
 async def test_log_entry_template_resolves_to_the_entry_tool(structured_record, firewall_id):
     state, seed = loaded_state(structured_record, firewall_id)
     ruled(seed, "rc-allow", "allow-web", source="10.0.0.5", dest="10.1.0.4")
@@ -134,9 +113,7 @@ async def test_log_entry_template_resolves_to_the_entry_tool(structured_record, 
     body, mime = await read(state, "azfw://logs/1")
     assert mime == "application/json" and body["id"] == 1 and body["source"] == "10.0.0.5"
     assert body["raw"]["properties"]["Rule"] == "allow-web"
-    assert body["enrichment"]["dest_fw_instance"] == "AzFw.4" and body["enrichment"]["source_ip_groups"] == [
-        "ipg-spokes"
-    ]
+    assert body["enrichment"]["dest_fw_instance"] == "AzFw.4" and body["enrichment"]["source_ip_groups"] == ["ipg-spokes"]
     assert body["traceable"] is True
     assert (await read(state, "azfw://logs/2"))[0]["id"] == 2
 
@@ -182,7 +159,6 @@ async def test_each_read_sees_its_own_server_state(structured_record):
 
 # ── prompts ──────────────────────────────────────────────────────────────────
 
-
 async def prompt_text(state: AppState, name: str, arguments: dict[str, str] | None = None) -> str:
     async with Client(build_server(state.config, state=state)) as client:
         result = await client.get_prompt(name, arguments)
@@ -210,9 +186,8 @@ async def test_investigate_denies_defaults_and_takes_a_window(plain):
     assert "denied_without_rule" in text and "narrowest rule" in text and "scanning" in text
     longer = await prompt_text(plain, "investigate_denies", {"since": "2h"})
     assert 'since="2h"' in longer and "last 2h" in longer and "15m" not in longer
-    assert 'since="2026-09-05T08:00:00Z"' in await prompt_text(
-        plain, "investigate_denies", {"since": "2026-09-05T08:00:00Z"}
-    )
+    assert 'since="2026-09-05T08:00:00Z"' in await prompt_text(plain, "investigate_denies",
+                                                                  {"since": "2026-09-05T08:00:00Z"})
 
 
 async def test_explain_entry_names_the_row_and_the_tool(plain):
@@ -223,29 +198,15 @@ async def test_explain_entry_names_the_row_and_the_tool(plain):
 
 async def test_health_check_names_status_coverage_and_policy_tools(plain):
     text = await prompt_text(plain, "firewall_health_check")
-    for needle in (
-        "get_status",
-        "get_log_coverage",
-        "get_firewall",
-        "get_policy",
-        "summarize_logs",
-        "auto-learn",
-        "route server",
-        "maintenance",
-        "capacity",
-        "missing",
-        "forwarded_not_seen",
-    ):
+    for needle in ("get_status", "get_log_coverage", "get_firewall", "get_policy", "summarize_logs",
+                   "auto-learn", "route server", "maintenance", "capacity", "missing", "forwarded_not_seen"):
         assert needle.lower() in text.lower(), needle
 
 
-@pytest.mark.parametrize(
-    "name, arguments, message",
-    [
-        ("investigate_denies", {"since": "a while"}, "neither a relative duration"),
-        ("explain_entry", {"id": "seven"}, "id must be the numeric row id"),
-    ],
-)
+@pytest.mark.parametrize("name, arguments, message", [
+    ("investigate_denies", {"since": "a while"}, "neither a relative duration"),
+    ("explain_entry", {"id": "seven"}, "id must be the numeric row id"),
+])
 async def test_prompt_arguments_are_checked_with_a_readable_message(plain, name, arguments, message):
     async with Client(build_server(plain.config, state=plain)) as client:
         with pytest.raises(MCPError) as caught:
@@ -257,3 +218,4 @@ async def test_explain_entry_requires_an_id(plain):
     async with Client(build_server(plain.config, state=plain)) as client:
         with pytest.raises(MCPError):
             await client.get_prompt("explain_entry", {})
+

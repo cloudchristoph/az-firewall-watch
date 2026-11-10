@@ -3,7 +3,6 @@
 Covers parsing (FirewallPolicyInfo.snat_auto_learn, FirewallInfo.route_server_id)
 and every rendered variant of the Firewall tab's Policy panel SNAT rows.
 """
-
 from __future__ import annotations
 
 from viewer.arm import ArmError
@@ -18,12 +17,8 @@ from viewer.views.firewall import FirewallView, _note, _row, _snat_rows
 
 SUB = "/subscriptions/25ca1d83-3de5-46c7-9941-fb98c2ea026e"
 FW_ID = f"{SUB}/resourceGroups/rg-hub-network-gwc/providers/Microsoft.Network/azureFirewalls/fw-hub-gwc"
-POLICY_ID = (
-    f"{SUB}/resourceGroups/rg-hub-firewallpolicy-gwc/providers/Microsoft.Network/firewallPolicies/fwp-hub-premium-gwc"
-)
-RS_ID = (
-    f"{SUB}/resourceGroups/rg-hub-network-gwc/providers/Microsoft.Network/virtualHubs/hub-gwc/ipConfigurations/rs-hub"
-)
+POLICY_ID = f"{SUB}/resourceGroups/rg-hub-firewallpolicy-gwc/providers/Microsoft.Network/firewallPolicies/fwp-hub-premium-gwc"
+RS_ID = f"{SUB}/resourceGroups/rg-hub-network-gwc/providers/Microsoft.Network/virtualHubs/hub-gwc/ipConfigurations/rs-hub"
 RS_STANDALONE_ID = f"{SUB}/resourceGroups/rg-hub-network-gwc/providers/Microsoft.Network/routeServers/rs-hub"
 
 
@@ -50,7 +45,6 @@ class FakeArm:
 
 # ── parsing: FirewallPolicyInfo.snat_auto_learn ───────────────────────────────
 
-
 async def test_fetch_policy_snat_auto_learn_enabled():
     payload = {"id": POLICY_ID, "name": "p", "properties": {"snat": {"autoLearnPrivateRanges": "Enabled"}}}
     pol = await fetch_policy(FakeArm({POLICY_ID: payload}), POLICY_ID)
@@ -72,18 +66,13 @@ async def test_fetch_policy_snat_auto_learn_absent():
 
 # ── parsing: FirewallInfo.route_server_id ─────────────────────────────────────
 
-
 async def test_fetch_firewall_route_server_id_present():
     payload = {
-        "id": FW_ID,
-        "name": "fw",
-        "location": "x",
-        "properties": {
-            "additionalProperties": {
-                ROUTE_SERVER_KEY: RS_STANDALONE_ID,
-                "Network.AdditionalLogs.EnableFatFlowLogging": "true",
-            }
-        },
+        "id": FW_ID, "name": "fw", "location": "x",
+        "properties": {"additionalProperties": {
+            ROUTE_SERVER_KEY: RS_STANDALONE_ID,
+            "Network.AdditionalLogs.EnableFatFlowLogging": "true",
+        }},
     }
     fw = await fetch_firewall(FakeArm({FW_ID: payload}), FW_ID)
     assert fw.route_server_id == RS_STANDALONE_ID
@@ -94,9 +83,7 @@ async def test_fetch_firewall_route_server_id_present():
 async def test_fetch_firewall_route_server_id_absent_key():
     """additionalProperties present but without the Route Server key."""
     payload = {
-        "id": FW_ID,
-        "name": "fw",
-        "location": "x",
+        "id": FW_ID, "name": "fw", "location": "x",
         "properties": {"additionalProperties": {"Network.AdditionalLogs.EnableFatFlowLogging": "true"}},
     }
     fw = await fetch_firewall(FakeArm({FW_ID: payload}), FW_ID)
@@ -111,17 +98,9 @@ async def test_fetch_firewall_route_server_id_no_additional_properties():
 
 # ── rendering: _snat_rows ──────────────────────────────────────────────────────
 
-
 def _fw(sku_name: str = "AZFW_VNet", route_server_id: str = "") -> FirewallInfo:
-    return FirewallInfo(
-        id=FW_ID,
-        name="fw-hub-gwc",
-        subscription_id="s",
-        resource_group="rg",
-        location="germanywestcentral",
-        sku_name=sku_name,
-        route_server_id=route_server_id,
-    )
+    return FirewallInfo(id=FW_ID, name="fw-hub-gwc", subscription_id="s", resource_group="rg",
+                        location="germanywestcentral", sku_name=sku_name, route_server_id=route_server_id)
 
 
 def test_snat_rows_default_ranges_when_none_configured():
@@ -153,10 +132,8 @@ def test_snat_rows_auto_learn_on_via_hub_builtin_route_server():
     pol = FirewallPolicyInfo(id=POLICY_ID, name="p", snat_auto_learn="Enabled")
     rows = _snat_rows(pol, _fw(sku_name="AZFW_Hub"))
     assert rows[2] == _row("Auto-learn SNAT", "on", "via the hub's built-in Route Server")
-    assert rows[3] == (
-        "                    [dim]learned ranges are not readable from here: listing them is a "
-        "POST action, and this tool only reads[/]"
-    )
+    assert rows[3] == ("                    [dim]learned ranges are not readable from here: listing them is a "
+                        "POST action, and this tool only reads[/]")
     assert len(rows) == 4
 
 
@@ -164,10 +141,8 @@ def test_snat_rows_auto_learn_on_via_vnet_route_server():
     pol = FirewallPolicyInfo(id=POLICY_ID, name="p", snat_auto_learn="Enabled")
     rows = _snat_rows(pol, _fw(sku_name="AZFW_VNet", route_server_id=RS_STANDALONE_ID))
     assert rows[2] == _row("Auto-learn SNAT", "on", "via Route Server rs-hub")
-    assert rows[3] == (
-        "                    [dim]learned ranges are not readable from here: listing them is a "
-        "POST action, and this tool only reads[/]"
-    )
+    assert rows[3] == ("                    [dim]learned ranges are not readable from here: listing them is a "
+                        "POST action, and this tool only reads[/]")
     assert len(rows) == 4
 
 
@@ -175,21 +150,17 @@ def test_snat_rows_auto_learn_on_without_route_server_is_flagged():
     """The misconfiguration this tab exists to name: ranges look complete but nothing is learned."""
     pol = FirewallPolicyInfo(id=POLICY_ID, name="p", snat_auto_learn="Enabled")
     rows = _snat_rows(pol, _fw(sku_name="AZFW_VNet", route_server_id=""))
-    assert rows[2] == (
-        "[dim]Auto-learn SNAT   [/]  [yellow]on, but no Route Server is associated with the "
-        "firewall: nothing is ever learned[/]"
-    )
+    assert rows[2] == ("[dim]Auto-learn SNAT   [/]  [yellow]on, but no Route Server is associated with the "
+                        "firewall: nothing is ever learned[/]")
     assert len(rows) == 3  # no learned-ranges note in this branch
 
 
 # ── rendering: through FirewallView._policy ────────────────────────────────────
 
-
 def test_policy_panel_includes_snat_rows():
     fw = _fw(sku_name="AZFW_VNet", route_server_id=RS_STANDALONE_ID)
-    pol = FirewallPolicyInfo(
-        id=POLICY_ID, name="fwp-hub-premium-gwc", snat_auto_learn="Enabled", snat_private_ranges=["100.64.0.0/10"]
-    )
+    pol = FirewallPolicyInfo(id=POLICY_ID, name="fwp-hub-premium-gwc", snat_auto_learn="Enabled",
+                             snat_private_ranges=["100.64.0.0/10"])
     out = FirewallView._policy(pol, fw)
     assert "[dim]SNAT ranges       [/]  100.64.0.0/10" in out
     assert _row("Auto-learn SNAT", "on", "via Route Server rs-hub") in out
@@ -197,19 +168,13 @@ def test_policy_panel_includes_snat_rows():
 
 # ── rendering: Instance panel excludes the Route Server key ───────────────────
 
-
 def test_instance_panel_hides_route_server_key_but_shows_other_additional_properties():
-    fw = FirewallInfo(
-        id=FW_ID,
-        name="fw-hub-gwc",
-        subscription_id="s",
-        resource_group="rg",
-        location="germanywestcentral",
-        additional_properties={
-            ROUTE_SERVER_KEY: RS_STANDALONE_ID,
-            "Network.AdditionalLogs.EnableFatFlowLogging": "true",
-        },
-    )
+    fw = FirewallInfo(id=FW_ID, name="fw-hub-gwc", subscription_id="s", resource_group="rg",
+                      location="germanywestcentral",
+                      additional_properties={
+                          ROUTE_SERVER_KEY: RS_STANDALONE_ID,
+                          "Network.AdditionalLogs.EnableFatFlowLogging": "true",
+                      })
     out = "\n".join(FirewallView._instance(fw, []))
     assert ROUTE_SERVER_KEY not in out and "rs-hub" not in out and RS_STANDALONE_ID not in out
     assert "Fat flow logging" in out and "EnableFatFlowLogging" not in out

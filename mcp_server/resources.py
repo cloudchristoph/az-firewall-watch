@@ -22,7 +22,6 @@ context variable for the duration of the read, and the handlers pick it up
 from there. The template resource ``azfw://logs/{id}`` gets its context the
 normal way.
 """
-
 from __future__ import annotations
 
 import json
@@ -85,78 +84,50 @@ def register(server: MCPServer) -> None:
     server.read_resource = read_resource  # type: ignore[method-assign]
 
     @server.resource(
-        "azfw://status",
-        name="status",
-        title="Stream and server status",
-        mime_type=JSON,
+        "azfw://status", name="status", title="Stream and server status", mime_type=JSON,
         description="Connection state of the Event Hub, counters, buffer bounds, firewall and policy context state "
-        "(the get_status tool).",
-    )
+                    "(the get_status tool).")
     async def status() -> str:
         return await _answer(server, "get_status", {}, _REQUEST.get())
 
     @server.resource(
-        "azfw://firewall",
-        name="firewall",
-        title="The firewall",
-        mime_type=JSON,
+        "azfw://firewall", name="firewall", title="The firewall", mime_type=JSON,
         description="The firewall from the policy context: SKU, subnets, public IPs, diagnostic settings "
-        "(the get_firewall tool). available=false while the context is not loaded.",
-    )
+                    "(the get_firewall tool). available=false while the context is not loaded.")
     async def firewall() -> str:
         return await _answer(server, "get_firewall", {}, _REQUEST.get())
 
     @server.resource(
-        "azfw://policy",
-        name="policy",
-        title="The firewall policy (summary)",
-        mime_type=JSON,
+        "azfw://policy", name="policy", title="The firewall policy (summary)", mime_type=JSON,
         description="Policy settings, parent chain and rule groups without the rules "
-        "(the get_policy tool). available=false while the context is not loaded.",
-    )
+                    "(the get_policy tool). available=false while the context is not loaded.")
     async def policy() -> str:
         return await _answer(server, "get_policy", {}, _REQUEST.get())
 
     @server.resource(
-        "azfw://policy/rules",
-        name="policy-rules",
-        title="Policy rules in evaluation order",
-        mime_type=JSON,
+        "azfw://policy/rules", name="policy-rules", title="Policy rules in evaluation order", mime_type=JSON,
         description="Every rule in evaluation order with its ref, priorities and action "
-        "(the list_rules tool without a filter).",
-    )
+                    "(the list_rules tool without a filter).")
     async def policy_rules() -> str:
         return await _answer(server, "list_rules", {}, _REQUEST.get())
 
     @server.resource(
-        "azfw://ip-groups",
-        name="ip-groups",
-        title="IP groups",
-        mime_type=JSON,
-        description="The IP groups the policy references (the list_ip_groups tool).",
-    )
+        "azfw://ip-groups", name="ip-groups", title="IP groups", mime_type=JSON,
+        description="The IP groups the policy references (the list_ip_groups tool).")
     async def ip_groups() -> str:
         return await _answer(server, "list_ip_groups", {}, _REQUEST.get())
 
     @server.resource(
-        "azfw://logs/recent",
-        name="recent-logs",
-        title="Newest 100 log rows",
-        mime_type=JSON,
+        "azfw://logs/recent", name="recent-logs", title="Newest 100 log rows", mime_type=JSON,
         description=f"The newest {RECENT_ROWS} buffered rows at summary detail, newest first "
-        "(the query_logs tool without filters).",
-    )
+                    "(the query_logs tool without filters).")
     async def recent_logs() -> str:
         return await _answer(server, "query_logs", {"limit": RECENT_ROWS}, _REQUEST.get())
 
     @server.resource(
-        "azfw://logs/{id}",
-        name="log-entry",
-        title="One log row",
-        mime_type=JSON,
+        "azfw://logs/{id}", name="log-entry", title="One log row", mime_type=JSON,
         description="One buffered row by id at raw detail with its enrichment and whether it can be traced "
-        "(the get_log_entry tool). Ids come from azfw://logs/recent or the log tools.",
-    )
+                    "(the get_log_entry tool). Ids come from azfw://logs/recent or the log tools.")
     async def log_entry(id: str, ctx: Context[Any, Any]) -> str:
         try:
             row_id = int(id)

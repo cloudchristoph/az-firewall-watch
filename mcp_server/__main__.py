@@ -1,5 +1,4 @@
 """``python -m mcp_server``: run the MCP server."""
-
 from __future__ import annotations
 
 import sys

@@ -1,5 +1,4 @@
 """The shared state every tool works on, held in the server's lifespan context."""
-
 from __future__ import annotations
 
 import time
@@ -29,9 +28,9 @@ class AppState:
         """Wire the parts together: the stream feeds the buffer and tells the context what it sees."""
         buffer = LogBuffer(config.buffer_size)
         context = ContextHolder(enabled=config.policy_context, firewall_id=config.firewall_id)
-        stream = StreamWorker(
-            config.eventhub, buffer, on_firewall_id=context.set_firewall_id, on_rows=context.note_rows
-        )
+        stream = StreamWorker(config.eventhub, buffer,
+                              on_firewall_id=context.set_firewall_id,
+                              on_rows=context.note_rows)
         return cls(config=config, buffer=buffer, stream=stream, context=context)
 
 

@@ -5,7 +5,6 @@ issues page says child policies do not. Either way "off" is not supported by
 the documentation, so the Firewall tab says where the value comes from, and the
 coverage line names AZFWDnsQuery as optional instead of dropping it.
 """
-
 from __future__ import annotations
 
 import asyncio
@@ -33,25 +32,11 @@ FW = FirewallInfo(id="/fw", name="fw", subscription_id="s", resource_group="rg",
 
 
 def _chain(child_dns=None, parent_dns=None, child_servers=(), parent_servers=("10.0.0.53",), unread=""):
-    parent = FirewallPolicyInfo(
-        id="/parent",
-        name="parent-policy",
-        sku_tier="Premium",
-        dns_proxy=parent_dns,
-        dns_servers=list(parent_servers),
-        threat_intel_mode="Alert",
-    )
-    child = FirewallPolicyInfo(
-        id="/child",
-        name="child-policy",
-        sku_tier="Premium",
-        base_policy_id="/parent",
-        dns_proxy=child_dns,
-        dns_servers=list(child_servers),
-        threat_intel_mode="Alert",
-        parent=None if unread else parent,
-        parent_unreadable=unread,
-    )
+    parent = FirewallPolicyInfo(id="/parent", name="parent-policy", sku_tier="Premium",
+                                dns_proxy=parent_dns, dns_servers=list(parent_servers), threat_intel_mode="Alert")
+    child = FirewallPolicyInfo(id="/child", name="child-policy", sku_tier="Premium", base_policy_id="/parent",
+                               dns_proxy=child_dns, dns_servers=list(child_servers), threat_intel_mode="Alert",
+                               parent=None if unread else parent, parent_unreadable=unread)
     return child
 
 
@@ -60,7 +45,6 @@ def _dns_text(policy) -> str:
 
 
 # ── effective state ────────────────────────────────────────────────────────────
-
 
 def test_a_child_that_sets_nothing_takes_the_parent_value_and_servers():
     assert _chain(None, True).effective_dns() == (True, ["10.0.0.53"], "parent-policy")
@@ -79,11 +63,10 @@ def test_nothing_set_anywhere_in_a_read_chain_is_off():
 
 def test_nothing_set_with_an_unreadable_parent_is_unknown_not_off():
     assert _chain(None, None, unread="/parent").effective_dns() == (None, [], "")
-    assert _chain(True, None, unread="/parent").effective_dns()[0] is True  # own value still decides
+    assert _chain(True, None, unread="/parent").effective_dns()[0] is True   # own value still decides
 
 
 # ── the Firewall tab row ───────────────────────────────────────────────────────
-
 
 def test_inherited_on_is_shown_with_its_source_and_the_known_issue():
     text = _dns_text(_chain(None, True))
@@ -99,8 +82,7 @@ def test_inherited_off_is_labelled_inherited():
 
 def test_own_values_read_as_before():
     assert "on" in _dns_text(_chain(True, None, child_servers=("10.1.1.1",))) and "10.1.1.1" in _dns_text(
-        _chain(True, None, child_servers=("10.1.1.1",))
-    )
+        _chain(True, None, child_servers=("10.1.1.1",)))
     off = _dns_text(_chain(False, True))
     assert "off" in off and "inherited" not in off
     plain = _dns_text(_chain(None, None))
@@ -113,7 +95,6 @@ def test_unreadable_parent_is_unknown_on_the_tab():
 
 
 # ── Event Hub coverage ─────────────────────────────────────────────────────────
-
 
 def test_an_inherited_off_is_optional_in_the_coverage_too():
     child = _chain(None, False)
@@ -136,25 +117,20 @@ def test_the_same_holds_for_an_unknown_state_and_not_for_an_own_value():
     assert "AZFWDnsQuery" not in expected_categories(_chain(None, None, unread="/parent"), FW)
     assert "AZFWDnsQuery" in expected_categories(_chain(True, None), FW)
     assert "AZFWDnsQuery" not in expected_categories(_chain(False, True), FW)
-    assert "AZFWDnsQuery" not in expected_categories(_chain(None, False), FW)  # not expected ...
-    assert _uncertain_categories(_chain(None, False)) == ("AZFWDnsQuery",)  # ... but named, it may not hold
+    assert "AZFWDnsQuery" not in expected_categories(_chain(None, False), FW)   # not expected ...
+    assert _uncertain_categories(_chain(None, False)) == ("AZFWDnsQuery",)       # ... but named, it may not hold
     assert _uncertain_categories(_chain(None, True)) == ("AZFWDnsQuery",)
     assert _uncertain_categories(_chain(None, None, unread="/parent")) == ("AZFWDnsQuery",)
-    assert _uncertain_categories(_chain(False, True)) == ()  # an own value is stated
-    assert _uncertain_categories(_chain(None, None)) == ()  # nothing anywhere in a read chain
+    assert _uncertain_categories(_chain(False, True)) == ()                       # an own value is stated
+    assert _uncertain_categories(_chain(None, None)) == ()                        # nothing anywhere in a read chain
 
 
 # ── parsing and the cache ──────────────────────────────────────────────────────
 
-
 def _fetch(dns_props):
     props = {"dnsSettings": dns_props} if dns_props is not None else {}
-    arm = FakeArm(
-        {
-            POLICY_ID: {"id": POLICY_ID, "name": "p", "properties": props},
-            f"{POLICY_ID}/ruleCollectionGroups": {"value": []},
-        }
-    )
+    arm = FakeArm({POLICY_ID: {"id": POLICY_ID, "name": "p", "properties": props},
+                   f"{POLICY_ID}/ruleCollectionGroups": {"value": []}})
     return asyncio.run(fetch_policy(arm, POLICY_ID))
 
 

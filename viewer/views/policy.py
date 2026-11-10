@@ -1,5 +1,4 @@
 """Policy metadata tab view."""
-
 from __future__ import annotations
 
 from textual import events
@@ -94,11 +93,9 @@ class PolicyView(Static):
 
         self._policy_sku_tier = policy.sku_tier
 
-        tree.root.set_label(
-            escape_rich_markup(
-                f"{policy.name}  (SKU: {policy.sku_tier or '-'}, ThreatIntel: {policy.threat_intel_mode or '-'})"
-            )
-        )
+        tree.root.set_label(escape_rich_markup(
+            f"{policy.name}  (SKU: {policy.sku_tier or '-'}, ThreatIntel: {policy.threat_intel_mode or '-'})"
+        ))
         tree.root.remove_children()
         tree.root.data = {
             "kind": "policy",
@@ -107,13 +104,9 @@ class PolicyView(Static):
 
         # Inherited (parent) groups first, exactly as the firewall evaluates them.
         for policy_name, g in policy.all_groups():
-            origin = (
-                f"  · {escape_rich_markup(policy_name)}"
-                if policy.parent is not None and policy_name != policy.name
-                else ""
-            )
+            origin = f"  · {escape_rich_markup(policy_name)}" if policy.parent is not None and policy_name != policy.name else ""
             g_node = tree.root.add(
-                escape_rich_markup(f"[{g.priority}] {g.name}") + origin,  # whole label escaped: it is Rich markup
+                escape_rich_markup(f"[{g.priority}] {g.name}") + origin,   # whole label escaped: it is Rich markup
                 data={"kind": "rcg", "rcg": g},
             )
             for rc in sorted(g.rule_collections, key=lambda x: x.priority):
@@ -262,52 +255,42 @@ class PolicyView(Static):
         own = len(policy.rule_collection_groups)
         inherited = len(policy.all_groups()) - own
         rcg_count = f"{own}" if not inherited else f"{own} own + {inherited} inherited"
-        base = (
-            escape_markup(policy.parent.name)
-            if policy.parent is not None
-            else (escape_markup(policy.base_policy_id) or "-")
-        )
-        return "\n".join(
-            [
-                f"[b]{escape_markup(policy.name)}[/b]",
-                "",
-                f"[dim]SKU[/]            {escape_markup(policy.sku_tier) or '-'}",
-                f"[dim]ThreatIntel[/]    {escape_markup(policy.threat_intel_mode) or '-'}",
-                f"[dim]Base policy[/]    {base}",
-                f"[dim]RCG count[/]      {rcg_count}",
-            ]
-        )
+        base = escape_markup(policy.parent.name) if policy.parent is not None else (escape_markup(policy.base_policy_id) or "-")
+        return "\n".join([
+            f"[b]{escape_markup(policy.name)}[/b]",
+            "",
+            f"[dim]SKU[/]            {escape_markup(policy.sku_tier) or '-'}",
+            f"[dim]ThreatIntel[/]    {escape_markup(policy.threat_intel_mode) or '-'}",
+            f"[dim]Base policy[/]    {base}",
+            f"[dim]RCG count[/]      {rcg_count}",
+        ])
 
     @staticmethod
     def _rcg_summary(rcg) -> str:
         if rcg is None:
             return "RCG details unavailable"
-        return "\n".join(
-            [
-                "[b]Rule Collection Group[/b]",
-                "",
-                f"[dim]Name[/]           {escape_markup(rcg.name)}",
-                f"[dim]Priority[/]       {rcg.priority}",
-                f"[dim]Collections[/]    {len(rcg.rule_collections)}",
-            ]
-        )
+        return "\n".join([
+            "[b]Rule Collection Group[/b]",
+            "",
+            f"[dim]Name[/]           {escape_markup(rcg.name)}",
+            f"[dim]Priority[/]       {rcg.priority}",
+            f"[dim]Collections[/]    {len(rcg.rule_collections)}",
+        ])
 
     @staticmethod
     def _rc_summary(rcg, rc) -> str:
         if rc is None:
             return "Rule collection details unavailable"
-        return "\n".join(
-            [
-                "[b]Rule Collection[/b]",
-                "",
-                f"[dim]RCG[/]            {escape_markup(rcg.name) if rcg else '-'}",
-                f"[dim]Name[/]           {escape_markup(rc.name)}",
-                f"[dim]Priority[/]       {rc.priority}",
-                f"[dim]Action[/]         {escape_markup(rc.action) or '-'}",
-                f"[dim]Type[/]           {escape_markup(rc.rule_collection_type) or '-'}",
-                f"[dim]Rules[/]          {len(rc.rules)}",
-            ]
-        )
+        return "\n".join([
+            "[b]Rule Collection[/b]",
+            "",
+            f"[dim]RCG[/]            {escape_markup(rcg.name) if rcg else '-'}",
+            f"[dim]Name[/]           {escape_markup(rc.name)}",
+            f"[dim]Priority[/]       {rc.priority}",
+            f"[dim]Action[/]         {escape_markup(rc.action) or '-'}",
+            f"[dim]Type[/]           {escape_markup(rc.rule_collection_type) or '-'}",
+            f"[dim]Rules[/]          {len(rc.rules)}",
+        ])
 
     def _rule_summary(self, rcg, rc, rule: Rule, ip_groups: dict[str, IpGroupInfo]) -> str:
         if not isinstance(rule, Rule):
@@ -315,7 +298,6 @@ class PolicyView(Static):
 
         src_groups = self._render_group_values(rule.source_ip_groups, ip_groups)
         dst_groups = self._render_group_values(rule.destination_ip_groups, ip_groups)
-
         def j(values: list[str]) -> str:
             return escape_markup(", ".join(values)) if values else "-"
 
@@ -354,7 +336,7 @@ class PolicyView(Static):
         lines: list[str] = [""]
         if rule.translated_address:
             addr = rule.translated_address
-            host = f"[{addr}]" if ":" in addr and port else addr  # IPv6 literal before a port
+            host = f"[{addr}]" if ":" in addr and port else addr    # IPv6 literal before a port
             lines.append(f"[dim]Translated[/]     {escape_markup(host)}{port}")
         if rule.translated_fqdn:
             lines.append(f"[dim]Translated[/]     {escape_markup(rule.translated_fqdn)}{port}")
@@ -410,11 +392,8 @@ class PolicyView(Static):
         elif not rule.terminate_tls:
             why = "HTTPS without TLS inspection on this rule"
         else:
-            return (
-                "[dim]inserted into HTTP and TLS-inspected HTTPS[/]"
-                if has_http
-                else "[dim]inserted into TLS-inspected HTTPS[/]"
-            )
+            return ("[dim]inserted into HTTP and TLS-inspected HTTPS[/]" if has_http
+                    else "[dim]inserted into TLS-inspected HTTPS[/]")
         if has_http:
             return f"[yellow]{why}: headers are inserted into HTTP only[/]"
         return f"[yellow]{why}: no traffic this rule matches gets the headers[/]"

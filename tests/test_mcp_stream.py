@@ -5,7 +5,6 @@ replaced on ``azure.eventhub.aio`` so connect, probe, receive, retry and error
 paths run without Azure. No test may see anything on stdout, because with the
 stdio transport stdout is the protocol channel.
 """
-
 from __future__ import annotations
 
 import asyncio
@@ -87,7 +86,6 @@ class FakeCredential:
     async def get_token(self, *_scopes: str):
         class _T:
             token = "tok"
-
         return _T()
 
     async def close(self) -> None:
@@ -99,7 +97,6 @@ def fake_client(monkeypatch):
     FakeClient.instances = []
     FakeClient.script = []
     import azure.eventhub.aio as eh_aio
-
     monkeypatch.setattr(eh_aio, "EventHubConsumerClient", FakeClient)
     return FakeClient
 
@@ -108,7 +105,6 @@ def fake_client(monkeypatch):
 def fake_credential(monkeypatch):
     FakeCredential.instances = []
     import azure.identity.aio as ident
-
     monkeypatch.setattr(ident, "DefaultAzureCredential", FakeCredential)
     return FakeCredential
 
@@ -138,19 +134,9 @@ def make_worker(settings: EventHubSettings = SAS, **kw: Any) -> StreamWorker:
 
 def records(firewall_id: str, n: int = 2, action: str = "Allow") -> list[dict]:
     return [
-        {
-            "resourceId": firewall_id,
-            "category": "AZFWNetworkRule",
-            "time": f"2026-09-05T08:00:0{i}Z",
-            "properties": {
-                "Protocol": "TCP",
-                "SourceIp": f"10.0.0.{i}",
-                "SourcePort": 1,
-                "DestinationIp": "10.1.0.1",
-                "DestinationPort": 443,
-                "Action": action,
-            },
-        }
+        {"resourceId": firewall_id, "category": "AZFWNetworkRule", "time": f"2026-09-05T08:00:0{i}Z",
+         "properties": {"Protocol": "TCP", "SourceIp": f"10.0.0.{i}", "SourcePort": 1,
+                        "DestinationIp": "10.1.0.1", "DestinationPort": 443, "Action": action}}
         for i in range(n)
     ]
 
@@ -165,7 +151,6 @@ async def wait_until(cond: Callable[[], bool], timeout: float = 3.0) -> None:
 
 
 # ── happy paths ──────────────────────────────────────────────────────────────
-
 
 async def test_sas_connect_streams_rows_and_reports_firewall_once(fake_client, firewall_id):
     seen: list[str] = []
@@ -235,21 +220,16 @@ async def test_arm_check_failure_is_ignored(fake_client, fake_credential, monkey
 
 # ── what gets counted instead of kept ────────────────────────────────────────
 
-
 async def test_skips_counted_by_reason(fake_client, firewall_id):
     other = dict(records(firewall_id, 1)[0], resourceId="/SUBSCRIPTIONS/X/PROVIDERS/MICROSOFT.SQL/SERVERS/DB")
     unknown = dict(records(firewall_id, 1)[0], category="AzureFirewallSomethingNew")
-    fake_client.script = [
-        {
-            "events": [
-                FakeEvent([other, unknown, *records(firewall_id, 1)]),
-                FakeEvent("not json"),
-                FakeEvent(json.dumps([1, 2])),
-                FakeEvent(json.dumps({"records": ["oops"]})),
-                None,  # the SDK delivers None on idle timeouts; ignored
-            ]
-        }
-    ]
+    fake_client.script = [{"events": [
+        FakeEvent([other, unknown, *records(firewall_id, 1)]),
+        FakeEvent("not json"),
+        FakeEvent(json.dumps([1, 2])),
+        FakeEvent(json.dumps({"records": ["oops"]})),
+        None,   # the SDK delivers None on idle timeouts; ignored
+    ]}]
     worker = make_worker()
     worker.start()
     await wait_until(lambda: worker.buffer.skipped["MalformedEvent"] == 3)
@@ -261,12 +241,8 @@ async def test_skips_counted_by_reason(fake_client, firewall_id):
 def test_firewall_id_comes_from_the_first_firewall_record(firewall_id):
     seen: list[str] = []
     worker = make_worker(on_firewall_id=seen.append)
-    not_fw = {
-        "resourceId": "/SUBSCRIPTIONS/X/PROVIDERS/MICROSOFT.NETWORK/PUBLICIPADDRESSES/PIP",
-        "category": "AZFWNetworkRule",
-        "time": "2026-09-05T08:00:00Z",
-        "properties": {},
-    }
+    not_fw = {"resourceId": "/SUBSCRIPTIONS/X/PROVIDERS/MICROSOFT.NETWORK/PUBLICIPADDRESSES/PIP",
+              "category": "AZFWNetworkRule", "time": "2026-09-05T08:00:00Z", "properties": {}}
     worker.handle_body(json.dumps({"records": [not_fw]}))
     assert seen == [] and worker.firewall_id is None
     worker.handle_body(json.dumps({"records": records(firewall_id, 2)}))
@@ -287,22 +263,17 @@ def test_forged_firewall_ids_are_parsed_but_never_named(firewall_id, caplog):
     ]
     with caplog.at_level("WARNING", logger="mcp_server.stream"):
         for rid in forged:
-            rec = {
-                "resourceId": rid,
-                "category": "AZFWNetworkRule",
-                "time": "2026-09-05T08:00:00Z",
-                "properties": {"SourceIp": "10.0.0.1", "DestinationIp": "10.0.0.2", "Action": "Deny"},
-            }
+            rec = {"resourceId": rid, "category": "AZFWNetworkRule", "time": "2026-09-05T08:00:00Z",
+                   "properties": {"SourceIp": "10.0.0.1", "DestinationIp": "10.0.0.2", "Action": "Deny"}}
             worker.handle_body(json.dumps({"records": [rec]}))
     assert seen == [] and worker.firewall_id is None
     assert sum("not a well-formed Azure Firewall id" in r.message for r in caplog.records) == 1
-    assert worker.buffer.size == 3  # the rows themselves are still shown
+    assert worker.buffer.size == 3   # the rows themselves are still shown
     worker.handle_body(json.dumps({"records": records(firewall_id, 1)}))
     assert seen == [firewall_id]
 
 
 # ── retry and reconnect ──────────────────────────────────────────────────────
-
 
 async def test_three_transient_failures_before_first_connect_fail(fake_client):
     fake_client.script = [{"probe": ConnectionError("name resolution failed")}] * 3
@@ -315,9 +286,8 @@ async def test_three_transient_failures_before_first_connect_fail(fake_client):
     assert not worker.configuration_error
 
 
-@pytest.mark.parametrize(
-    "message", ["Unauthorized access", "401 bad token", "Invalid signature", "SasKey rejected", "403 Forbidden"]
-)
+@pytest.mark.parametrize("message", ["Unauthorized access", "401 bad token", "Invalid signature", "SasKey rejected",
+                                     "403 Forbidden"])
 async def test_configuration_error_stops_without_retry(fake_client, message):
     fake_client.script = [{"probe": RuntimeError(message)}] * 3
     worker = make_worker()
@@ -425,7 +395,6 @@ async def test_probe_timeout_is_reported_as_timeout(fake_client, monkeypatch):
             await asyncio.sleep(60)
 
     import azure.eventhub.aio as eh_aio
-
     monkeypatch.setattr(eh_aio, "EventHubConsumerClient", SlowClient)
     worker = make_worker(probe_timeout=0.02)
     await asyncio.wait_for(worker.run(), 3)
@@ -447,7 +416,6 @@ async def test_stop_while_connecting_sets_stopped(fake_client, monkeypatch):
             await asyncio.sleep(60)
 
     import azure.eventhub.aio as eh_aio
-
     monkeypatch.setattr(eh_aio, "EventHubConsumerClient", SlowClient)
     worker = make_worker()
     worker.start()
@@ -490,7 +458,7 @@ def test_replaying_during_the_initial_burst_ends_with_the_rate_or_the_age(firewa
     worker = connected_worker(LATEST, now, since=1)
     worker.handle_body(json.dumps({"records": old_records(firewall_id, 150)}))
     assert worker.rows_in_last(2) == 150
-    assert worker.replaying is False  # live traffic can look like this
+    assert worker.replaying is False           # live traffic can look like this
     worker.handle_body(json.dumps({"records": old_records(firewall_id, 100)}))
     assert worker.rows_in_last(2) == 250 and worker.replaying is True
     # The burst stops: nothing in the last two seconds, the connection is still young.

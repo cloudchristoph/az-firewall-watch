@@ -1,5 +1,4 @@
 """Builds the MCP server object and its lifespan."""
-
 from __future__ import annotations
 
 import asyncio
@@ -47,9 +46,8 @@ async def _watch_cache_age(context: ContextHolder) -> None:
         context.check_cache_age()
 
 
-def build_server(
-    config: ServerConfig, *, state: AppState | None = None, start_stream: bool | None = None
-) -> MCPServer[AppState]:
+def build_server(config: ServerConfig, *, state: AppState | None = None,
+                 start_stream: bool | None = None) -> MCPServer[AppState]:
     """The configured server.
 
     ``state``: use this :class:`AppState` instead of building one (tests seed a

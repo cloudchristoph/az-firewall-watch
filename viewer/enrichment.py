@@ -1,5 +1,4 @@
 """Pure enrichment helpers: subnet/IP-group matching. No I/O."""
-
 from __future__ import annotations
 
 import ipaddress
@@ -181,13 +180,8 @@ def _port_matches(port: str, spec: str) -> bool:
         return False
 
 
-def enrich_row(
-    row: FirewallDataRow,
-    *,
-    subnet_cidrs: Iterable[str],
-    ip_groups: dict[str, IpGroupInfo],
-    policy: FirewallPolicyInfo | None,
-) -> dict[str, Any]:
+def enrich_row(row: FirewallDataRow, *, subnet_cidrs: Iterable[str], ip_groups: dict[str, IpGroupInfo],
+               policy: FirewallPolicyInfo | None) -> dict[str, Any]:
     """What the policy context adds to one log row: firewall instances, IP groups, rule priorities.
 
     The same payload the detail dialog shows (``FirewallLogApp._compute_enrichment``

@@ -11,7 +11,6 @@ selection detail below the tree (see ``_render_*_detail``), which follows the
 tree's cursor. The dialog around this panel owns the flow/outcome header and
 the footer; this panel only owns the tree, its legend and the detail Static.
 """
-
 from __future__ import annotations
 
 from rich.text import Text
@@ -64,7 +63,7 @@ def _action_tag(action: str, kind: str) -> str:
     if a == "deny":
         return "[bold red]deny[/]"
     if a == "allow":
-        return "[dim green]allow[/]"  # quiet, but still readable as the good outcome
+        return "[dim green]allow[/]"   # quiet, but still readable as the good outcome
     if a == "dnat" or kind == "dnat":
         return "[bold yellow]dnat[/]"
     return f"[dim]{escape_rich_markup(a or kind or '')}[/]"
@@ -75,7 +74,6 @@ def _short(text: str, limit: int = _NAME_MAX) -> str:
 
 
 # ── selection detail: one render function per node kind ──────────────────────
-
 
 def _render_pass_detail(p: PassTrace) -> str:
     title = _PASS_TITLE[p.kind]
@@ -95,7 +93,8 @@ def _render_pass_detail(p: PassTrace) -> str:
 def _render_group_detail(name: str, priority: int, collections: list[CollectionTrace]) -> str:
     n = len(collections)
     k = sum(1 for c in collections if c.verdict == UNKNOWN)
-    return f"[b]{escape_rich_markup(f'[{priority}] {name}')}[/b]\n{n} collection{'s' if n != 1 else ''} · {k} with ?"
+    return (f"[b]{escape_rich_markup(f'[{priority}] {name}')}[/b]\n"
+            f"{n} collection{'s' if n != 1 else ''} · {k} with ?")
 
 
 def _render_collection_detail(c: CollectionTrace) -> str:
@@ -120,10 +119,8 @@ def _render_collection_detail(c: CollectionTrace) -> str:
 
 def _render_rule_detail(r: RuleTrace, c: CollectionTrace) -> str:
     rule = r.rule
-    lines = [
-        f"[b]{escape_rich_markup(rule.name)}[/b]   {_action_tag(c.collection.action, c.collection.kind)}   "
-        f"[dim]{escape_rich_markup(c.group.name)} » {escape_rich_markup(c.collection.name)}[/]"
-    ]
+    lines = [f"[b]{escape_rich_markup(rule.name)}[/b]   {_action_tag(c.collection.action, c.collection.kind)}   "
+             f"[dim]{escape_rich_markup(c.group.name)} » {escape_rich_markup(c.collection.name)}[/]"]
     for ch in r.checks:
         icon = _ICON.get(ch.result, "")
         lines.append(f"{icon} {ch.name:<12} {escape_rich_markup(ch.detail)}")
@@ -309,17 +306,13 @@ class TracePanel(Vertical):
         if t.flow.threat_intel:
             # Decided before the rules: one line for all three passes, and no
             # repeated verdict — the header already carries it.
-            root.add_leaf(
-                f"{_LEAF_PAD}[dim]DNAT, Network and Application rules   "
-                "not evaluated — decided before rule processing[/]"
-            )
+            root.add_leaf(f"{_LEAF_PAD}[dim]DNAT, Network and Application rules   "
+                          "not evaluated — decided before rule processing[/]")
         else:
             for p in t.passes:
                 self._add_pass(root, p, highlight, show_origin)
             if t.infrastructure:
-                root.add_leaf(
-                    f"{_LEAF_PAD}Built-in infrastructure FQDNs   [dim]{escape_rich_markup(t.infrastructure)}[/]"
-                )
+                root.add_leaf(f"{_LEAF_PAD}Built-in infrastructure FQDNs   [dim]{escape_rich_markup(t.infrastructure)}[/]")
             if t.matched_rule is not None:
                 root.add_leaf(f"{_LEAF_PAD}[green]✓[/] evaluation stopped at the logged rule")
             elif t.outcome.startswith("unknown"):
@@ -331,12 +324,10 @@ class TracePanel(Vertical):
         self._size_detail(tree)
         matched = self._logged_node
         if matched is not None:
-
             def _go(node=matched) -> None:
                 tree.move_cursor(node)
                 tree.scroll_to_node(node)
                 self._render_detail(node)
-
             self.call_after_refresh(_go)
         else:
             self._render_detail(tree.cursor_node)
@@ -376,13 +367,13 @@ class TracePanel(Vertical):
         for policy_name, group, cols in groups:
             origin = f"   [dim]· {escape_rich_markup(policy_name)}[/]" if show_origin and policy_name else ""
             label = escape_rich_markup(f"[{group.priority}] {group.name}") + origin
-            logged_idx = next((i for i, c in enumerate(cols) if c.evaluated and any(r.logged for r in c.rules)), None)
+            logged_idx = next((i for i, c in enumerate(cols)
+                               if c.evaluated and any(r.logged for r in c.rules)), None)
             g_has_unknown = any(c.verdict == UNKNOWN for c in cols if c.evaluated)
             g_has_star = any(id(r) in highlight for c in cols for r in c.rules)
             group_expand = self._expand_all or logged_idx is not None or g_has_unknown or g_has_star
             group_node = pass_node.add(
-                label,
-                data={"kind": "group", "name": group.name, "priority": group.priority, "collections": cols},
+                label, data={"kind": "group", "name": group.name, "priority": group.priority, "collections": cols},
                 expand=group_expand,
             )
             if logged_idx is not None:
@@ -394,14 +385,13 @@ class TracePanel(Vertical):
                     else:
                         self._add_notevaluated_leaf(group_node, c)
 
-    def _add_focused_group(
-        self, group_node: TreeNode, cols: list[CollectionTrace], logged_idx: int, highlight: set[int]
-    ) -> None:
+    def _add_focused_group(self, group_node: TreeNode, cols: list[CollectionTrace], logged_idx: int,
+                           highlight: set[int]) -> None:
         """The group holding the logged collection: fold what came before and
         after it, so only the collection that actually matched stays open."""
         preceding = cols[:logged_idx]
         logged_col = cols[logged_idx]
-        after = cols[logged_idx + 1 :]
+        after = cols[logged_idx + 1:]
 
         if preceding:
             n = len(preceding)
@@ -413,12 +403,8 @@ class TracePanel(Vertical):
             summary = f"[yellow]{unknown_n} with ?[/]" if unknown_n else "[dim]all ✗[/]"
             fold = group_node.add(
                 f"{n} preceding collections   {summary}",
-                data={
-                    "kind": "summary",
-                    "name": logged_col.group.name,
-                    "priority": logged_col.group.priority,
-                    "collections": preceding,
-                },
+                data={"kind": "summary", "name": logged_col.group.name, "priority": logged_col.group.priority,
+                      "collections": preceding},
                 expand=self._expand_all or unknown_n > 0,
             )
             for c in preceding:
@@ -430,12 +416,8 @@ class TracePanel(Vertical):
             n = len(after)
             fold = group_node.add(
                 f"[dim]{n} not evaluated[/]",
-                data={
-                    "kind": "summary",
-                    "name": logged_col.group.name,
-                    "priority": logged_col.group.priority,
-                    "collections": after,
-                },
+                data={"kind": "summary", "name": logged_col.group.name, "priority": logged_col.group.priority,
+                      "collections": after},
                 expand=self._expand_all,
             )
             for c in after:
@@ -446,11 +428,9 @@ class TracePanel(Vertical):
         icon = _ICON.get(c.verdict, "")
         head = escape_rich_markup(f"[{rc.priority}] {_short(rc.name)}") + "  " + _action_tag(rc.action, rc.kind)
         label = f"{icon} {head}"
-        expand = (
-            self._expand_all
-            or (c.verdict == MATCH and any(r.logged for r in c.rules))
-            or any(id(r) in highlight for r in c.rules)
-        )
+        expand = (self._expand_all
+                 or (c.verdict == MATCH and any(r.logged for r in c.rules))
+                 or any(id(r) in highlight for r in c.rules))
         node = parent.add(label, data={"kind": "collection", "collection": c}, expand=expand)
         for r in c.rules:
             self._add_rule(node, c, r, highlight)

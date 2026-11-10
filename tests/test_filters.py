@@ -1,5 +1,4 @@
 """Pure filter / rendering logic of the viewer (no Textual runtime needed)."""
-
 from __future__ import annotations
 
 import pytest
@@ -12,15 +11,9 @@ matches = FirewallLogApp._matches
 
 def make_row(**overrides) -> FirewallDataRow:
     base = dict(
-        rowid="1",
-        time="2026-09-05T08:00:00Z",
-        category="NetworkRule",
-        protocol="TCP",
-        sourceip="10.0.1.4",
-        srcport="51000",
-        targetip="10.0.2.5",
-        targetport="443",
-        action="Allow",
+        rowid="1", time="2026-09-05T08:00:00Z", category="NetworkRule",
+        protocol="TCP", sourceip="10.0.1.4", srcport="51000",
+        targetip="10.0.2.5", targetport="443", action="Allow",
     )
     base.update(overrides)
     return FirewallDataRow(**base)
@@ -71,18 +64,11 @@ def test_all_filters_must_match_together():
     assert not matches(row, make_filters(action="deny", proto="tcp", port="53"))
 
 
-@pytest.mark.parametrize(
-    "preset, visible, hidden",
-    [
-        (
-            "group:decisions",
-            ["NetworkRule", "AppRule", "NATRule", "ThreatIntel", "IDPS"],
-            ["FlowTrace", "FatFlow", "DnsQuery", "DnsFailure"],
-        ),
-        ("group:traffic", ["FlowTrace", "FatFlow"], ["NetworkRule", "DnsQuery"]),
-        ("group:dns", ["DnsQuery", "DnsFailure"], ["NetworkRule", "FlowTrace"]),
-    ],
-)
+@pytest.mark.parametrize("preset, visible, hidden", [
+    ("group:decisions", ["NetworkRule", "AppRule", "NATRule", "ThreatIntel", "IDPS"], ["FlowTrace", "FatFlow", "DnsQuery", "DnsFailure"]),
+    ("group:traffic", ["FlowTrace", "FatFlow"], ["NetworkRule", "DnsQuery"]),
+    ("group:dns", ["DnsQuery", "DnsFailure"], ["NetworkRule", "FlowTrace"]),
+])
 def test_category_presets_select_whole_groups(preset, visible, hidden):
     for cat in visible:
         assert matches(make_row(category=cat), make_filters(cat=preset)), cat
@@ -118,7 +104,6 @@ def test_empty_target_is_tolerated():
 
 
 # ── rendering helpers ────────────────────────────────────────────────────────
-
 
 @pytest.mark.parametrize(
     "action, style",
@@ -196,23 +181,20 @@ V6 = "fd10:2:0:2::10"
 V6_EXPANDED = "fd10:2:0:2:0:0:0:10"
 
 
-@pytest.mark.parametrize(
-    "key, row_field, value, needle, expected",
-    [
-        ("src", "sourceip", V6, "fd10:2:0:2", True),  # fragment
-        ("src", "sourceip", V6_EXPANDED, V6, True),  # the same address in the other spelling
-        ("src", "sourceip", V6, V6_EXPANDED, True),
-        ("src", "sourceip", V6, "fd10:2::/32", True),  # IPv6 CIDR
-        ("src", "sourceip", V6, "fd10:3::/32", False),
-        ("src", "sourceip", "10.3.5.4", "10.3.0.0/16", True),  # IPv4 CIDR, new for v4 too
-        ("src", "sourceip", "10.3.5.4", "10.4.0.0/16", False),
-        ("src", "sourceip", "10.3.5.4", "fd10::/16", False),  # other family: a plain miss
-        ("dst", "targetip", V6, "fd10::/16", True),
-        ("dst", "targetip", "www.example.com", "10.0.0.0/8", False),  # a CIDR never matches an FQDN
-        ("dst", "targetip", "www.example.com", "example", True),
-        ("dst", "targetip", "", "fd10::/16", False),
-    ],
-)
+@pytest.mark.parametrize("key, row_field, value, needle, expected", [
+    ("src", "sourceip", V6, "fd10:2:0:2", True),               # fragment
+    ("src", "sourceip", V6_EXPANDED, V6, True),                # the same address in the other spelling
+    ("src", "sourceip", V6, V6_EXPANDED, True),
+    ("src", "sourceip", V6, "fd10:2::/32", True),              # IPv6 CIDR
+    ("src", "sourceip", V6, "fd10:3::/32", False),
+    ("src", "sourceip", "10.3.5.4", "10.3.0.0/16", True),      # IPv4 CIDR, new for v4 too
+    ("src", "sourceip", "10.3.5.4", "10.4.0.0/16", False),
+    ("src", "sourceip", "10.3.5.4", "fd10::/16", False),       # other family: a plain miss
+    ("dst", "targetip", V6, "fd10::/16", True),
+    ("dst", "targetip", "www.example.com", "10.0.0.0/8", False),  # a CIDR never matches an FQDN
+    ("dst", "targetip", "www.example.com", "example", True),
+    ("dst", "targetip", "", "fd10::/16", False),
+])
 def test_address_filters_accept_cidr_and_any_ipv6_spelling(key, row_field, value, needle, expected):
     row = make_row(**{row_field: value})
     assert matches(row, make_filters(**{key: needle})) is expected

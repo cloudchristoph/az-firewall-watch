@@ -1,5 +1,4 @@
 """On-disk JSON cache for Azure management-plane data."""
-
 from __future__ import annotations
 
 import json
@@ -50,7 +49,7 @@ class CachedSnapshot:
     subnets: list[SubnetInfo] = field(default_factory=list)
     nat_gateways: list[NatGatewayInfo] = field(default_factory=list)
     maintenance: list[MaintenanceWindow] = field(default_factory=list)
-    maintenance_readable: bool = True  # False: the assignment list could not be read (unknown, not none)
+    maintenance_readable: bool = True   # False: the assignment list could not be read (unknown, not none)
 
     def age_seconds(self) -> float:
         return max(0.0, time.time() - self.fetched_at)
@@ -198,28 +197,21 @@ def _hydrate_policy(pol_raw: dict[str, Any] | None) -> FirewallPolicyInfo | None
         rcs: list[RuleCollection] = []
         for rc in g.get("rule_collections") or []:
             rules = [_hydrate_rule(r) for r in (rc.get("rules") or [])]
-            rcs.append(
-                RuleCollection(
-                    name=rc.get("name", ""),
-                    priority=int(rc.get("priority") or 0),
-                    action=rc.get("action", ""),
-                    rule_collection_type=rc.get("rule_collection_type", ""),
-                    rules=rules,
-                )
-            )
-        rcg_list.append(
-            RuleCollectionGroup(
-                id=g.get("id", ""),
-                name=g.get("name", ""),
-                priority=int(g.get("priority") or 0),
-                rule_collections=rcs,
-            )
-        )
-    simple = {
-        k: v
-        for k, v in pol_raw.items()
-        if k in FirewallPolicyInfo.__dataclass_fields__ and k not in ("rule_collection_groups", "parent")
-    }
+            rcs.append(RuleCollection(
+                name=rc.get("name", ""),
+                priority=int(rc.get("priority") or 0),
+                action=rc.get("action", ""),
+                rule_collection_type=rc.get("rule_collection_type", ""),
+                rules=rules,
+            ))
+        rcg_list.append(RuleCollectionGroup(
+            id=g.get("id", ""),
+            name=g.get("name", ""),
+            priority=int(g.get("priority") or 0),
+            rule_collections=rcs,
+        ))
+    simple = {k: v for k, v in pol_raw.items()
+              if k in FirewallPolicyInfo.__dataclass_fields__ and k not in ("rule_collection_groups", "parent")}
     return FirewallPolicyInfo(
         **simple,
         rule_collection_groups=rcg_list,

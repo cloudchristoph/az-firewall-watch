@@ -18,7 +18,6 @@ Set AZFW_LIVE_CONSUMER_GROUP when another reader already uses ``$Default``. The
 viewer and this server must not share a consumer group, or each sees only part
 of the stream.
 """
-
 from __future__ import annotations
 
 import asyncio
@@ -41,8 +40,7 @@ EH_NAME = os.environ.get("AZFW_LIVE_EVENTHUB_NAME", "")
 CONSUMER_GROUP = os.environ.get("AZFW_LIVE_CONSUMER_GROUP", "")
 
 needs_eventhub = pytest.mark.skipif(
-    not (EH_NAMESPACE and EH_NAME),
-    reason="set AZFW_LIVE_EVENTHUB_NAMESPACE and AZFW_LIVE_EVENTHUB_NAME to run",
+    not (EH_NAMESPACE and EH_NAME), reason="set AZFW_LIVE_EVENTHUB_NAMESPACE and AZFW_LIVE_EVENTHUB_NAME to run",
 )
 
 CONNECT_TIMEOUT_S = 90
@@ -82,9 +80,8 @@ async def _tool(client: Client, name: str, args: dict[str, Any] | None = None) -
     return result.structured_content
 
 
-async def _wait_for_status(
-    client: Client, done: Callable[[dict[str, Any]], bool], timeout_s: float, what: str
-) -> dict[str, Any]:
+async def _wait_for_status(client: Client, done: Callable[[dict[str, Any]], bool], timeout_s: float,
+                           what: str) -> dict[str, Any]:
     """Poll get_status until ``done`` accepts it; stop early when the stream has given up."""
     deadline = time.monotonic() + timeout_s
     while True:
@@ -105,19 +102,18 @@ async def test_mcp_server_streams_firewall_logs_and_explains_them(private_cache)
     # Every Client(server) block starts its own lifespan and stream, so the whole test stays in one block.
     async with Client(server) as client:
         status = await _wait_for_status(
-            client, lambda s: s["event_hub"]["state"] == "connected", CONNECT_TIMEOUT_S, "the Event Hub connection"
-        )
+            client, lambda s: s["event_hub"]["state"] == "connected", CONNECT_TIMEOUT_S,
+            "the Event Hub connection")
         assert status["event_hub"]["auth"] == "entra"
 
         tail = await _tool(client, "tail_logs", {"after_id": 0, "timeout_s": TAIL_TIMEOUT_S})
-        assert tail["returned"] > 0 and tail["rows"], (
+        assert tail["returned"] > 0 and tail["rows"], \
             f"no firewall rows arrived within {TAIL_TIMEOUT_S} s: is the diagnostic setting active?"
-        )
 
         if FIREWALL_ID:
             await _wait_for_status(
-                client, lambda s: s["policy_context"]["state"] == "loaded", CONTEXT_TIMEOUT_S, "the policy context"
-            )
+                client, lambda s: s["policy_context"]["state"] == "loaded", CONTEXT_TIMEOUT_S,
+                "the policy context")
             firewall = await _tool(client, "get_firewall")
             expected = FIREWALL_ID.rstrip("/").rsplit("/", 1)[-1]
             assert firewall["name"].lower() == expected.lower(), firewall["name"]
@@ -126,8 +122,8 @@ async def test_mcp_server_streams_firewall_logs_and_explains_them(private_cache)
         denies = await _tool(client, "query_logs", {"action": "Deny", "limit": 1})
         if denies["rows"]:
             await _wait_for_status(
-                client, lambda s: s["policy_context"]["state"] == "loaded", CONTEXT_TIMEOUT_S, "the policy context"
-            )
+                client, lambda s: s["policy_context"]["state"] == "loaded", CONTEXT_TIMEOUT_S,
+                "the policy context")
             explained = await _tool(client, "explain_log_entry", {"id": denies["rows"][0]["id"]})
             assert "trace" in explained, sorted(explained)
 

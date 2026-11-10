@@ -1,5 +1,4 @@
 """main.py --mcp: the MCP server runs instead of the viewer, and every other option goes to it."""
-
 from __future__ import annotations
 
 from typing import Any

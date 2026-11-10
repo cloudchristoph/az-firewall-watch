@@ -10,7 +10,6 @@ missed collapse into one counted entry, collections after the deciding rule
 collapse into a "not evaluated" count, and anything an agent could still be
 wrong about (a collection with a rule the local check cannot decide) stays open.
 """
-
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -51,7 +50,6 @@ def rule_ref(*parts: str) -> str:
 
 # ── flow and checks ──────────────────────────────────────────────────────────
 
-
 def flow_to_dict(flow: Flow) -> dict[str, Any]:
     """The flow a trace evaluated, with the same names the log rows use."""
     return {
@@ -84,14 +82,9 @@ def _observed_expected(name: str, rule: Rule, ctx: _Render) -> tuple[Any, list[s
     if name == "source":
         return flow.src_ip or None, [*rule.source_addresses, *ctx.groups(rule.source_ip_groups)]
     if name == "destination":
-        expected = [
-            *rule.destination_addresses,
-            *ctx.groups(rule.destination_ip_groups),
-            *rule.destination_fqdns,
-            *(f"fqdn-tag:{t}" for t in rule.fqdn_tags),
-            *(f"web-category:{c}" for c in rule.web_categories),
-            *rule.target_urls,
-        ]
+        expected = [*rule.destination_addresses, *ctx.groups(rule.destination_ip_groups),
+                    *rule.destination_fqdns, *(f"fqdn-tag:{t}" for t in rule.fqdn_tags),
+                    *(f"web-category:{c}" for c in rule.web_categories), *rule.target_urls]
         return flow.dst_fqdn or flow.dst_ip or None, expected
     if name == "port":
         return flow.dst_port or None, list(rule.destination_ports) or ["any"]
@@ -103,13 +96,8 @@ def _observed_expected(name: str, rule: Rule, ctx: _Render) -> tuple[Any, list[s
 def _check_to_dict(check: Check, rule: Rule, ctx: _Render) -> dict[str, Any]:
     """One criterion: ``status`` is match, miss, unknown or n/a, with observed against expected."""
     observed, expected = _observed_expected(check.name, rule, ctx)
-    return {
-        "criterion": check.name,
-        "status": check.result,
-        "observed": observed,
-        "expected": expected,
-        "detail": check.detail,
-    }
+    return {"criterion": check.name, "status": check.result, "observed": observed, "expected": expected,
+            "detail": check.detail}
 
 
 def _rule_to_dict(rt: RuleTrace, ctx: _Render) -> dict[str, Any]:
@@ -126,7 +114,6 @@ def _rule_to_dict(rt: RuleTrace, ctx: _Render) -> dict[str, Any]:
 
 
 # ── collections and passes ───────────────────────────────────────────────────
-
 
 def _collection_status(ct: CollectionTrace) -> str:
     return ct.verdict if ct.evaluated else NOT_EVALUATED
@@ -192,14 +179,8 @@ def _folded_collections(p: PassTrace, highlighted: set[int], ctx: _Render) -> li
     def flush() -> None:
         nonlocal miss_run, not_evaluated_run
         if miss_run:
-            items.append(
-                {
-                    "folded": True,
-                    "position": "before_match" if has_match else "no_match",
-                    "collections": miss_run,
-                    "all_miss": True,
-                }
-            )
+            items.append({"folded": True, "position": "before_match" if has_match else "no_match",
+                          "collections": miss_run, "all_miss": True})
         if not_evaluated_run:
             items.append({"folded": True, "position": "after_match", "not_evaluated": not_evaluated_run})
         miss_run = not_evaluated_run = 0
@@ -240,13 +221,8 @@ def _group_names(ip_groups: dict[str, IpGroupInfo] | None) -> dict[str, str]:
     return {gid: grp.name for gid, grp in (ip_groups or {}).items()}
 
 
-def trace_to_dict(
-    trace: Trace,
-    *,
-    full_tree: bool = False,
-    hypothetical: bool = False,
-    ip_groups: dict[str, IpGroupInfo] | None = None,
-) -> dict[str, Any]:
+def trace_to_dict(trace: Trace, *, full_tree: bool = False, hypothetical: bool = False,
+                  ip_groups: dict[str, IpGroupInfo] | None = None) -> dict[str, Any]:
     """An evaluation trace: passes → collections → rules → checks.
 
     Folded unless ``full_tree``. ``hypothetical`` marks a trace of a flow that
@@ -268,7 +244,6 @@ def trace_to_dict(
 
 
 # ── matched rule, nearest misses ─────────────────────────────────────────────
-
 
 def _owners(trace: Trace) -> dict[int, CollectionTrace]:
     """Rule trace (by identity) → the collection trace it sits in."""
@@ -295,9 +270,8 @@ def matched_rule_to_dict(trace: Trace) -> dict[str, Any] | None:
     }
 
 
-def nearest_misses_to_dict(
-    trace: Trace, limit: int = 3, ip_groups: dict[str, IpGroupInfo] | None = None
-) -> list[dict[str, Any]]:
+def nearest_misses_to_dict(trace: Trace, limit: int = 3,
+                           ip_groups: dict[str, IpGroupInfo] | None = None) -> list[dict[str, Any]]:
     """The rules that came closest without matching, each with the criterion to blame."""
     ctx = _Render(trace.flow, group_names=_group_names(ip_groups))
     owners = _owners(trace)
@@ -305,15 +279,13 @@ def nearest_misses_to_dict(
     for rt in nearest_rules(trace, limit):
         ct = owners[id(rt)]
         problem = first_problem(rt)
-        out.append(
-            {
-                "ref": rule_ref(ct.policy_name, ct.group.name, ct.collection.name, rt.rule.name),
-                "status": rt.verdict,
-                "action": ct.collection.action or None,
-                "matching_criteria": rule_score(rt),
-                "failing_criterion": _check_to_dict(problem, rt.rule, ctx) if problem is not None else None,
-            }
-        )
+        out.append({
+            "ref": rule_ref(ct.policy_name, ct.group.name, ct.collection.name, rt.rule.name),
+            "status": rt.verdict,
+            "action": ct.collection.action or None,
+            "matching_criteria": rule_score(rt),
+            "failing_criterion": _check_to_dict(problem, rt.rule, ctx) if problem is not None else None,
+        })
     return out
 
 
@@ -327,20 +299,17 @@ def unevaluable_rules(trace: Trace, limit: int = 10) -> list[dict[str, Any]]:
                 if rt.verdict != UNKNOWN or rt.logged:
                     continue
                 problem = first_problem(rt)
-                out.append(
-                    {
-                        "ref": rule_ref(owners[id(rt)].policy_name, ct.group.name, ct.collection.name, rt.rule.name),
-                        "criterion": problem.name if problem is not None else None,
-                        "detail": problem.detail if problem is not None else None,
-                    }
-                )
+                out.append({
+                    "ref": rule_ref(owners[id(rt)].policy_name, ct.group.name, ct.collection.name, rt.rule.name),
+                    "criterion": problem.name if problem is not None else None,
+                    "detail": problem.detail if problem is not None else None,
+                })
                 if len(out) >= limit:
                     return out
     return out
 
 
 # ── verdict and sentence ─────────────────────────────────────────────────────
-
 
 def _word_verdict(word: str | None) -> str:
     low = (word or "").strip().lower()
@@ -386,46 +355,30 @@ def _flow_phrase(flow: Flow) -> str:
     return f"{head}{flow.src_ip or '?'} to {target}"
 
 
-def outcome_sentence(
-    trace: Trace, flow: Flow | None = None, *, hypothetical: bool = False, uncertain: bool = False
-) -> str:
+def outcome_sentence(trace: Trace, flow: Flow | None = None, *, hypothetical: bool = False,
+                     uncertain: bool = False) -> str:
     """One sentence that says what decided the flow, in the dialog's wording."""
     flow = flow or trace.flow
     phrase = _flow_phrase(flow)
-    unknown_n = sum(
-        1
-        for p in trace.passes
-        if p.evaluated
-        for c in p.collections
-        for r in c.rules
-        if r.verdict == UNKNOWN and not r.logged
-    )
-    doubt = (
-        f" {unknown_n} rule{'s' if unknown_n != 1 else ''} could not be evaluated locally (service tags, "
-        "FQDN tags, web categories or unreadable IP groups)."
-        if unknown_n
-        else ""
-    )
+    unknown_n = sum(1 for p in trace.passes if p.evaluated for c in p.collections for r in c.rules
+                    if r.verdict == UNKNOWN and not r.logged)
+    doubt = (f" {unknown_n} rule{'s' if unknown_n != 1 else ''} could not be evaluated locally (service tags, "
+             "FQDN tags, web categories or unreadable IP groups)." if unknown_n else "")
 
     if flow.threat_intel:
-        return (
-            f"{phrase}: {trace.outcome}, decided before any rule was evaluated "
-            f"(Threat Intelligence {trace.threat_intel})."
-        )
+        return (f"{phrase}: {trace.outcome}, decided before any rule was evaluated "
+                f"(Threat Intelligence {trace.threat_intel}).")
     matched = matched_rule_to_dict(trace)
     if matched is not None:
         action = matched["action"] or "matched"
         if hypothetical:
-            tail = (
-                " A rule that cannot be evaluated locally comes earlier, so this is not certain." if uncertain else ""
-            )
+            tail = (" A rule that cannot be evaluated locally comes earlier, so this is not certain."
+                    if uncertain else "")
             return f"{phrase}: first matching rule is {matched['ref']} ({action}).{tail}"
         return f"{phrase}: {action} by {matched['ref']}, the rule the firewall logged.{doubt}"
     if "(rule not in loaded policy)" in trace.outcome:
-        return (
-            f"{phrase}: {trace.outcome}. The loaded policy snapshot does not contain the logged rule, so the "
-            "evaluation path cannot be shown; refresh the policy context."
-        )
+        return (f"{phrase}: {trace.outcome}. The loaded policy snapshot does not contain the logged rule, so the "
+                "evaluation path cannot be shown; refresh the policy context.")
     if hypothetical:
         if uncertain:
             return f"{phrase}: no rule matches with certainty.{doubt} The verdict is unknown."
@@ -434,7 +387,6 @@ def outcome_sentence(
 
 
 # ── hypothetical flows ───────────────────────────────────────────────────────
-
 
 def hypothetical_trace(flow: Flow, policy: FirewallPolicyInfo, ip_groups: dict[str, IpGroupInfo]) -> tuple[Trace, bool]:
     """Trace a flow the firewall never logged.
@@ -463,25 +415,12 @@ def hypothetical_trace(flow: Flow, policy: FirewallPolicyInfo, ip_groups: dict[s
     if first is None:
         return plain, uncertain
     ct, rt = first
-    stop = LoggedMatch(
-        policy=ct.policy_name,
-        group=ct.group.name,
-        collection=ct.collection.name,
-        rule=rt.rule.name,
-        action=ct.collection.action or ct.collection.kind,
-    )
+    stop = LoggedMatch(policy=ct.policy_name, group=ct.group.name, collection=ct.collection.name,
+                       rule=rt.rule.name, action=ct.collection.action or ct.collection.kind)
     return build_trace(flow, policy, ip_groups, stop), uncertain
 
 
 __all__ = [
-    "VERDICTS",
-    "rule_ref",
-    "flow_to_dict",
-    "trace_to_dict",
-    "matched_rule_to_dict",
-    "nearest_misses_to_dict",
-    "unevaluable_rules",
-    "verdict",
-    "outcome_sentence",
-    "hypothetical_trace",
+    "VERDICTS", "rule_ref", "flow_to_dict", "trace_to_dict", "matched_rule_to_dict",
+    "nearest_misses_to_dict", "unevaluable_rules", "verdict", "outcome_sentence", "hypothetical_trace",
 ]

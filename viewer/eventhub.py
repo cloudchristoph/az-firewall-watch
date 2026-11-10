@@ -11,7 +11,6 @@ and the backoff tables. They are copies on purpose for now: an open change
 (PR #35) rewrites ``streaming.py``, and touching it here would conflict. Once
 that change lands, ``streaming.py`` imports these names and the duplicates go.
 """
-
 from __future__ import annotations
 
 import asyncio
@@ -24,13 +23,8 @@ from helpers import _parse_eventhub_endpoint
 
 # Keywords that indicate a configuration error rather than a transient fault.
 AUTH_KEYWORDS = (
-    "unauthorized",
-    "authentication",
-    "forbidden",
-    "401",
-    "403",
-    "invalid signature",
-    "saskey",
+    "unauthorized", "authentication", "forbidden",
+    "401", "403", "invalid signature", "saskey",
 )
 # Initial connection: three attempts with these delays, then give up (a
 # first-time failure is most likely a configuration problem).
@@ -94,23 +88,25 @@ async def verify_data_plane_access(credential: Any, eh_namespace: str, eh_name: 
     """
     import urllib.request as _urllib_req
 
-    _arm_token = (await credential.get_token("https://management.azure.com/.default")).token
+    _arm_token = (
+        await credential.get_token("https://management.azure.com/.default")
+    ).token
     _arm_auth = {"Authorization": f"Bearer {_arm_token}"}
 
     # 1. Resolve namespace resource ID via Azure Resource Graph.
     _ns_short = eh_namespace.split(".")[0]
     _rg_req = _urllib_req.Request(
-        "https://management.azure.com/providers/Microsoft.ResourceGraph/resources?api-version=2021-03-01",
-        data=json.dumps(
-            {
-                "query": (
-                    "Resources"
-                    " | where type =~ 'microsoft.eventhub/namespaces'"
-                    f" | where name =~ '{_ns_short}'"
-                    " | project id | limit 1"
-                )
-            }
-        ).encode(),
+        "https://management.azure.com/providers/"
+        "Microsoft.ResourceGraph/resources"
+        "?api-version=2021-03-01",
+        data=json.dumps({
+            "query": (
+                "Resources"
+                " | where type =~ 'microsoft.eventhub/namespaces'"
+                f" | where name =~ '{_ns_short}'"
+                " | project id | limit 1"
+            )
+        }).encode(),
         headers={**_arm_auth, "Content-Type": "application/json"},
         method="POST",
     )
@@ -125,7 +121,9 @@ async def verify_data_plane_access(credential: Any, eh_namespace: str, eh_name: 
     if not _rg_rows:
         return  # could not resolve, so skip the check
 
-    _ns_id: str = _rg_rows[0]["id"] if isinstance(_rg_rows[0], dict) else _rg_rows[0][0]
+    _ns_id: str = (
+        _rg_rows[0]["id"] if isinstance(_rg_rows[0], dict) else _rg_rows[0][0]
+    )
 
     # 2. Check effective data-plane permissions at the hub's scope.
     _perm_req = _urllib_req.Request(
@@ -146,7 +144,8 @@ async def verify_data_plane_access(credential: Any, eh_namespace: str, eh_name: 
     if not any(
         # RG/subscription-inherited assignments use wildcard form like
         # "Microsoft.EventHub/*/receive/action"
-        ("eventhub" in _a.lower() and "receive" in _a.lower()) or _a.lower() in ("*", "microsoft.eventhub/*")
+        ("eventhub" in _a.lower() and "receive" in _a.lower())
+        or _a.lower() in ("*", "microsoft.eventhub/*")
         for _a in _data_actions
     ):
         raise PermissionError(
@@ -164,8 +163,8 @@ class EventHubSettings:
     """
 
     connection_string: str = field(default="", repr=False)
-    fq_namespace: str = ""  # EVENT_HUB_NAMESPACE, fully qualified
-    hub_name: str = ""  # EVENT_HUB_NAME
+    fq_namespace: str = ""          # EVENT_HUB_NAMESPACE, fully qualified
+    hub_name: str = ""              # EVENT_HUB_NAME
     consumer_group: str = "$Default"
     start_position_raw: str = "latest"
 
@@ -236,7 +235,6 @@ def build_consumer_client(environ: Mapping[str, str] | EventHubSettings) -> Cons
     if settings.use_entra:
         from azure.core.pipeline.transport import AsyncioRequestsTransport
         from azure.identity.aio import DefaultAzureCredential
-
         credential = DefaultAzureCredential(transport=AsyncioRequestsTransport())
         client = EventHubConsumerClient(
             fully_qualified_namespace=settings.fq_namespace,
@@ -265,17 +263,7 @@ def build_consumer_client(environ: Mapping[str, str] | EventHubSettings) -> Cons
 
 
 __all__ = [
-    "AUTH_KEYWORDS",
-    "BACKOFF",
-    "MAX_ATTEMPTS",
-    "RECONNECT_BACKOFF",
-    "PROBE_TIMEOUT_S",
-    "NOT_CONFIGURED_MESSAGE",
-    "EventHubNotConfigured",
-    "EventHubSettings",
-    "ConsumerHandle",
-    "build_consumer_client",
-    "resolve_start_position",
-    "is_configuration_error",
-    "verify_data_plane_access",
+    "AUTH_KEYWORDS", "BACKOFF", "MAX_ATTEMPTS", "RECONNECT_BACKOFF", "PROBE_TIMEOUT_S", "NOT_CONFIGURED_MESSAGE",
+    "EventHubNotConfigured", "EventHubSettings", "ConsumerHandle", "build_consumer_client",
+    "resolve_start_position", "is_configuration_error", "verify_data_plane_access",
 ]

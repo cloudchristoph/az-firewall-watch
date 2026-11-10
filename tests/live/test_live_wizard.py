@@ -25,7 +25,6 @@ signed-in user, and the test resolves that user the same way.
 Requirements for the read-only paths: an Azure CLI login with Reader on the
 subscription and *Azure Event Hubs Data Receiver* on the existing hub.
 """
-
 from __future__ import annotations
 
 import asyncio
@@ -65,8 +64,7 @@ DEPLOY = os.environ.get("AZFW_LIVE_WIZARD_DEPLOY", "") == "1"
 NS_SHORT = EH_NAMESPACE.split(".", 1)[0]
 
 needs_hub = pytest.mark.skipif(
-    not (EH_NAMESPACE and EH_NAME),
-    reason="set AZFW_LIVE_EVENTHUB_NAMESPACE and AZFW_LIVE_EVENTHUB_NAME to run",
+    not (EH_NAMESPACE and EH_NAME), reason="set AZFW_LIVE_EVENTHUB_NAMESPACE and AZFW_LIVE_EVENTHUB_NAME to run",
 )
 needs_subscription = pytest.mark.skipif(not SUBSCRIPTION, reason="set AZFW_LIVE_WIZARD_SUBSCRIPTION to run")
 needs_deploy = pytest.mark.skipif(
@@ -84,23 +82,18 @@ E2E_DIAG = "azfw-e2e-diag"
 E2E_LISTEN = "az-firewall-watch-listen"
 E2E_SEND = "az-firewall-watch-send"
 
-SCAN_TIMEOUT = 600.0  # discovery walks every subscription the login can see
-DEPLOY_TIMEOUT = 900.0  # namespace creation plus the wizard's 30 s propagation wait
-RBAC_TIMEOUT = 600.0  # a fresh role assignment can take minutes to reach the data plane
+SCAN_TIMEOUT = 600.0     # discovery walks every subscription the login can see
+DEPLOY_TIMEOUT = 900.0   # namespace creation plus the wizard's 30 s propagation wait
+RBAC_TIMEOUT = 600.0     # a fresh role assignment can take minutes to reach the data plane
 FIRST_RECORD_TIMEOUT = 1800.0  # a fresh diagnostic setting delivers its first batch after 5 to 20+ minutes
 
 _ENV_KEYS = (
-    "EVENT_HUB_CONNECTION_STRING",
-    "EVENT_HUB_NAMESPACE",
-    "EVENT_HUB_NAME",
-    "EVENT_HUB_CONSUMER_GROUP",
-    "EVENT_HUB_START_POSITION",
-    "POLICY_CONTEXT",
+    "EVENT_HUB_CONNECTION_STRING", "EVENT_HUB_NAMESPACE", "EVENT_HUB_NAME",
+    "EVENT_HUB_CONSUMER_GROUP", "EVENT_HUB_START_POSITION", "POLICY_CONTEXT",
 )
 
 
 # ── helpers ──────────────────────────────────────────────────────────────────
-
 
 async def wait_until(pilot, cond: Callable[[], bool], timeout: float, what: str = "condition") -> None:
     loop = asyncio.get_event_loop()
@@ -197,11 +190,8 @@ async def first_record_arrives(namespace: str, hub: str, timeout: float) -> dict
     try:
         while time.time() < deadline and not seen:
             client = EventHubConsumerClient(
-                fully_qualified_namespace=namespace,
-                eventhub_name=hub,
-                consumer_group="$Default",
-                credential=credential,
-                retry_total=0,
+                fully_qualified_namespace=namespace, eventhub_name=hub, consumer_group="$Default",
+                credential=credential, retry_total=0,
             )
 
             async def on_event(_ctx, event):
@@ -238,16 +228,13 @@ async def _resolve_lab_sas() -> str:
         hubs = await ops.scan_event_hubs([sub], lambda _m: None)
         for sub_id, _name, rg, ns, eh in hubs:
             if ns == NS_SHORT and eh == EH_NAME:
-
                 async def _decline() -> bool:
                     return False
-
                 return await ops.resolve_sas_conn_str(sub_id, rg, ns, eh, E2E_LISTEN, lambda _m: None, _decline)
     return ""
 
 
 # ── paste ────────────────────────────────────────────────────────────────────
-
 
 @needs_hub
 async def test_paste_sas_string_then_viewer_connects(env_file, clean_process_env):
@@ -272,7 +259,6 @@ async def test_paste_sas_string_then_viewer_connects(env_file, clean_process_env
 
 # ── enter existing (Entra ID) ────────────────────────────────────────────────
 
-
 @needs_hub
 async def test_enter_existing_hub_entra_then_viewer_connects(env_file, clean_process_env):
     app = WizardApp(env_file)
@@ -294,19 +280,15 @@ async def test_enter_existing_hub_entra_then_viewer_connects(env_file, clean_pro
 
 # ── discover ─────────────────────────────────────────────────────────────────
 
-
 async def _discover_and_select(app, pilot, ns_short: str, hub: str) -> tuple:
     """Run the real scan, pick the hub, and return its (sub_id, sub_name, rg, ns, eh)."""
     await pilot.pause()
     await app.push_screen(PickExistingScreen())
     await wait_until(
         pilot,
-        lambda: (
-            app.screen.query_one(ContentSwitcher).current == "phase-select"
-            or bool(str(app.screen.query_one("#lbl-scan-error").content))
-        ),
-        SCAN_TIMEOUT,
-        "event hub scan",
+        lambda: app.screen.query_one(ContentSwitcher).current == "phase-select"
+        or bool(str(app.screen.query_one("#lbl-scan-error").content)),
+        SCAN_TIMEOUT, "event hub scan",
     )
     await pilot.pause()
     screen = app.screen
@@ -342,10 +324,7 @@ async def test_discover_then_sas_reuses_existing_rule_then_viewer_connects(env_f
         await _choose_auth(app, pilot, "sas")
         await _pass_policy_context(app, pilot)
         await wait_until(
-            pilot,
-            lambda: app._exit or isinstance(app.screen, ConfirmCreateRuleScreen),
-            120,
-            "SAS resolution",
+            pilot, lambda: app._exit or isinstance(app.screen, ConfirmCreateRuleScreen), 120, "SAS resolution",
         )
         if isinstance(app.screen, ConfirmCreateRuleScreen):
             await pilot.click("#btn-cancel")  # this path is meant to reuse, never to create
@@ -359,7 +338,6 @@ async def test_discover_then_sas_reuses_existing_rule_then_viewer_connects(env_f
 
 
 # ── deploy new ───────────────────────────────────────────────────────────────
-
 
 class _Deployment:
     """Names and cleanup of one deploy-path run."""
@@ -382,15 +360,8 @@ class _Deployment:
             run_az("monitor", "diagnostic-settings", "delete", "--name", E2E_DIAG, "--resource", self.fw_id)
         if self.hub_scope and user_id:
             run_az(
-                "role",
-                "assignment",
-                "delete",
-                "--assignee",
-                user_id,
-                "--scope",
-                self.hub_scope,
-                "--role",
-                "a638d3c7-ab3a-418d-83e6-5f17a39d4fde",
+                "role", "assignment", "delete", "--assignee", user_id, "--scope", self.hub_scope,
+                "--role", "a638d3c7-ab3a-418d-83e6-5f17a39d4fde",
             )
         leftovers: list[str] = []
         if self.sub_id:
@@ -402,21 +373,13 @@ class _Deployment:
             else:
                 leftovers.append(f"resource group {E2E_RG} still exists")
         if self.fw_id and _az_json(
-            "monitor",
-            "diagnostic-settings",
-            "list",
-            "--resource",
-            self.fw_id,
-            "--query",
-            f"[?name=='{E2E_DIAG}']",
+            "monitor", "diagnostic-settings", "list", "--resource", self.fw_id, "--query", f"[?name=='{E2E_DIAG}']",
         ):
             leftovers.append(f"diagnostic setting {E2E_DIAG} still on the firewall")
         if self.hub_scope and user_id:
             # The scope is gone with the group, and the CLI then errors instead of
             # answering "none"; only an answer that lists assignments is a leftover.
-            listed = run_az(
-                "role", "assignment", "list", "--assignee", user_id, "--scope", self.hub_scope, "-o", "json"
-            )
+            listed = run_az("role", "assignment", "list", "--assignee", user_id, "--scope", self.hub_scope, "-o", "json")
             if listed.returncode == 0 and listed.stdout.strip() and json.loads(listed.stdout):
                 leftovers.append(f"role assignment still on {self.hub_scope}")
         return leftovers
@@ -429,10 +392,8 @@ async def _deploy_through_wizard(app, pilot, dep: _Deployment, auth: str) -> str
     screen = app.screen
     sw = lambda: screen.query_one(ContentSwitcher).current  # noqa: E731
     await wait_until(
-        pilot,
-        lambda: sw() == "step-subscription" or bool(str(screen.query_one("#lbl-deploy-error").content)),
-        120,
-        "login and subscription list",
+        pilot, lambda: sw() == "step-subscription" or bool(str(screen.query_one("#lbl-deploy-error").content)),
+        120, "login and subscription list",
     )
     assert sw() == "step-subscription", str(screen.query_one("#lbl-deploy-error").content)
     subs = screen._subs
@@ -444,10 +405,9 @@ async def _deploy_through_wizard(app, pilot, dep: _Deployment, auth: str) -> str
     await pilot.click("#btn-next-sub")
 
     await wait_until(
-        pilot,
-        lambda: screen.query_one("#fw-list", ListView).display or bool(str(screen.query_one("#lbl-fw-error").content)),
-        120,
-        "firewall scan",
+        pilot, lambda: screen.query_one("#fw-list", ListView).display
+        or bool(str(screen.query_one("#lbl-fw-error").content)),
+        120, "firewall scan",
     )
     fws = screen._firewalls
     fidx = [i for i, fw in enumerate(fws) if fw["name"] == FIREWALL]
@@ -478,10 +438,8 @@ async def _deploy_through_wizard(app, pilot, dep: _Deployment, auth: str) -> str
     )
     await pilot.click("#btn-deploy")
     await wait_until(
-        pilot,
-        lambda: app._exit or not screen.query_one("#btn-back-progress", Button).disabled,
-        DEPLOY_TIMEOUT,
-        "deployment",
+        pilot, lambda: app._exit or not screen.query_one("#btn-back-progress", Button).disabled,
+        DEPLOY_TIMEOUT, "deployment",
     )
     log = _log_text(screen, "#progress-log")
     assert app._exit, f"deployment failed:\n{log}"
@@ -491,53 +449,18 @@ async def _deploy_through_wizard(app, pilot, dep: _Deployment, auth: str) -> str
 def _assert_deployed(dep: _Deployment, auth: str, user_id: str) -> None:
     ns = _az_json("eventhubs", "namespace", "show", "--subscription", dep.sub_id, "-g", E2E_RG, "-n", dep.ns)
     assert ns["sku"]["name"] == "Basic" and ns["tags"].get("project") == "az-firewall-watch"
-    hub = _az_json(
-        "eventhubs",
-        "eventhub",
-        "show",
-        "--subscription",
-        dep.sub_id,
-        "-g",
-        E2E_RG,
-        "--namespace-name",
-        dep.ns,
-        "-n",
-        E2E_HUB,
-    )
+    hub = _az_json("eventhubs", "eventhub", "show", "--subscription", dep.sub_id, "-g", E2E_RG,
+                   "--namespace-name", dep.ns, "-n", E2E_HUB)
     assert hub["partitionCount"] == 1
-    ns_rules = {
-        r["name"]: r["rights"]
-        for r in _az_json(
-            "eventhubs",
-            "namespace",
-            "authorization-rule",
-            "list",
-            "--subscription",
-            dep.sub_id,
-            "-g",
-            E2E_RG,
-            "--namespace-name",
-            dep.ns,
-        )
-    }
+    ns_rules = {r["name"]: r["rights"] for r in _az_json(
+        "eventhubs", "namespace", "authorization-rule", "list", "--subscription", dep.sub_id,
+        "-g", E2E_RG, "--namespace-name", dep.ns,
+    )}
     assert ns_rules.get(E2E_SEND) == ["Send"]
-    hub_rules = {
-        r["name"]: r["rights"]
-        for r in _az_json(
-            "eventhubs",
-            "eventhub",
-            "authorization-rule",
-            "list",
-            "--subscription",
-            dep.sub_id,
-            "-g",
-            E2E_RG,
-            "--namespace-name",
-            dep.ns,
-            "--eventhub-name",
-            E2E_HUB,
-        )
-    }
+    hub_rules = {r["name"]: r["rights"] for r in _az_json(
+        "eventhubs", "eventhub", "authorization-rule", "list", "--subscription", dep.sub_id,
+        "-g", E2E_RG, "--namespace-name", dep.ns, "--eventhub-name", E2E_HUB,
+    )}
     if auth == "sas":
         assert hub_rules.get(E2E_LISTEN) == ["Listen"]
     else:
@@ -595,23 +518,10 @@ async def test_deploy_new_hub_entra_then_discover_sas_creates_rule(env_file, tmp
             await wait_until(pilot, lambda: app._exit, 120, "rule creation")
         conn = get_existing_conn_str(sas_env)
         assert conn and f"SharedAccessKeyName={E2E_LISTEN}" in conn and f"EntityPath={E2E_HUB}" in conn
-        hub_rules = {
-            r["name"]: r["rights"]
-            for r in _az_json(
-                "eventhubs",
-                "eventhub",
-                "authorization-rule",
-                "list",
-                "--subscription",
-                dep.sub_id,
-                "-g",
-                E2E_RG,
-                "--namespace-name",
-                dep.ns,
-                "--eventhub-name",
-                E2E_HUB,
-            )
-        }
+        hub_rules = {r["name"]: r["rights"] for r in _az_json(
+            "eventhubs", "eventhub", "authorization-rule", "list", "--subscription", dep.sub_id,
+            "-g", E2E_RG, "--namespace-name", dep.ns, "--eventhub-name", E2E_HUB,
+        )}
         assert hub_rules.get(E2E_LISTEN) == ["Listen"]
         assert await viewer_connects(sas_env) == ("connected", "")
     finally:

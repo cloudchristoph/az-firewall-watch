@@ -3,7 +3,6 @@
 The decision is made on the process environment (after .env was loaded), and
 whatever the wizard wrote has to be visible to the viewer afterwards.
 """
-
 from __future__ import annotations
 
 from pathlib import Path

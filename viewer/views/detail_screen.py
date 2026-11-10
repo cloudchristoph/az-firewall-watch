@@ -5,7 +5,6 @@ policy metadata loaded). Without it the dialog is the plain, narrow entry view: 
 one-line header, the fields, the 0.6.0 note explaining why there is no trace, and
 a footer with only ``Esc close``.
 """
-
 from __future__ import annotations
 
 from rich.text import Text
@@ -407,15 +406,8 @@ class DetailDialog(ModalScreen[str | None]):
     }
     """
 
-    def __init__(
-        self,
-        row: FirewallDataRow,
-        *,
-        enrichment: dict | None = None,
-        trace: Trace | None = None,
-        trace_note: str = "",
-        cache_age: str = "",
-    ) -> None:
+    def __init__(self, row: FirewallDataRow, *, enrichment: dict | None = None,
+                 trace: Trace | None = None, trace_note: str = "", cache_age: str = "") -> None:
         super().__init__()
         self._row = row
         self._enrichment: dict = enrichment or {}
@@ -448,7 +440,7 @@ class DetailDialog(ModalScreen[str | None]):
         """Local time first, UTC dim beside it; the UTC date only when it differs
         from the local one, so the line fits the pane beside the trace."""
         local = _to_local(row.time)
-        utc = _utc_short(row.time)  # 2026-09-09T16:41:46Z
+        utc = _utc_short(row.time)                       # 2026-09-09T16:41:46Z
         utc_date, _, utc_clock = utc.partition("T")
         utc_short = utc_clock if local.startswith(utc_date) else utc
         text = f"[dim]{'Time'.ljust(13)}[/]  {escape_markup(local)}   [dim]{escape_markup(utc_short)} UTC[/]"
@@ -515,12 +507,8 @@ class DetailDialog(ModalScreen[str | None]):
                         yield from self._entry_fields()
                         if self._trace is None and self._trace_note:
                             title, _, why = self._trace_note.partition("\n")
-                            yield Static(
-                                f"[b]{escape_markup(title)}[/b]\n[dim]{escape_markup(why)}[/]",
-                                id="trace-note",
-                                classes="detail-row",
-                                markup=True,
-                            )
+                            yield Static(f"[b]{escape_markup(title)}[/b]\n[dim]{escape_markup(why)}[/]", id="trace-note",
+                                         classes="detail-row", markup=True)
                     if self._trace is not None:
                         yield TracePanel(self._trace, id="trace-panel")
             with Horizontal(id="dialog-footer-row"):
@@ -566,9 +554,7 @@ class DetailDialog(ModalScreen[str | None]):
         if cat == "idps" and row.moreinfo:
             # parser joins "SEV:n · id · category · description"
             for label, value in zip(_IDPS_FIELDS, row.moreinfo.split(" · "), strict=False):
-                yield self._field(
-                    label.ljust(13), value[4:] if label == "Severity" and value.startswith("SEV:") else value
-                )
+                yield self._field(label.ljust(13), value[4:] if label == "Severity" and value.startswith("SEV:") else value)
         if not any([row.fw_policy, row.rule_collection_group, row.rule_collection, row.rule_name]) and row.policy:
             yield self._field("Policy / Info", row.policy)
 

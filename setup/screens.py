@@ -209,20 +209,21 @@ class PolicyContextScreen(ModalScreen[bool | None]):
     """Asks whether the viewer may read firewall metadata via ARM (default: yes)."""
 
     def compose(self):
-        permissions = "Windows access permissions apply" if os.name == "nt" else "file mode 0600 requested on write"
+        permissions = (
+            "Windows access permissions apply"
+            if os.name == "nt" else "file mode 0600 requested on write"
+        )
         with Vertical(classes="wiz-box"):
             yield Static("Policy context", classes="wiz-title")
             yield Static(
-                Text(
-                    "Besides reading the Event Hub, the viewer can read the firewall,\n"
-                    "its policy and IP groups via Azure Resource Manager to show the\n"
-                    "Firewall / Policy / IP Groups tabs and the evaluation trace.\n\n"
-                    "This means, in addition to the log stream:\n"
-                    "  • read-only ARM requests (Reader role on firewall, policy, IP groups)\n"
-                    "  • a token from the Azure CLI as fallback (az account get-access-token)\n"
-                    f"  • local cache: {cache_path()} (1 h; {permissions})\n\n"
-                    "Nothing is written to Azure. Saved to .env as POLICY_CONTEXT=on|off."
-                ),
+                Text("Besides reading the Event Hub, the viewer can read the firewall,\n"
+                "its policy and IP groups via Azure Resource Manager to show the\n"
+                "Firewall / Policy / IP Groups tabs and the evaluation trace.\n\n"
+                "This means, in addition to the log stream:\n"
+                "  • read-only ARM requests (Reader role on firewall, policy, IP groups)\n"
+                "  • a token from the Azure CLI as fallback (az account get-access-token)\n"
+                f"  • local cache: {cache_path()} (1 h; {permissions})\n\n"
+                "Nothing is written to Azure. Saved to .env as POLICY_CONTEXT=on|off."),
                 classes="wiz-info",
             )
             with RadioSet(id="context-radio"):
@@ -291,11 +292,17 @@ class PasteConnectionScreen(_WizardScreen):
             err_label.display = True
             return
         if not raw.startswith("Endpoint=sb://"):
-            err_label.update("Does not look like an Event Hub connection string (must start with 'Endpoint=sb://').")
+            err_label.update(
+                "Does not look like an Event Hub connection string "
+                "(must start with 'Endpoint=sb://')."
+            )
             err_label.display = True
             return
         if "EntityPath=" not in raw:
-            err_label.update("Connection string must target a specific Event Hub (must contain 'EntityPath=').")
+            err_label.update(
+                "Connection string must target a specific Event Hub "
+                "(must contain 'EntityPath=')."
+            )
             err_label.display = True
             return
 
@@ -468,9 +475,7 @@ class PickExistingScreen(_WizardScreen):
             return
 
         if auth_method == "entra":
-            write_env_entra(
-                self._wizard_app.env_file, f"{ns}.servicebus.windows.net", eh, policy_context=policy_context
-            )
+            write_env_entra(self._wizard_app.env_file, f"{ns}.servicebus.windows.net", eh, policy_context=policy_context)
             self.app.exit(True)
             return
 
@@ -484,7 +489,9 @@ class PickExistingScreen(_WizardScreen):
             )
 
         try:
-            conn_str = await resolve_sas_conn_str(sub_id, rg, ns, eh, rule_name, log.write, _confirm_create)
+            conn_str = await resolve_sas_conn_str(
+                sub_id, rg, ns, eh, rule_name, log.write, _confirm_create
+            )
             if not conn_str:
                 self.query_one(ContentSwitcher).current = "phase-select"
                 return
@@ -682,7 +689,9 @@ class DeployNewScreen(_WizardScreen):
         lv = self.query_one("#fw-list", ListView)
         self.query_one("#fw-spinner", LoadingIndicator).display = False
         for fw in fws:
-            lv.append(ListItem(Static(f"{fw['name']}  (rg: {fw['rg']}, location: {fw['location']})")))
+            lv.append(ListItem(Static(
+                f"{fw['name']}  (rg: {fw['rg']}, location: {fw['location']})"
+            )))
         lv.display = True
 
     def _go_firewall(self) -> None:
@@ -735,7 +744,9 @@ class DeployNewScreen(_WizardScreen):
             return
         self._auth_method = auth_method
         self._policy_context = policy_context
-        auth_label = "Entra ID" if auth_method == "entra" else "SAS connection string"
+        auth_label = (
+            "Entra ID" if auth_method == "entra" else "SAS connection string"
+        )
         rows = [
             f"Subscription  : {self._target_sub_name}",
             f"Firewall      : {self._selected_fw['name']} → diagnostics will be configured",
@@ -777,7 +788,9 @@ class DeployNewScreen(_WizardScreen):
                 fw=self._selected_fw,
                 auth_method=self._auth_method,
                 current_user_id=self._current_user_id,
-                using_existing_rg=bool(self._selected_fw and self._rg == self._selected_fw["rg"]),
+                using_existing_rg=bool(
+                    self._selected_fw and self._rg == self._selected_fw["rg"]
+                ),
                 log=log.write,
             )
             if self._auth_method == "entra":

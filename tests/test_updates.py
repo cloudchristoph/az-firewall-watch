@@ -1,5 +1,4 @@
 """Update check against GitHub releases (viewer/updates.py + UpdateDialog)."""
-
 from __future__ import annotations
 
 import io
@@ -18,7 +17,6 @@ from viewer.updates import _parse_version, check_for_update
 
 # ── helpers ──────────────────────────────────────────────────────────────────
 
-
 class _FakeResponse(io.BytesIO):
     """Minimal stand-in for the object returned by urllib.request.urlopen."""
 
@@ -35,7 +33,8 @@ def _fake_urlopen(payload: Any, *, raise_exc: Exception | None = None):
     calls: list[dict] = []
 
     def _urlopen(req, timeout=None, context=None):
-        calls.append({"url": req.full_url, "headers": dict(req.header_items()), "timeout": timeout, "context": context})
+        calls.append({"url": req.full_url, "headers": dict(req.header_items()), "timeout": timeout,
+                      "context": context})
         if raise_exc is not None:
             raise raise_exc
         body = payload if isinstance(payload, (bytes, bytearray)) else json.dumps(payload).encode()
@@ -51,7 +50,7 @@ async def _dialog_ready(app, pilot) -> None:
     for _ in range(100):
         if isinstance(app.screen, UpdateDialog):
             buttons = app.screen.query("#btn-open")
-            if buttons and buttons.first().region.width > 0:  # composed and laid out: a click can land
+            if buttons and buttons.first().region.width > 0:   # composed and laid out: a click can land
                 await pilot.pause()
                 return
         await pilot.pause(0.05)
@@ -73,7 +72,6 @@ def _release(tag: str, url: str = "https://github.com/cloudchristoph/az-firewall
 
 
 # ── _parse_version ───────────────────────────────────────────────────────────
-
 
 @pytest.mark.parametrize(
     "raw, expected",
@@ -101,7 +99,6 @@ def test_unknown_version_is_older_than_everything():
 
 
 # ── check_for_update (unit) ──────────────────────────────────────────────────
-
 
 async def test_newer_release_pushes_update_dialog(monkeypatch):
     fake = _fake_urlopen(_release("v0.4.0", "https://example.test/rel"))
@@ -195,7 +192,6 @@ async def test_missing_html_url_falls_back_to_releases_page(monkeypatch):
 
 
 # ── UpdateDialog behaviour (headless app) ────────────────────────────────────
-
 
 @pytest.mark.usefixtures("no_eventhub_env")
 class TestUpdateDialogInApp:

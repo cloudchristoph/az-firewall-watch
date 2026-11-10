@@ -7,7 +7,6 @@ bracketed and fully expanded (``[fd10:0003:0005:0001:0000:0000:0000:0004]``),
 ``AZFWDnsQuery`` rows compressed and bare, legacy messages bracketed with the
 same expanded/compressed split per category, ICMPv6 with port ``0``.
 """
-
 from __future__ import annotations
 
 import ipaddress
@@ -23,9 +22,9 @@ from viewer.app import FirewallLogApp
 from viewer.enrichment import resolve_fw_instance
 
 FIXTURES = Path(__file__).parent / "fixtures" / "ipv6"
-SPOKE = "fd10:3:5:1::4"  # the dual-stack demo VM that produced most records
+SPOKE = "fd10:3:5:1::4"                      # the dual-stack demo VM that produced most records
 SPOKE_EXPANDED = "fd10:0003:0005:0001:0000:0000:0000:0004"
-SPOKES_PREFIX = "fd10:3:"  # every spoke VNet in the lab sits under fd10:3::/32
+SPOKES_PREFIX = "fd10:3:"                    # every spoke VNet in the lab sits under fd10:3::/32
 
 
 def load(name: str) -> list[dict]:
@@ -49,14 +48,10 @@ def _is_address(value: str) -> bool:
 
 # ── every record parses into clean, one-spelling addresses ───────────────────
 
-
-@pytest.mark.parametrize(
-    "name, category",
-    [
-        ("AZFWNetworkRule.jsonl", "NetworkRule"),
-        ("AzureFirewallNetworkRule.jsonl", "NetworkRule"),
-    ],
-)
+@pytest.mark.parametrize("name, category", [
+    ("AZFWNetworkRule.jsonl", "NetworkRule"),
+    ("AzureFirewallNetworkRule.jsonl", "NetworkRule"),
+])
 def test_network_rule_records_have_bare_compressed_addresses(name, category):
     for row in rows(name):
         assert row.category == category
@@ -74,7 +69,7 @@ def test_dns_records_keep_the_compressed_client_address(name):
         assert row.sourceip.startswith(SPOKES_PREFIX) and "[" not in row.sourceip
         assert row.sourceip == ipaddress.ip_address(row.sourceip).compressed
         assert row.protocol in ("A", "AAAA")
-        assert "." in row.targetip and not row.targetip.endswith(".")  # the queried name, trailing dot dropped
+        assert "." in row.targetip and not row.targetip.endswith(".")   # the queried name, trailing dot dropped
         assert row.action == "NOERROR"
 
 
@@ -83,13 +78,10 @@ def _flow_key(r: FirewallDataRow) -> tuple:
     return (r.time[:19], r.protocol, r.sourceip, r.srcport, r.targetip, r.targetport, r.action, r.policy, r.rule_name)
 
 
-@pytest.mark.parametrize(
-    "structured_name, legacy_name",
-    [
-        ("AZFWNetworkRule.jsonl", "AzureFirewallNetworkRule.jsonl"),
-        ("AZFWDnsQuery.jsonl", "AzureFirewallDnsProxy.jsonl"),
-    ],
-)
+@pytest.mark.parametrize("structured_name, legacy_name", [
+    ("AZFWNetworkRule.jsonl", "AzureFirewallNetworkRule.jsonl"),
+    ("AZFWDnsQuery.jsonl", "AzureFirewallDnsProxy.jsonl"),
+])
 def test_structured_and_legacy_captures_are_the_same_events(structured_name, legacy_name):
     """Both Event Hubs received every one of these events; after parsing, the two formats
     must produce the same rows, record for record, addresses, ports, action and rule path
@@ -115,7 +107,7 @@ def test_default_deny_records_have_no_rule_but_say_default_action(name):
     defaults = [r for r in rows(name) if not r.rule_name]
     assert len(defaults) == 12
     for r in defaults:
-        assert r.action == "Deny" and r.policy == "Default Action"  # structured: ActionReason; legacy: inferred
+        assert r.action == "Deny" and r.policy == "Default Action"   # structured: ActionReason; legacy: inferred
 
 
 def test_icmpv6_records_parse_with_type_and_port_zero():
@@ -124,18 +116,13 @@ def test_icmpv6_records_parse_with_type_and_port_zero():
         assert icmp, name
         for r in icmp:
             assert r.protocol == "ICMPv6 Type=128"
-            assert (r.srcport, r.targetport) == ("0", "0")  # what the firewall writes, not "-"
+            assert (r.srcport, r.targetport) == ("0", "0")   # what the firewall writes, not "-"
             assert r.sourceip.startswith(SPOKES_PREFIX)
 
 
 # ── downstream: flow, filters, labels ────────────────────────────────────────
 
-ALL_FILES = (
-    "AZFWNetworkRule.jsonl",
-    "AzureFirewallNetworkRule.jsonl",
-    "AZFWDnsQuery.jsonl",
-    "AzureFirewallDnsProxy.jsonl",
-)
+ALL_FILES = ("AZFWNetworkRule.jsonl", "AzureFirewallNetworkRule.jsonl", "AZFWDnsQuery.jsonl", "AzureFirewallDnsProxy.jsonl")
 
 
 @pytest.mark.parametrize("name", ALL_FILES)
@@ -155,11 +142,11 @@ def test_every_record_becomes_an_address_flow(name):
 @pytest.mark.parametrize("name", ALL_FILES)
 def test_cidr_filter_selects_the_spoke_prefix_on_every_record(name):
     for row in rows(name):
-        assert address_matches("fd10:3::/32", row.sourceip), row.sourceip  # every source is a spoke
-        assert not address_matches("fd10:2::/32", row.sourceip)  # the hub's own range
-        assert address_matches(row.sourceip, row.sourceip)  # typed as displayed
+        assert address_matches("fd10:3::/32", row.sourceip), row.sourceip   # every source is a spoke
+        assert not address_matches("fd10:2::/32", row.sourceip)            # the hub's own range
+        assert address_matches(row.sourceip, row.sourceip)                  # typed as displayed
         if row.sourceip == SPOKE:
-            assert address_matches(SPOKE_EXPANDED, row.sourceip)  # typed the long way
+            assert address_matches(SPOKE_EXPANDED, row.sourceip)           # typed the long way
 
 
 @pytest.mark.parametrize("name", ALL_FILES)
@@ -167,29 +154,22 @@ def test_instance_labels_resolve_on_every_normalised_source(name):
     """With the spoke subnet posing as a firewall subnet, every source must get a label from
     the parsed address (``AzFw.4`` for ``…::4``); brackets or expanded groups would break it."""
     for row in rows(name):
-        subnet = (
-            row.sourceip.rsplit(":", 1)[0] + "::/64"
-            if "::" not in row.sourceip
-            else row.sourceip.rsplit("::", 1)[0] + "::/64"
-        )
+        subnet = row.sourceip.rsplit(":", 1)[0] + "::/64" if "::" not in row.sourceip else row.sourceip.rsplit("::", 1)[0] + "::/64"
         assert resolve_fw_instance(row.sourceip, [subnet]) == "AzFw.4", (row.sourceip, subnet)
         assert resolve_fw_instance(row.sourceip, ["fd10:2:0:1::/64"]) is None
 
 
-@pytest.mark.parametrize(
-    "raw, expected",
-    [
-        ("[fd10:0003:0005:0001:0000:0000:0000:0004]", SPOKE),
-        ("fd10:0003:0005:0001:0000:0000:0000:0004", SPOKE),
-        ("fd10:3:5:1::4", SPOKE),
-        ("[2606:4700:4700:0000:0000:0000:0000:1111]", "2606:4700:4700::1111"),
-        ("10.3.5.4", "10.3.5.4"),
-        ("[10.3.5.4]", "10.3.5.4"),
-        ("ifconfig.me", "ifconfig.me"),
-        ("-", "-"),
-        ("", ""),
-        ("[not-an-address]", "[not-an-address]"),
-    ],
-)
+@pytest.mark.parametrize("raw, expected", [
+    ("[fd10:0003:0005:0001:0000:0000:0000:0004]", SPOKE),
+    ("fd10:0003:0005:0001:0000:0000:0000:0004", SPOKE),
+    ("fd10:3:5:1::4", SPOKE),
+    ("[2606:4700:4700:0000:0000:0000:0000:1111]", "2606:4700:4700::1111"),
+    ("10.3.5.4", "10.3.5.4"),
+    ("[10.3.5.4]", "10.3.5.4"),
+    ("ifconfig.me", "ifconfig.me"),
+    ("-", "-"),
+    ("", ""),
+    ("[not-an-address]", "[not-an-address]"),
+])
 def test_normalise_address(raw, expected):
     assert normalise_address(raw) == expected

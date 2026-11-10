@@ -15,7 +15,6 @@ rejected; *why* it was rejected is computed locally per criterion and marked
 ``match`` / ``miss`` / ``unknown`` (service tags, FQDN tags, web categories and
 unreadable IP groups cannot be evaluated here).
 """
-
 from __future__ import annotations
 
 import ipaddress
@@ -36,15 +35,15 @@ _WILDCARDS = ("*", "any")
 
 @dataclass
 class Flow:
-    category: str = ""  # display category of the log row (NetworkRule, AppRule, NATRule, …)
-    protocol: str = ""  # TCP / UDP / ICMP / HTTPS / HTTP/1.1 / MSSQL …
+    category: str = ""      # display category of the log row (NetworkRule, AppRule, NATRule, …)
+    protocol: str = ""      # TCP / UDP / ICMP / HTTPS / HTTP/1.1 / MSSQL …
     src_ip: str = ""
     dst_ip: str = ""
     dst_fqdn: str = ""
     dst_port: str = ""
-    action: str = ""  # the action the firewall logged (used for rows decided outside the rules)
-    explicit_proxy: bool = False  # AZFWApplicationRule.IsExplicitProxyRequest == "yes"
-    tls_inspected: bool | None = False  # IsTlsInspected: True / False, None when the log has no such column
+    action: str = ""        # the action the firewall logged (used for rows decided outside the rules)
+    explicit_proxy: bool = False   # AZFWApplicationRule.IsExplicitProxyRequest == "yes"
+    tls_inspected: bool | None = False   # IsTlsInspected: True / False, None when the log has no such column
 
     @property
     def threat_intel(self) -> bool:
@@ -59,7 +58,6 @@ class Flow:
 @dataclass
 class LoggedMatch:
     """The rule the firewall itself reported in the log row."""
-
     policy: str = ""
     group: str = ""
     collection: str = ""
@@ -72,8 +70,8 @@ class LoggedMatch:
 
 @dataclass
 class Check:
-    name: str  # source | destination | port | protocol
-    result: str  # match | miss | unknown | n/a
+    name: str          # source | destination | port | protocol
+    result: str        # match | miss | unknown | n/a
     detail: str = ""
 
 
@@ -82,7 +80,7 @@ class RuleTrace:
     rule: Rule
     checks: list[Check] = field(default_factory=list)
     verdict: str = UNKNOWN
-    logged: bool = False  # this is the rule the firewall reported
+    logged: bool = False     # this is the rule the firewall reported
 
     @property
     def ref(self) -> str:
@@ -96,7 +94,7 @@ class CollectionTrace:
     collection: RuleCollection
     rules: list[RuleTrace] = field(default_factory=list)
     evaluated: bool = True
-    verdict: str = MISS  # match | miss | unknown | not evaluated
+    verdict: str = MISS     # match | miss | unknown | not evaluated
     note: str = ""
 
     @property
@@ -121,7 +119,7 @@ class Trace:
     logged: LoggedMatch | None
     threat_intel: str
     passes: list[PassTrace]
-    infrastructure: str | None  # note when reached, None otherwise
+    infrastructure: str | None   # note when reached, None otherwise
     outcome: str
     warnings: list[str] = field(default_factory=list)
 
@@ -137,7 +135,6 @@ class Trace:
 
 # ── criteria ─────────────────────────────────────────────────────────────────
 
-
 def _parse_ip(value: str):
     if not value or value == "-":
         return None
@@ -147,9 +144,8 @@ def _parse_ip(value: str):
         return None
 
 
-def _address_check(
-    ip, addresses: list[str], group_ids: list[str], ip_groups: dict[str, IpGroupInfo]
-) -> tuple[str, str]:
+def _address_check(ip, addresses: list[str], group_ids: list[str],
+                   ip_groups: dict[str, IpGroupInfo]) -> tuple[str, str]:
     """Return (result, detail) for an IP against address list + IP groups."""
     if ip is None:
         return NA, "no address in log"
@@ -161,7 +157,7 @@ def _address_check(
     hit = find_containing_entry(ip, parsed)
     if hit is not None:
         return MATCH, hit
-    unknown.extend(unreadable)  # service tag such as AzureMonitor
+    unknown.extend(unreadable)   # service tag such as AzureMonitor
     for gid in group_ids:
         grp = ip_groups.get(gid)
         if grp is None:
@@ -194,11 +190,8 @@ def _protocol_check(rule: Rule, flow: Flow) -> Check:
             # No IsTlsInspected column (the legacy properties.msg format): an
             # inspected HTTPS request is logged as HTTP too, and this rule
             # would decide differently for the two, so neither is claimed.
-            return Check(
-                "protocol",
-                UNKNOWN,
-                f"{flow.protocol} logged, IsTlsInspected not in this log: an inspected HTTPS request looks the same",
-            )
+            return Check("protocol", UNKNOWN,
+                         f"{flow.protocol} logged, IsTlsInspected not in this log: an inspected HTTPS request looks the same")
         if flow.tls_inspected and app_proto == "HTTP":
             # A TLS-inspected HTTPS request is logged as the decrypted inner
             # request, Protocol "HTTP/1.1" with IsTlsInspected true (seen on real
@@ -257,11 +250,8 @@ def _destination_check(rule: Rule, flow: Flow, ip_groups: dict[str, IpGroupInfo]
             # name, not against the packet's. That resolution is nowhere in the
             # log, so a name that misses the FQDN list still leaves the question
             # open: never turn it into a miss.
-            unevaluable.append(
-                "addresses "
-                + ", ".join(rule.destination_addresses)
-                + " (matched against the firewall's own resolution of the name, not the logged IP)"
-            )
+            unevaluable.append("addresses " + ", ".join(rule.destination_addresses)
+                               + " (matched against the firewall's own resolution of the name, not the logged IP)")
         if unevaluable:
             return Check("destination", UNKNOWN, "cannot evaluate: " + "; ".join(unevaluable))
         if not rule.destination_fqdns:
@@ -284,21 +274,16 @@ def _destination_check(rule: Rule, flow: Flow, ip_groups: dict[str, IpGroupInfo]
         # application-rule row plays no part. Neither the name in the log nor an
         # IP in the log says what the FQDNs resolved to at the time, so never
         # answer with a definite match or miss.
-        return Check(
-            "destination",
-            UNKNOWN,
-            "cannot evaluate: FQDN "
-            + ", ".join(rule.destination_fqdns)
-            + " (a network rule matches the IP the firewall resolved, not the logged host name)",
-        )
+        return Check("destination", UNKNOWN,
+                     "cannot evaluate: FQDN " + ", ".join(rule.destination_fqdns)
+                     + " (a network rule matches the IP the firewall resolved, not the logged host name)")
     return Check("destination", result, detail)
 
 
 def evaluate_rule(rule: Rule, flow: Flow, ip_groups: dict[str, IpGroupInfo]) -> RuleTrace:
     """Check every criterion of *rule* against *flow*."""
-    src_result, src_detail = _address_check(
-        _parse_ip(flow.src_ip), rule.source_addresses, rule.source_ip_groups, ip_groups
-    )
+    src_result, src_detail = _address_check(_parse_ip(flow.src_ip), rule.source_addresses,
+                                            rule.source_ip_groups, ip_groups)
     checks = [
         Check("source", src_result, src_detail),
         _destination_check(rule, flow, ip_groups),
@@ -318,7 +303,6 @@ def evaluate_rule(rule: Rule, flow: Flow, ip_groups: dict[str, IpGroupInfo]) -> 
 
 
 # ── ranking helpers for the compact view ─────────────────────────────────────
-
 
 def rule_score(r: RuleTrace) -> int:
     """Number of matching criteria — higher means 'closer' to a match."""
@@ -348,15 +332,8 @@ def nearest_rules(trace: Trace, limit: int = 3) -> list[RuleTrace]:
     """Closest rules that did *not* match (miss or unknown) across all evaluated
     collections — the candidates to look at on a 'no rule matched' row.
     Computed matches are excluded; the view flags those separately."""
-    rules = [
-        r
-        for p in trace.passes
-        if p.evaluated
-        for c in p.collections
-        if c.evaluated
-        for r in c.rules
-        if not r.logged and r.verdict != MATCH
-    ]
+    rules = [r for p in trace.passes if p.evaluated for c in p.collections if c.evaluated
+             for r in c.rules if not r.logged and r.verdict != MATCH]
     # Highest score first; on ties prefer a definite miss (actionable) over an
     # unknown we cannot evaluate locally.
     rules.sort(key=lambda r: (-rule_score(r), r.verdict == UNKNOWN))
@@ -365,10 +342,8 @@ def nearest_rules(trace: Trace, limit: int = 3) -> list[RuleTrace]:
 
 # ── trace ────────────────────────────────────────────────────────────────────
 
-
-def _is_logged(
-    policy_name: str, group: RuleCollectionGroup, collection: RuleCollection, rule: Rule, logged: LoggedMatch | None
-) -> bool:
+def _is_logged(policy_name: str, group: RuleCollectionGroup, collection: RuleCollection,
+               rule: Rule, logged: LoggedMatch | None) -> bool:
     if not logged:
         return False
     if logged.policy and policy_name and logged.policy != policy_name:
@@ -376,9 +351,8 @@ def _is_logged(
     return (group.name, collection.name, rule.name) == (logged.group, logged.collection, logged.rule)
 
 
-def find_logged_rule(
-    policy: FirewallPolicyInfo | None, logged: LoggedMatch | None
-) -> tuple[str, RuleCollectionGroup, RuleCollection, Rule] | None:
+def find_logged_rule(policy: FirewallPolicyInfo | None, logged: LoggedMatch | None
+                     ) -> tuple[str, RuleCollectionGroup, RuleCollection, Rule] | None:
     """Exact lookup of the rule named in a log row (no heuristics)."""
     if policy is None or not logged:
         return None
@@ -398,34 +372,25 @@ def _unread_parent_placeholder(parent_name: str, kind: str) -> CollectionTrace:
     # pins the display kind; it is never evaluated (CollectionTrace.rules stays empty).
     rule_type = {"dnat": "NatRule", "network": "NetworkRule", "application": "ApplicationRule"}[kind]
     rc_type = "FirewallPolicyNatRuleCollection" if kind == "dnat" else "FirewallPolicyFilterRuleCollection"
-    collection = RuleCollection(
-        name="not readable", rule_collection_type=rc_type, rules=[Rule(name="", rule_type=rule_type)]
-    )
-    return CollectionTrace(
-        policy_name=parent_name,
-        group=group,
-        collection=collection,
-        verdict=UNKNOWN,
-        note="parent policy not readable: its collections are evaluated first and are unknown",
-    )
+    collection = RuleCollection(name="not readable", rule_collection_type=rc_type,
+                                rules=[Rule(name="", rule_type=rule_type)])
+    return CollectionTrace(policy_name=parent_name, group=group, collection=collection, verdict=UNKNOWN,
+                           note="parent policy not readable: its collections are evaluated first and are unknown")
 
 
-def build_trace(
-    flow: Flow, policy: FirewallPolicyInfo, ip_groups: dict[str, IpGroupInfo], logged: LoggedMatch | None = None
-) -> Trace:
+def build_trace(flow: Flow, policy: FirewallPolicyInfo, ip_groups: dict[str, IpGroupInfo],
+                logged: LoggedMatch | None = None) -> Trace:
     warnings: list[str] = []
     logged_found = find_logged_rule(policy, logged) is not None
     unread = policy.unread_parent()
     unread_name = unread.rstrip("/").rsplit("/", 1)[-1] if unread else ""
     missing: LoggedMatch | None = None  # the firewall's decision when we cannot locate its rule
     if logged and not logged_found:
-        reason = (
-            f"it probably lives in the parent policy {unread_name}, which could not be loaded"
-            if unread
-            else "the cache may be stale (Ctrl+R) or the rule was renamed"
-        )
+        reason = (f"it probably lives in the parent policy {unread_name}, which could not be loaded"
+                  if unread else "the cache may be stale (Ctrl+R) or the rule was renamed")
         warnings.append(
-            f"Logged rule {logged.group} » {logged.collection} » {logged.rule} is not in the loaded policy — {reason}."
+            f"Logged rule {logged.group} » {logged.collection} » {logged.rule} is not in the "
+            f"loaded policy — {reason}."
         )
         missing, logged = logged, None
 
@@ -433,24 +398,13 @@ def build_trace(
         # Threat Intelligence runs before any rule; a ThreatIntel row means the
         # decision was made there. In Alert mode the rules still run afterwards
         # for the same packet, but that produces its own log row.
-        threat_intel = (
-            f"hit — {flow.action or 'logged'} by Threat Intelligence (mode {policy.threat_intel_mode or '?'})"
-        )
-        skipped = [
-            PassTrace(
-                kind=kind, evaluated=False, note="not evaluated — Threat Intelligence decided before rule processing"
-            )
-            for kind in PASS_ORDER
-        ]
-        return Trace(
-            flow=flow,
-            logged=None,
-            threat_intel=threat_intel,
-            passes=skipped,
-            infrastructure=None,
-            outcome=f"{flow.action or 'handled'} by Threat Intelligence",
-            warnings=warnings,
-        )
+        threat_intel = f"hit — {flow.action or 'logged'} by Threat Intelligence (mode {policy.threat_intel_mode or '?'})"
+        skipped = [PassTrace(kind=kind, evaluated=False,
+                             note="not evaluated — Threat Intelligence decided before rule processing")
+                   for kind in PASS_ORDER]
+        return Trace(flow=flow, logged=None, threat_intel=threat_intel, passes=skipped,
+                     infrastructure=None, outcome=f"{flow.action or 'handled'} by Threat Intelligence",
+                     warnings=warnings)
     threat_intel = f"mode {policy.threat_intel_mode or 'Off'} — no hit"
     if unread:
         # Inherited groups run first in every pass, so until the parent is
@@ -506,19 +460,11 @@ def build_trace(
                         # Downgrade the rules too so the UI never shows a green
                         # match the firewall demonstrably did not stop at.
                         ctrace.verdict = UNKNOWN
-                        ctrace.note = (
-                            "local check would match, but the firewall continued — probably an unevaluable criterion"
-                        )
+                        ctrace.note = "local check would match, but the firewall continued — probably an unevaluable criterion"
                         for rt in ctrace.rules:
                             if rt.verdict == MATCH:
                                 rt.verdict = UNKNOWN
-                                rt.checks.append(
-                                    Check(
-                                        "firewall",
-                                        UNKNOWN,
-                                        "would match locally, but the firewall continued to a later rule",
-                                    )
-                                )
+                                rt.checks.append(Check("firewall", UNKNOWN, "would match locally, but the firewall continued to a later rule"))
                     elif MATCH in verdicts:
                         ctrace.verdict = MATCH
                         ctrace.note = "computed match — the firewall logged no rule; verify"
@@ -538,10 +484,8 @@ def build_trace(
         # The firewall did match a rule; we just cannot show it. Never claim a
         # default deny for a row the log says was allowed.
         infrastructure = None
-        outcome = (
-            f"{missing.action or 'matched'} by {missing.group} » {missing.collection} » "
-            f"{missing.rule} (rule not in loaded policy)"
-        )
+        outcome = (f"{missing.action or 'matched'} by {missing.group} » {missing.collection} » "
+                   f"{missing.rule} (rule not in loaded policy)")
     elif unread:
         # The unread parent comes first: its collections may have matched.
         infrastructure = None
@@ -549,22 +493,14 @@ def build_trace(
     else:
         infrastructure = "no match assumed — infrastructure FQDNs are not evaluated locally"
         outcome = "default action: Deny (no rule matched)"
-    return Trace(
-        flow=flow,
-        logged=logged,
-        threat_intel=threat_intel,
-        passes=passes,
-        infrastructure=infrastructure,
-        outcome=outcome,
-        warnings=warnings,
-    )
+    return Trace(flow=flow, logged=logged, threat_intel=threat_intel, passes=passes,
+                 infrastructure=infrastructure, outcome=outcome, warnings=warnings)
 
 
 # ── log rows → trace inputs ──────────────────────────────────────────────────
 # The TUI keeps its own copies of these as ``FirewallLogApp._flow_from_row``,
 # ``_logged_from_row``, ``_TRACEABLE`` and ``_NO_DECISION`` until the open
 # change to ``viewer/app.py`` (PR #35) has landed; then the app delegates here.
-
 
 def flow_from_row(row: FirewallDataRow) -> Flow:
     """The flow a log row describes, in the shape :func:`build_trace` evaluates."""
@@ -586,7 +522,7 @@ def flow_from_row(row: FirewallDataRow) -> Flow:
         dst_port="" if port == "-" else port,
         action=row.action if row.action != "-" else "",
         explicit_proxy=row.explicit_proxy == "yes",
-        tls_inspected={"yes": True, "no": False}.get(row.tls_inspected),  # "" (no column) stays unknown
+        tls_inspected={"yes": True, "no": False}.get(row.tls_inspected),   # "" (no column) stays unknown
     )
 
 
@@ -594,13 +530,8 @@ def logged_from_row(row: FirewallDataRow) -> LoggedMatch | None:
     """The rule the firewall reported in a log row, ``None`` when the row names none."""
     if not (row.rule_collection_group and row.rule_collection and row.rule_name):
         return None
-    return LoggedMatch(
-        policy=row.fw_policy,
-        group=row.rule_collection_group,
-        collection=row.rule_collection,
-        rule=row.rule_name,
-        action=row.action,
-    )
+    return LoggedMatch(policy=row.fw_policy, group=row.rule_collection_group,
+                       collection=row.rule_collection, rule=row.rule_name, action=row.action)
 
 
 # Only rows that *are* a policy decision get an evaluation trace. Flow traces,

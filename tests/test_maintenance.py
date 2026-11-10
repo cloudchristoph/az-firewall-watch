@@ -1,6 +1,5 @@
 """Customer-controlled maintenance windows: fetch, cache round trip, and the
 Firewall-tab rendering (0.6.0 point 5)."""
-
 from __future__ import annotations
 
 from datetime import date
@@ -45,13 +44,8 @@ class FakeArm:
 
 
 def _fw() -> FirewallInfo:
-    return FirewallInfo(
-        id=FW_ID,
-        name="fw-hub-gwc",
-        subscription_id="s",
-        resource_group="rg-hub-network-gwc",
-        location="germanywestcentral",
-    )
+    return FirewallInfo(id=FW_ID, name="fw-hub-gwc", subscription_id="s", resource_group="rg-hub-network-gwc",
+                        location="germanywestcentral")
 
 
 CONFIG_JSON_FULL = {
@@ -72,18 +66,13 @@ CONFIG_JSON_FULL = {
 
 # ── fetch_maintenance ───────────────────────────────────────────────────────
 
-
 async def test_fetch_maintenance_reads_assignment_and_readable_configuration():
-    arm = FakeArm(
-        {
-            ASSIGNMENTS_PATH: {
-                "value": [
-                    {"name": "assign1", "properties": {"maintenanceConfigurationId": CONFIG_ID, "resourceId": FW_ID}},
-                ]
-            },
-            CONFIG_ID: CONFIG_JSON_FULL,
-        }
-    )
+    arm = FakeArm({
+        ASSIGNMENTS_PATH: {"value": [
+            {"name": "assign1", "properties": {"maintenanceConfigurationId": CONFIG_ID, "resourceId": FW_ID}},
+        ]},
+        CONFIG_ID: CONFIG_JSON_FULL,
+    })
     windows = await fetch_maintenance(arm, FW_ID)
     assert len(windows) == 1
     w = windows[0]
@@ -101,16 +90,12 @@ async def test_fetch_maintenance_reads_assignment_and_readable_configuration():
 
 
 async def test_fetch_maintenance_configuration_missing_keys_defaults_to_empty_strings():
-    arm = FakeArm(
-        {
-            ASSIGNMENTS_PATH: {
-                "value": [
-                    {"name": "assign1", "properties": {"maintenanceConfigurationId": CONFIG_ID}},
-                ]
-            },
-            CONFIG_ID: {"name": "mc-fw-nightly", "properties": {}},
-        }
-    )
+    arm = FakeArm({
+        ASSIGNMENTS_PATH: {"value": [
+            {"name": "assign1", "properties": {"maintenanceConfigurationId": CONFIG_ID}},
+        ]},
+        CONFIG_ID: {"name": "mc-fw-nightly", "properties": {}},
+    })
     windows = await fetch_maintenance(arm, FW_ID)
     w = windows[0]
     assert w.readable is True
@@ -119,28 +104,22 @@ async def test_fetch_maintenance_configuration_missing_keys_defaults_to_empty_st
 
 
 async def test_fetch_maintenance_configuration_get_raises_arm_error_marks_unreadable():
-    arm = FakeArm(
-        {
-            ASSIGNMENTS_PATH: {
-                "value": [
-                    {"name": "assign1", "properties": {"maintenanceConfigurationId": CONFIG_ID}},
-                ]
-            },
-            CONFIG_ID: ArmError(403, "AuthorizationFailed", "no Reader on the maintenance configuration"),
-        }
-    )
+    arm = FakeArm({
+        ASSIGNMENTS_PATH: {"value": [
+            {"name": "assign1", "properties": {"maintenanceConfigurationId": CONFIG_ID}},
+        ]},
+        CONFIG_ID: ArmError(403, "AuthorizationFailed", "no Reader on the maintenance configuration"),
+    })
     windows = await fetch_maintenance(arm, FW_ID)
     w = windows[0]
     assert w.readable is False
-    assert w.configuration_name == "mc-fw-nightly"  # last path segment of the id
+    assert w.configuration_name == "mc-fw-nightly"          # last path segment of the id
     assert w.assignment_name == "assign1"
-    assert w.start == "" and w.scope == ""  # nothing else guessed at
+    assert w.start == "" and w.scope == ""                  # nothing else guessed at
 
 
-@pytest.mark.parametrize(
-    "status,code",
-    [(404, "ResourceNotFound"), (409, "MissingSubscriptionRegistration"), (409, "NoRegisteredProviderFound")],
-)
+@pytest.mark.parametrize("status,code", [(404, "ResourceNotFound"), (409, "MissingSubscriptionRegistration"),
+                                         (409, "NoRegisteredProviderFound")])
 async def test_fetch_maintenance_absent_provider_or_assignments_is_an_empty_list(status, code):
     arm = FakeArm({ASSIGNMENTS_PATH: ArmError(status, code, "boom")})
     assert await fetch_maintenance(arm, FW_ID) == []
@@ -175,7 +154,6 @@ async def test_fetch_maintenance_assignment_without_configuration_id():
 
 # ── cache round trip ─────────────────────────────────────────────────────────
 
-
 @pytest.fixture
 def cache_file(tmp_path: Path, monkeypatch) -> Path:
     path = tmp_path / "cache.json"
@@ -190,19 +168,10 @@ def test_maintenance_round_trips_through_the_cache(cache_file):
     fw.policy_id = "/p"
     policy = FirewallPolicyInfo(id="/p", name="pol")
     maintenance = [
-        MaintenanceWindow(
-            assignment_name="assign1",
-            configuration_id=CONFIG_ID,
-            configuration_name="mc-fw-nightly",
-            readable=True,
-            start="2020-01-01 22:00",
-            duration="05:00",
-            time_zone="W. Europe Standard Time",
-            recur_every="Day",
-            expiration="9999-12-31 23:59",
-            scope="Resource",
-            sub_scope="NetworkSecurity",
-        ),
+        MaintenanceWindow(assignment_name="assign1", configuration_id=CONFIG_ID, configuration_name="mc-fw-nightly",
+                          readable=True, start="2020-01-01 22:00", duration="05:00",
+                          time_zone="W. Europe Standard Time", recur_every="Day",
+                          expiration="9999-12-31 23:59", scope="Resource", sub_scope="NetworkSecurity"),
         MaintenanceWindow(assignment_name="assign2", configuration_id=f"{MAINT_RG}/mc2", readable=False),
     ]
     snap = cache.CachedSnapshot(firewall=fw, policy=policy, maintenance=maintenance, fetched_at=1.0)
@@ -211,9 +180,8 @@ def test_maintenance_round_trips_through_the_cache(cache_file):
     assert loaded is not None
     assert loaded.maintenance == maintenance and loaded.maintenance_readable is True
 
-    unreadable = cache.CachedSnapshot(
-        firewall=fw, policy=policy, maintenance=[], maintenance_readable=False, fetched_at=1.0
-    )
+    unreadable = cache.CachedSnapshot(firewall=fw, policy=policy, maintenance=[], maintenance_readable=False,
+                                      fetched_at=1.0)
     cache.save(FW_ID, unreadable)
     reloaded = cache.load(FW_ID)
     assert reloaded is not None and reloaded.maintenance_readable is False
@@ -222,18 +190,14 @@ def test_maintenance_round_trips_through_the_cache(cache_file):
 def test_maintenance_defaults_to_empty_list_when_absent_from_an_older_cache_entry(cache_file):
     import json
 
-    entry = {
-        "firewall": {"id": FW_ID, "name": "fw", "subscription_id": "s", "resource_group": "rg", "location": "gwc"},
-        "policy": None,
-        "fetched_at": 1.0,
-    }
+    entry = {"firewall": {"id": FW_ID, "name": "fw", "subscription_id": "s", "resource_group": "rg", "location": "gwc"},
+             "policy": None, "fetched_at": 1.0}
     cache_file.write_text(json.dumps({"_version": cache._CACHE_VERSION, "entries": {FW_ID: entry}}))
     loaded = cache.load(FW_ID)
     assert loaded is not None and loaded.maintenance == []
 
 
 # ── Firewall-tab rendering ───────────────────────────────────────────────────
-
 
 def test_maintenance_rows_empty_list():
     assert _maintenance_rows(_fw(), []) == [
@@ -243,50 +207,26 @@ def test_maintenance_rows_empty_list():
 
 def test_maintenance_rows_readable_window_common_case():
     # Start far in the past and the "9999-…" sentinel expiration: no "from …" prefix, no "until …" suffix.
-    w = MaintenanceWindow(
-        assignment_name="assign1",
-        configuration_id=CONFIG_ID,
-        configuration_name="mc-fw-nightly",
-        readable=True,
-        start="2020-01-01 22:00",
-        duration="05:00",
-        time_zone="W. Europe Standard Time",
-        recur_every="Day",
-        expiration="9999-12-31 23:59",
-        scope="Resource",
-        sub_scope="NetworkSecurity",
-    )
+    w = MaintenanceWindow(assignment_name="assign1", configuration_id=CONFIG_ID, configuration_name="mc-fw-nightly",
+                          readable=True, start="2020-01-01 22:00", duration="05:00",
+                          time_zone="W. Europe Standard Time", recur_every="Day",
+                          expiration="9999-12-31 23:59", scope="Resource", sub_scope="NetworkSecurity")
     rows = _maintenance_rows(_fw(), [w])
     assert rows == [
         _row("Maintenance", "daily 22:00 for 5 h, W. Europe Standard Time", "mc-fw-nightly"),
-        _note(
-            "covers guest OS and service updates; host updates and urgent security fixes can fall outside the window"
-        ),
+        _note("covers guest OS and service updates; host updates and urgent security fixes can fall outside the window"),
     ]
 
 
-@pytest.mark.parametrize(
-    "missing,expect_missing,expect_present",
-    [
-        ({"start": ""}, "start", "duration 05:00 · zone W. Europe Standard Time · recurs Day"),
-        ({"duration": "", "time_zone": ""}, "duration, time zone", "start 2020-01-01 22:00 · recurs Day"),
-        ({"start": "", "duration": "", "time_zone": "", "recur_every": ""}, "start, duration, time zone", ""),
-    ],
-)
-def test_maintenance_rows_with_missing_fields_say_so_instead_of_a_sentence_with_blanks(
-    missing, expect_missing, expect_present
-):
-    w = MaintenanceWindow(
-        assignment_name="assign1",
-        configuration_id=CONFIG_ID,
-        configuration_name="mc-fw-nightly",
-        readable=True,
-        start="2020-01-01 22:00",
-        duration="05:00",
-        time_zone="W. Europe Standard Time",
-        recur_every="Day",
-        **{},
-    )
+@pytest.mark.parametrize("missing,expect_missing,expect_present", [
+    ({"start": ""}, "start", "duration 05:00 · zone W. Europe Standard Time · recurs Day"),
+    ({"duration": "", "time_zone": ""}, "duration, time zone", "start 2020-01-01 22:00 · recurs Day"),
+    ({"start": "", "duration": "", "time_zone": "", "recur_every": ""}, "start, duration, time zone", ""),
+])
+def test_maintenance_rows_with_missing_fields_say_so_instead_of_a_sentence_with_blanks(missing, expect_missing, expect_present):
+    w = MaintenanceWindow(assignment_name="assign1", configuration_id=CONFIG_ID, configuration_name="mc-fw-nightly",
+                          readable=True, start="2020-01-01 22:00", duration="05:00",
+                          time_zone="W. Europe Standard Time", recur_every="Day", **{})
     for k, v in missing.items():
         setattr(w, k, v)
     rows = _maintenance_rows(_fw(), [w])
@@ -298,107 +238,61 @@ def test_maintenance_rows_with_missing_fields_say_so_instead_of_a_sentence_with_
     assert " for , " not in rows[0] and "daily  " not in rows[0]
 
 
-@pytest.mark.parametrize(
-    "value,expected",
-    [
-        ("2026-09-10 22:00", (date(2026, 9, 10), "22:00")),
-        ("2026-09-10", (None, "2026-09-10")),  # date without a time: not the documented shape
-        ("tonight 22:00", (None, "tonight 22:00")),
-        ("", (None, "")),
-    ],
-)
+@pytest.mark.parametrize("value,expected", [
+    ("2026-09-10 22:00", (date(2026, 9, 10), "22:00")),
+    ("2026-09-10", (None, "2026-09-10")),          # date without a time: not the documented shape
+    ("tonight 22:00", (None, "tonight 22:00")),
+    ("", (None, "")),
+])
 def test_split_start_only_accepts_the_documented_shape(value, expected):
     assert _split_start(value) == expected
 
 
 def test_maintenance_rows_date_only_start_is_shown_raw_and_never_dated():
-    w = MaintenanceWindow(
-        assignment_name="assign1",
-        configuration_id=CONFIG_ID,
-        configuration_name="mc-fw-nightly",
-        readable=True,
-        start="2099-01-01",
-        duration="05:00",
-        time_zone="UTC",
-        recur_every="Day",
-        expiration="9999-12-31 23:59",
-    )
+    w = MaintenanceWindow(assignment_name="assign1", configuration_id=CONFIG_ID, configuration_name="mc-fw-nightly",
+                          readable=True, start="2099-01-01", duration="05:00", time_zone="UTC", recur_every="Day",
+                          expiration="9999-12-31 23:59")
     rows = _maintenance_rows(_fw(), [w])
     assert rows[0] == _row("Maintenance", "daily 2099-01-01 for 5 h, UTC", "mc-fw-nightly")
     assert "from " not in rows[0]
 
 
 def test_maintenance_rows_duration_with_minutes():
-    w = MaintenanceWindow(
-        assignment_name="a",
-        configuration_name="mc",
-        readable=True,
-        start="2020-01-01 22:00",
-        duration="05:30",
-        time_zone="UTC",
-        recur_every="Day",
-        expiration="9999-12-31 23:59",
-    )
+    w = MaintenanceWindow(assignment_name="a", configuration_name="mc", readable=True,
+                          start="2020-01-01 22:00", duration="05:30", time_zone="UTC", recur_every="Day",
+                          expiration="9999-12-31 23:59")
     rows = _maintenance_rows(_fw(), [w])
     assert rows[0] == _row("Maintenance", "daily 22:00 for 5 h 30 min, UTC", "mc")
 
 
 def test_maintenance_rows_unparseable_duration_shown_raw():
-    w = MaintenanceWindow(
-        assignment_name="a",
-        configuration_name="mc",
-        readable=True,
-        start="2020-01-01 22:00",
-        duration="bogus",
-        time_zone="UTC",
-        recur_every="Day",
-        expiration="9999-12-31 23:59",
-    )
+    w = MaintenanceWindow(assignment_name="a", configuration_name="mc", readable=True,
+                          start="2020-01-01 22:00", duration="bogus", time_zone="UTC", recur_every="Day",
+                          expiration="9999-12-31 23:59")
     rows = _maintenance_rows(_fw(), [w])
     assert rows[0] == _row("Maintenance", "daily 22:00 for bogus, UTC", "mc")
 
 
 def test_maintenance_rows_non_daily_recurrence():
-    w = MaintenanceWindow(
-        assignment_name="a",
-        configuration_name="mc",
-        readable=True,
-        start="2020-01-01 22:00",
-        duration="05:00",
-        time_zone="UTC",
-        recur_every="3Days",
-        expiration="9999-12-31 23:59",
-    )
+    w = MaintenanceWindow(assignment_name="a", configuration_name="mc", readable=True,
+                          start="2020-01-01 22:00", duration="05:00", time_zone="UTC", recur_every="3Days",
+                          expiration="9999-12-31 23:59")
     rows = _maintenance_rows(_fw(), [w])
     assert rows[0] == _row("Maintenance", "every 3Days 22:00 for 5 h, UTC", "mc")
 
 
 def test_maintenance_rows_future_start_gets_from_prefix():
-    w = MaintenanceWindow(
-        assignment_name="a",
-        configuration_name="mc",
-        readable=True,
-        start="2099-06-15 22:00",
-        duration="05:00",
-        time_zone="UTC",
-        recur_every="Day",
-        expiration="9999-12-31 23:59",
-    )
+    w = MaintenanceWindow(assignment_name="a", configuration_name="mc", readable=True,
+                          start="2099-06-15 22:00", duration="05:00", time_zone="UTC", recur_every="Day",
+                          expiration="9999-12-31 23:59")
     rows = _maintenance_rows(_fw(), [w])
     assert rows[0] == _row("Maintenance", "from 2099-06-15, daily 22:00 for 5 h, UTC", "mc")
 
 
 def test_maintenance_rows_expiration_set_in_the_future_is_appended():
-    w = MaintenanceWindow(
-        assignment_name="a",
-        configuration_name="mc",
-        readable=True,
-        start="2020-01-01 22:00",
-        duration="05:00",
-        time_zone="UTC",
-        recur_every="Day",
-        expiration="2099-12-31 23:59",
-    )
+    w = MaintenanceWindow(assignment_name="a", configuration_name="mc", readable=True,
+                          start="2020-01-01 22:00", duration="05:00", time_zone="UTC", recur_every="Day",
+                          expiration="2099-12-31 23:59")
     rows = _maintenance_rows(_fw(), [w])
     assert rows[0] == _row("Maintenance", "daily 22:00 for 5 h, UTC until 2099-12-31 23:59", "mc")
 
@@ -409,18 +303,10 @@ def test_maintenance_rows_expired_only_after_a_full_day_in_any_zone(days_ago, ex
     does not resolve; "expired" is claimed only once a full local day has
     passed, before that the line shows the expiration with its time."""
     from datetime import date, timedelta
-
     exp = date.today() - timedelta(days=days_ago)
-    w = MaintenanceWindow(
-        assignment_name="a",
-        configuration_name="mc",
-        readable=True,
-        start="2010-01-01 22:00",
-        duration="05:00",
-        time_zone="W. Europe Standard Time",
-        recur_every="Day",
-        expiration=f"{exp.isoformat()} 23:59",
-    )
+    w = MaintenanceWindow(assignment_name="a", configuration_name="mc", readable=True,
+                          start="2010-01-01 22:00", duration="05:00", time_zone="W. Europe Standard Time",
+                          recur_every="Day", expiration=f"{exp.isoformat()} 23:59")
     rows = _maintenance_rows(_fw(), [w])
     if expired:
         assert rows == [_row("Maintenance", f"[yellow]expired {exp.isoformat()}[/]", "mc")]
@@ -430,36 +316,20 @@ def test_maintenance_rows_expired_only_after_a_full_day_in_any_zone(days_ago, ex
 
 
 def test_maintenance_rows_expired_window_skips_the_note():
-    w = MaintenanceWindow(
-        assignment_name="a",
-        configuration_name="mc-fw-nightly",
-        readable=True,
-        start="2010-01-01 22:00",
-        duration="05:00",
-        time_zone="UTC",
-        recur_every="Day",
-        expiration="2020-06-30 23:59",
-    )
+    w = MaintenanceWindow(assignment_name="a", configuration_name="mc-fw-nightly", readable=True,
+                          start="2010-01-01 22:00", duration="05:00", time_zone="UTC", recur_every="Day",
+                          expiration="2020-06-30 23:59")
     rows = _maintenance_rows(_fw(), [w])
     assert rows == [_row("Maintenance", "[yellow]expired 2020-06-30[/]", "mc-fw-nightly")]
 
 
 def test_maintenance_rows_unexpected_sub_scope_is_flagged():
-    w = MaintenanceWindow(
-        assignment_name="a",
-        configuration_name="mc",
-        readable=True,
-        start="2020-01-01 22:00",
-        duration="05:00",
-        time_zone="UTC",
-        recur_every="Day",
-        expiration="9999-12-31 23:59",
-        sub_scope="Foo",
-    )
+    w = MaintenanceWindow(assignment_name="a", configuration_name="mc", readable=True,
+                          start="2020-01-01 22:00", duration="05:00", time_zone="UTC", recur_every="Day",
+                          expiration="9999-12-31 23:59", sub_scope="Foo")
     rows = _maintenance_rows(_fw(), [w])
-    assert rows[0] == _row(
-        "Maintenance", "daily 22:00 for 5 h, UTC   [yellow]subscope Foo: not a firewall maintenance window[/]", "mc"
-    )
+    assert rows[0] == _row("Maintenance",
+                           "daily 22:00 for 5 h, UTC   [yellow]subscope Foo: not a firewall maintenance window[/]", "mc")
 
 
 def test_maintenance_rows_assignment_without_a_configuration_id_is_not_a_rights_problem():
@@ -469,9 +339,8 @@ def test_maintenance_rows_assignment_without_a_configuration_id_is_not_a_rights_
 
 
 def test_maintenance_rows_not_readable():
-    w = MaintenanceWindow(
-        assignment_name="assign1", configuration_id=CONFIG_ID, configuration_name="mc-fw-nightly", readable=False
-    )
+    w = MaintenanceWindow(assignment_name="assign1", configuration_id=CONFIG_ID, configuration_name="mc-fw-nightly",
+                          readable=False)
     rows = _maintenance_rows(_fw(), [w])
     assert rows == [
         _row("Maintenance", "assigned: mc-fw-nightly", "window not readable from here"),
@@ -479,25 +348,15 @@ def test_maintenance_rows_not_readable():
 
 
 def test_maintenance_rows_several_entries_each_get_their_own_row_and_note_in_order():
-    readable = MaintenanceWindow(
-        assignment_name="a1",
-        configuration_name="mc-a",
-        readable=True,
-        start="2020-01-01 22:00",
-        duration="05:00",
-        time_zone="UTC",
-        recur_every="Day",
-        expiration="9999-12-31 23:59",
-    )
-    unreadable = MaintenanceWindow(
-        assignment_name="a2", configuration_id=CONFIG_ID, configuration_name="mc-b", readable=False
-    )
+    readable = MaintenanceWindow(assignment_name="a1", configuration_name="mc-a", readable=True,
+                                 start="2020-01-01 22:00", duration="05:00", time_zone="UTC", recur_every="Day",
+                                 expiration="9999-12-31 23:59")
+    unreadable = MaintenanceWindow(assignment_name="a2", configuration_id=CONFIG_ID, configuration_name="mc-b",
+                                   readable=False)
     rows = _maintenance_rows(_fw(), [readable, unreadable])
     assert rows == [
         _row("Maintenance", "daily 22:00 for 5 h, UTC", "mc-a"),
-        _note(
-            "covers guest OS and service updates; host updates and urgent security fixes can fall outside the window"
-        ),
+        _note("covers guest OS and service updates; host updates and urgent security fixes can fall outside the window"),
         _row("Maintenance", "assigned: mc-b", "window not readable from here"),
     ]
 

@@ -1,5 +1,4 @@
 """Package-manager installs (Homebrew cask, winget portable): config location and the upgrade hint."""
-
 from __future__ import annotations
 
 import io
@@ -34,26 +33,20 @@ def test_caskroom_binary_is_a_homebrew_install(tmp_path):
     assert install_source(link) == "homebrew"  # resolved through the bin symlink
 
 
-@pytest.mark.parametrize(
-    "path",
-    [
-        r"C:\Users\me\AppData\Local\Microsoft\WinGet\Packages\cloudchristoph.az-firewall-watch_Microsoft.Winget.Source_8wekyb3d8bbwe\az-firewall-watch.exe",
-        r"C:\Users\me\AppData\Local\Microsoft\WinGet\Links\az-firewall-watch.exe",
-        r"C:\Program Files\WinGet\Packages\cloudchristoph.az-firewall-watch_Microsoft.Winget.Source_8wekyb3d8bbwe\az-firewall-watch.exe",
-        r"c:\users\me\appdata\local\microsoft\winget\links\az-firewall-watch.exe",  # case-insensitive, as Windows is
-    ],
-)
+@pytest.mark.parametrize("path", [
+    r"C:\Users\me\AppData\Local\Microsoft\WinGet\Packages\cloudchristoph.az-firewall-watch_Microsoft.Winget.Source_8wekyb3d8bbwe\az-firewall-watch.exe",
+    r"C:\Users\me\AppData\Local\Microsoft\WinGet\Links\az-firewall-watch.exe",
+    r"C:\Program Files\WinGet\Packages\cloudchristoph.az-firewall-watch_Microsoft.Winget.Source_8wekyb3d8bbwe\az-firewall-watch.exe",
+    r"c:\users\me\appdata\local\microsoft\winget\links\az-firewall-watch.exe",  # case-insensitive, as Windows is
+])
 def test_winget_portable_paths(path):
     assert install_source_of(PureWindowsPath(path).parts) == "winget"
 
 
-@pytest.mark.parametrize(
-    "path",
-    [
-        r"C:\Users\me\Downloads\az-firewall-watch.exe",
-        r"C:\Tools\winget\az-firewall-watch.exe",  # a folder named winget alone is not winget's
-    ],
-)
+@pytest.mark.parametrize("path", [
+    r"C:\Users\me\Downloads\az-firewall-watch.exe",
+    r"C:\Tools\winget\az-firewall-watch.exe",  # a folder named winget alone is not winget's
+])
 def test_other_windows_paths_are_not_package_installs(path):
     assert install_source_of(PureWindowsPath(path).parts) is None
 
@@ -133,14 +126,11 @@ class _DialogHost(App):
         await self.push_screen(self._dialog)
 
 
-@pytest.mark.parametrize(
-    "command",
-    [
-        "brew upgrade --cask az-firewall-watch",
-        "winget upgrade cloudchristoph.az-firewall-watch",
-        None,
-    ],
-)
+@pytest.mark.parametrize("command", [
+    "brew upgrade --cask az-firewall-watch",
+    "winget upgrade cloudchristoph.az-firewall-watch",
+    None,
+])
 async def test_upgrade_hint_only_for_package_installs(command):
     app = _DialogHost(UpdateDialog("99.0.0", "https://example.test/rel", command))
     async with app.run_test(size=(120, 40)) as pilot:
@@ -159,15 +149,10 @@ _CONN = "Endpoint=sb://ns.servicebus.windows.net/;SharedAccessKeyName=k;SharedAc
 
 
 @_POSIX
-@pytest.mark.parametrize(
-    "write",
-    [
-        lambda env: __import__("setup.services", fromlist=["write_env"]).write_env(env, _CONN),
-        lambda env: __import__("setup.services", fromlist=["write_env_entra"]).write_env_entra(
-            env, "ns.servicebus.windows.net", "h"
-        ),
-    ],
-)
+@pytest.mark.parametrize("write", [
+    lambda env: __import__("setup.services", fromlist=["write_env"]).write_env(env, _CONN),
+    lambda env: __import__("setup.services", fromlist=["write_env_entra"]).write_env_entra(env, "ns.servicebus.windows.net", "h"),
+])
 def test_wizard_writes_env_for_the_user_only(tmp_path, write):
     env = tmp_path / ".env"
     write(env)

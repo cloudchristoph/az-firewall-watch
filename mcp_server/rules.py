@@ -6,7 +6,6 @@ evaluation trace uses (:data:`viewer.trace.PASS_ORDER`): one pass per rule type
 groups first, then groups by priority, then collections by priority, then the
 rules in the order the collection lists them.
 """
-
 from __future__ import annotations
 
 import difflib
@@ -36,8 +35,8 @@ class RuleRef:
     group: RuleCollectionGroup
     collection: RuleCollection
     rule: Rule
-    position: int  # 1-based place in the overall evaluation order
-    inherited: bool  # the rule comes from a parent policy
+    position: int          # 1-based place in the overall evaluation order
+    inherited: bool        # the rule comes from a parent policy
 
     @property
     def ref(self) -> str:
@@ -78,21 +77,12 @@ def iter_rules(policy: FirewallPolicyInfo) -> list[RuleRef]:
                 if collection.kind != kind:
                     continue
                 for rule in collection.rules:
-                    out.append(
-                        RuleRef(
-                            policy=policy_name,
-                            group=group,
-                            collection=collection,
-                            rule=rule,
-                            position=len(out) + 1,
-                            inherited=policy_name != policy.name,
-                        )
-                    )
+                    out.append(RuleRef(policy=policy_name, group=group, collection=collection, rule=rule,
+                                       position=len(out) + 1, inherited=policy_name != policy.name))
     return out
 
 
 # ── lookup by name ───────────────────────────────────────────────────────────
-
 
 def policy_chain_names(policy: FirewallPolicyInfo) -> list[str]:
     """Policy names from the outermost parent to ``policy`` itself."""
@@ -114,9 +104,8 @@ def split_ref(ref: str) -> list[str]:
     sep = "»" if "»" in text else "|"
     parts = [p.strip() for p in text.split(sep)]
     if len(parts) not in (3, 4) or not all(parts):
-        raise ValueError(
-            f"ref must look like 'policy » group » collection » rule' (or without the policy), got {ref!r}."
-        )
+        raise ValueError(f"ref must look like 'policy » group » collection » rule' (or without the policy), "
+                         f"got {ref!r}.")
     return parts
 
 
@@ -132,14 +121,8 @@ def nearest_names(wanted: str, names: Iterable[str]) -> str:
     return ", ".join(shown) + more
 
 
-def find_rule(
-    policy: FirewallPolicyInfo,
-    ref: str | None = None,
-    *,
-    group: str | None = None,
-    collection: str | None = None,
-    rule: str | None = None,
-) -> RuleRef:
+def find_rule(policy: FirewallPolicyInfo, ref: str | None = None, *, group: str | None = None,
+              collection: str | None = None, rule: str | None = None) -> RuleRef:
     """The rule named by ``ref`` or by ``group``, ``collection`` and ``rule``.
 
     Names compare case-insensitively, as ARM treats resource names. A caller
@@ -153,10 +136,8 @@ def find_rule(
             policy_name = parts.pop(0)
         group, collection, rule = parts
     if not (group and collection and rule):
-        raise ValueError(
-            "Name the rule either by ref ('policy » group » collection » rule') or by group, "
-            "collection and rule together."
-        )
+        raise ValueError("Name the rule either by ref ('policy » group » collection » rule') or by group, "
+                         "collection and rule together.")
     rules = iter_rules(policy)
     if policy_name is not None:
         known = policy_chain_names(policy)
@@ -166,30 +147,24 @@ def find_rule(
 
     in_group = [r for r in rules if r.group.name.casefold() == group.casefold()]
     if not in_group:
-        raise ValueError(
-            f"No rule collection group {group!r}. Nearest groups: "
-            f"{nearest_names(group, (r.group.name for r in rules))}."
-        )
+        raise ValueError(f"No rule collection group {group!r}. Nearest groups: "
+                         f"{nearest_names(group, (r.group.name for r in rules))}.")
     in_collection = [r for r in in_group if r.collection.name.casefold() == collection.casefold()]
     if not in_collection:
-        raise ValueError(
-            f"No rule collection {collection!r} in group {in_group[0].group.name!r}. Nearest "
-            f"collections: {nearest_names(collection, (r.collection.name for r in in_group))}."
-        )
+        raise ValueError(f"No rule collection {collection!r} in group {in_group[0].group.name!r}. Nearest "
+                         f"collections: {nearest_names(collection, (r.collection.name for r in in_group))}.")
     found = [r for r in in_collection if r.rule.name.casefold() == rule.casefold()]
     if not found:
-        raise ValueError(
-            f"No rule {rule!r} in {in_collection[0].group.name} » {in_collection[0].collection.name}. "
-            f"Nearest rules: {nearest_names(rule, (r.rule.name for r in in_collection))}."
-        )
+        raise ValueError(f"No rule {rule!r} in {in_collection[0].group.name} » {in_collection[0].collection.name}. "
+                         f"Nearest rules: {nearest_names(rule, (r.rule.name for r in in_collection))}.")
     if len(found) > 1:
         # A parent and a child policy may reuse group, collection and rule names.
-        raise ValueError(f"{len(found)} rules match; add the policy to the ref: {'; '.join(r.ref for r in found)}.")
+        raise ValueError(f"{len(found)} rules match; add the policy to the ref: "
+                         f"{'; '.join(r.ref for r in found)}.")
     return found[0]
 
 
 # ── addresses and IP groups ──────────────────────────────────────────────────
-
 
 def parse_network(value: str) -> _Network:
     """An address or CIDR as a network (an address becomes a /32 or /128)."""
@@ -197,9 +172,8 @@ def parse_network(value: str) -> _Network:
     try:
         return ipaddress.ip_network(text, strict=False)
     except ValueError:
-        raise ValueError(
-            f"address must be an IP address or a CIDR (10.1.2.3, 10.1.0.0/16, fd10::/64), got {value!r}."
-        ) from None
+        raise ValueError(f"address must be an IP address or a CIDR (10.1.2.3, 10.1.0.0/16, fd10::/64), "
+                         f"got {value!r}.") from None
 
 
 def _relation(start: _Address, end: _Address, net: _Network) -> str | None:
@@ -239,9 +213,8 @@ def lookup_ip_group(group_id: str, ip_groups: dict[str, IpGroupInfo]) -> IpGroup
     return next((g for gid, g in ip_groups.items() if gid.casefold() == folded), None)
 
 
-def address_matches(
-    rule: Rule, address_or_network: str | _Network, ip_groups: dict[str, IpGroupInfo]
-) -> dict[str, dict[str, Any]]:
+def address_matches(rule: Rule, address_or_network: str | _Network,
+                    ip_groups: dict[str, IpGroupInfo]) -> dict[str, dict[str, Any]]:
     """Per side (``source``, ``destination``), the entry that covers the address or network.
 
     Each value says ``entry`` (as written in the rule or the IP group),
@@ -254,9 +227,8 @@ def address_matches(
     net = parse_network(address_or_network) if isinstance(address_or_network, str) else address_or_network
     out: dict[str, dict[str, Any]] = {}
     for side, addresses, group_ids in (
-        ("source", rule.source_addresses, rule.source_ip_groups),
-        ("destination", rule.destination_addresses, rule.destination_ip_groups),
-    ):
+            ("source", rule.source_addresses, rule.source_ip_groups),
+            ("destination", rule.destination_addresses, rule.destination_ip_groups)):
         hit = _entry_match(addresses, net)
         found: dict[str, Any] | None = None
         if hit is not None:
@@ -279,7 +251,8 @@ def address_matches(
     return out
 
 
-def rule_covers_address(rule: Rule, address_or_network: str | _Network, ip_groups: dict[str, IpGroupInfo]) -> set[str]:
+def rule_covers_address(rule: Rule, address_or_network: str | _Network,
+                        ip_groups: dict[str, IpGroupInfo]) -> set[str]:
     """The sides (``source``, ``destination``) whose addresses or IP groups cover the address or network.
 
     A network counts as covered when an entry contains it or overlaps it; see
@@ -314,19 +287,7 @@ def referenced_ip_group_ids(policy: FirewallPolicyInfo) -> list[str]:
 
 
 __all__ = [
-    "RuleRef",
-    "SEPARATOR",
-    "SIDES",
-    "iter_rules",
-    "policy_chain_names",
-    "split_ref",
-    "find_rule",
-    "nearest_names",
-    "parse_network",
-    "address_matches",
-    "rule_covers_address",
-    "rule_ip_group_sides",
-    "rules_using_ip_group",
-    "referenced_ip_group_ids",
-    "lookup_ip_group",
+    "RuleRef", "SEPARATOR", "SIDES", "iter_rules", "policy_chain_names", "split_ref", "find_rule", "nearest_names",
+    "parse_network", "address_matches", "rule_covers_address", "rule_ip_group_sides", "rules_using_ip_group",
+    "referenced_ip_group_ids", "lookup_ip_group",
 ]

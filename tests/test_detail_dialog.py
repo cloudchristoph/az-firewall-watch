@@ -3,7 +3,6 @@
 Works with and without policy context; every check below runs the relevant
 case in both modes where the case applies to both.
 """
-
 from __future__ import annotations
 
 import time
@@ -48,80 +47,46 @@ def _footer_text(screen) -> str:
 
 # ── row builders ──────────────────────────────────────────────────────────────
 
-
 def _app_row(structured_record, **extra):
-    props = dict(
-        Protocol="HTTPS",
-        SourceIp="10.3.11.4",
-        SourcePort=41644,
-        Fqdn="www.petmd.com",
-        DestinationPort=443,
-        Action="Allow",
-    )
+    props = dict(Protocol="HTTPS", SourceIp="10.3.11.4", SourcePort=41644,
+                 Fqdn="www.petmd.com", DestinationPort=443, Action="Allow")
     props.update(extra)
     return parse_record(structured_record("AZFWApplicationRule", **props))
 
 
 def _network_row(structured_record, **extra):
-    props = dict(
-        Protocol="TCP",
-        SourceIp="10.0.1.4",
-        SourcePort=51000,
-        DestinationIp="10.0.2.5",
-        DestinationPort=443,
-        Action="Deny",
-    )
+    props = dict(Protocol="TCP", SourceIp="10.0.1.4", SourcePort=51000,
+                 DestinationIp="10.0.2.5", DestinationPort=443, Action="Deny")
     props.update(extra)
     return parse_record(structured_record("AZFWNetworkRule", **props))
 
 
 def _nat_row(structured_record, **extra):
-    props = dict(
-        Protocol="TCP",
-        SourceIp="95.91.87.6",
-        SourcePort=60223,
-        DestinationIp="72.144.131.50",
-        DestinationPort=18080,
-        TranslatedIp="10.3.6.4",
-        TranslatedPort=80,
-    )
+    props = dict(Protocol="TCP", SourceIp="95.91.87.6", SourcePort=60223,
+                 DestinationIp="72.144.131.50", DestinationPort=18080,
+                 TranslatedIp="10.3.6.4", TranslatedPort=80)
     props.update(extra)
     return parse_record(structured_record("AZFWNatRule", **props))
 
 
 def _flowtrace_row(structured_record, **extra):
-    props = dict(
-        Protocol="TCP",
-        SourceIp="51.116.242.155",
-        SourcePort=443,
-        DestinationIp="10.3.14.4",
-        DestinationPort=50674,
-        Flag="SYN-ACK",
-        Action="Log",
-    )
+    props = dict(Protocol="TCP", SourceIp="51.116.242.155", SourcePort=443,
+                 DestinationIp="10.3.14.4", DestinationPort=50674, Flag="SYN-ACK", Action="Log")
     props.update(extra)
     return parse_record(structured_record("AZFWFlowTrace", **props))
 
 
 def _dns_row(structured_record, **extra):
-    props = dict(
-        SourceIp="10.3.8.4", SourcePort=39294, QueryName="www.lonelyplanet.com", QueryType="A", ResponseCode="NOERROR"
-    )
+    props = dict(SourceIp="10.3.8.4", SourcePort=39294, QueryName="www.lonelyplanet.com",
+                 QueryType="A", ResponseCode="NOERROR")
     props.update(extra)
     return parse_record(structured_record("AZFWDnsQuery", **props))
 
 
 def _threatintel_row(structured_record, **extra):
-    props = dict(
-        Protocol="HTTP",
-        SourceIp="10.3.8.4",
-        SourcePort=47074,
-        DestinationIp="",
-        DestinationPort=80,
-        Fqdn="bad.example.com",
-        Action="Alert",
-        ThreatDescription="test indicator",
-    )
+    props = dict(Protocol="HTTP", SourceIp="10.3.8.4", SourcePort=47074, DestinationIp="",
+                 DestinationPort=80, Fqdn="bad.example.com", Action="Alert",
+                 ThreatDescription="test indicator")
     props.update(extra)
     return parse_record(structured_record("AZFWThreatIntel", **props))
 
@@ -129,67 +94,41 @@ def _threatintel_row(structured_record, **extra):
 def _matched_network_row(structured_record, **extra):
     """Matches rc-web » allow-web in ``make_snapshot``'s policy — the log must
     name the rule itself; the trace only confirms a rule the firewall named."""
-    props = dict(
-        Protocol="TCP",
-        SourceIp="10.3.5.4",
-        SourcePort=1,
-        DestinationIp="1.1.1.1",
-        DestinationPort=443,
-        Action="Allow",
-        Policy="fwp-hub-premium-gwc",
-        RuleCollectionGroup="rcg-net",
-        RuleCollection="rc-web",
-        Rule="allow-web",
-    )
+    props = dict(Protocol="TCP", SourceIp="10.3.5.4", SourcePort=1,
+                 DestinationIp="1.1.1.1", DestinationPort=443, Action="Allow",
+                 Policy="fwp-hub-premium-gwc", RuleCollectionGroup="rcg-net",
+                 RuleCollection="rc-web", Rule="allow-web")
     props.update(extra)
     return parse_record(structured_record("AZFWNetworkRule", **props))
 
 
 def _no_match_network_row(structured_record, **extra):
-    props = dict(
-        Protocol="TCP",
-        SourceIp="10.3.5.4",
-        SourcePort=1,
-        DestinationIp="1.1.1.1",
-        DestinationPort=8443,
-        Action="Deny",
-        ActionReason="No rule matched. Proceeding with default action.",
-    )
+    props = dict(Protocol="TCP", SourceIp="10.3.5.4", SourcePort=1,
+                 DestinationIp="1.1.1.1", DestinationPort=8443, Action="Deny",
+                 ActionReason="No rule matched. Proceeding with default action.")
     props.update(extra)
     return parse_record(structured_record("AZFWNetworkRule", **props))
 
 
 def _stale_cache_row(structured_record, **extra):
     """The logged rule name is not in the loaded policy — a stale cache."""
-    props = dict(
-        Protocol="TCP",
-        SourceIp="10.3.5.4",
-        SourcePort=1,
-        DestinationIp="1.1.1.1",
-        DestinationPort=443,
-        Action="Allow",
-        Policy="fwp-hub-premium-gwc",
-        RuleCollectionGroup="ghost-group",
-        RuleCollection="ghost-coll",
-        Rule="ghost-rule",
-    )
+    props = dict(Protocol="TCP", SourceIp="10.3.5.4", SourcePort=1,
+                 DestinationIp="1.1.1.1", DestinationPort=443, Action="Allow",
+                 Policy="fwp-hub-premium-gwc", RuleCollectionGroup="ghost-group",
+                 RuleCollection="ghost-coll", Rule="ghost-rule")
     props.update(extra)
     return parse_record(structured_record("AZFWNetworkRule", **props))
 
 
 # ── header line 1: built from the row alone, identical with and without a trace ──
 
-
-@pytest.mark.parametrize(
-    "build,expected",
-    [
-        (_app_row, "10.3.11.4:41644 → www.petmd.com:443"),
-        (_network_row, "10.0.1.4:51000 → 10.0.2.5:443"),
-        (_nat_row, "95.91.87.6:60223 → 72.144.131.50:18080"),  # the public destination, not the translated one
-        (_flowtrace_row, "10.3.14.4:50674 → 51.116.242.155:443"),  # client → server, not the packet's src/dst
-        (_dns_row, "10.3.8.4:39294 → www.lonelyplanet.com:53"),
-    ],
-)
+@pytest.mark.parametrize("build,expected", [
+    (_app_row, "10.3.11.4:41644 → www.petmd.com:443"),
+    (_network_row, "10.0.1.4:51000 → 10.0.2.5:443"),
+    (_nat_row, "95.91.87.6:60223 → 72.144.131.50:18080"),   # the public destination, not the translated one
+    (_flowtrace_row, "10.3.14.4:50674 → 51.116.242.155:443"),  # client → server, not the packet's src/dst
+    (_dns_row, "10.3.8.4:39294 → www.lonelyplanet.com:53"),
+])
 async def test_header_line1_without_trace(structured_record, build, expected):
     app = FirewallLogApp()
     async with app.run_test(size=(140, 40)) as pilot:
@@ -201,14 +140,11 @@ async def test_header_line1_without_trace(structured_record, build, expected):
         assert expected in _header_text(dialog)
 
 
-@pytest.mark.parametrize(
-    "build,expected",
-    [
-        (_app_row, "10.3.11.4:41644 → www.petmd.com:443"),
-        (_nat_row, "95.91.87.6:60223 → 72.144.131.50:18080"),
-        (_flowtrace_row, "10.3.14.4:50674 → 51.116.242.155:443"),
-    ],
-)
+@pytest.mark.parametrize("build,expected", [
+    (_app_row, "10.3.11.4:41644 → www.petmd.com:443"),
+    (_nat_row, "95.91.87.6:60223 → 72.144.131.50:18080"),
+    (_flowtrace_row, "10.3.14.4:50674 → 51.116.242.155:443"),
+])
 async def test_header_line1_same_with_trace(structured_record, mgmt, firewall_id, build, expected):  # noqa: F811
     """The header's first line does not depend on whether a trace exists."""
     app = FirewallLogApp()
@@ -232,7 +168,6 @@ async def test_header_action_and_category_present_without_repeating_protocol_lab
 
 
 # ── header line 2: only with a trace ──────────────────────────────────────────
-
 
 async def test_header_line2_absent_without_trace(structured_record):
     app = FirewallLogApp()
@@ -301,7 +236,6 @@ async def test_header_line2_cache_age_older_snapshot(structured_record, mgmt, fi
 
 # ── footer ────────────────────────────────────────────────────────────────────
 
-
 async def test_footer_without_trace(structured_record):
     app = FirewallLogApp()
     async with app.run_test(size=(140, 40)) as pilot:
@@ -322,7 +256,6 @@ async def test_footer_with_trace(structured_record, mgmt, firewall_id):  # noqa:
 
 
 # ── close button: a mouse target in the footer row, never the focus ───────────
-
 
 async def test_close_button_without_trace_closes_and_takes_no_focus(structured_record):
     app = FirewallLogApp()
@@ -352,7 +285,6 @@ async def test_close_button_with_trace_leaves_the_tree_focused(structured_record
 
 
 # ── keys ──────────────────────────────────────────────────────────────────────
-
 
 @pytest.mark.parametrize("key", ["escape", "q"])
 async def test_close_keys_do_not_quit_app_with_trace(structured_record, mgmt, firewall_id, key):  # noqa: F811
@@ -409,7 +341,6 @@ async def test_p_without_trace_does_nothing(structured_record):
 
 # ── group captions ────────────────────────────────────────────────────────────
 
-
 async def test_connection_caption_always_present(structured_record):
     app = FirewallLogApp()
     async with app.run_test(size=(140, 40)) as pilot:
@@ -424,8 +355,7 @@ async def test_inspection_caption_present_for_apprule_with_flags(structured_reco
     async with app.run_test(size=(140, 40)) as pilot:
         await pilot.pause()
         with_flags = await _open_detail(
-            app, pilot, _app_row(structured_record, IsExplicitProxyRequest=True, IsTlsInspected=False)
-        )
+            app, pilot, _app_row(structured_record, IsExplicitProxyRequest=True, IsTlsInspected=False))
         text = _dialog_text(with_flags)
         assert "[b]Inspection[/b]" in text
         assert "Expl. proxy" in text and "TLS inspected" in text
@@ -462,9 +392,8 @@ async def test_rule_caption_present_without_trace(structured_record):
     app = FirewallLogApp()
     async with app.run_test(size=(140, 40)) as pilot:
         await pilot.pause()
-        row = _network_row(
-            structured_record, Policy="pol-hub", RuleCollectionGroup="rcg", RuleCollection="rc", Rule="r-web"
-        )
+        row = _network_row(structured_record, Policy="pol-hub", RuleCollectionGroup="rcg",
+                           RuleCollection="rc", Rule="r-web")
         no_trace = await _open_detail(app, pilot, row)
         assert "[b]Rule[/b]" in _dialog_text(no_trace)
 
@@ -484,20 +413,11 @@ async def test_ip_groups_render_one_per_line(structured_record, monkeypatch, fir
 
     g1 = "/subscriptions/s/resourceGroups/rg/providers/Microsoft.Network/ipGroups/ipgroup-a"
     g2 = "/subscriptions/s/resourceGroups/rg/providers/Microsoft.Network/ipGroups/ipgroup-b"
-    fw = FirewallInfo(
-        id="/fw",
-        name="fw",
-        subscription_id="s",
-        resource_group="rg",
-        location="germanywestcentral",
-        sku_tier="Premium",
-        private_ips=["10.2.0.4"],
-        subnet_ids=["/sn"],
-        policy_id="/p",
-    )
-    policy = FirewallPolicyInfo(
-        id="/p", name="p", sku_tier="Standard", threat_intel_mode="Off", rule_collection_groups=[]
-    )
+    fw = FirewallInfo(id="/fw", name="fw", subscription_id="s", resource_group="rg",
+                      location="germanywestcentral", sku_tier="Premium", private_ips=["10.2.0.4"],
+                      subnet_ids=["/sn"], policy_id="/p")
+    policy = FirewallPolicyInfo(id="/p", name="p", sku_tier="Standard", threat_intel_mode="Off",
+                                rule_collection_groups=[])
     groups = {
         g1: IpGroupInfo(id=g1, name="ipgroup-a", location="germanywestcentral", ip_addresses=["10.3.0.0/16"]),
         g2: IpGroupInfo(id=g2, name="ipgroup-b", location="germanywestcentral", ip_addresses=["10.3.5.0/24"]),
@@ -523,7 +443,6 @@ async def test_ip_groups_render_one_per_line(structured_record, monkeypatch, fir
 
 
 # ── header-only fields: Category / Protocol / Action absent from the body ────
-
 
 async def test_category_protocol_action_are_header_only(structured_record):
     app = FirewallLogApp()
@@ -561,7 +480,6 @@ async def test_dns_query_type_is_not_hidden_as_protocol(structured_record):
 
 
 # ── the 0.6.0 note is still rendered without a trace ──────────────────────────
-
 
 async def test_trace_note_still_rendered_without_trace(structured_record):
     app = FirewallLogApp()

@@ -18,7 +18,6 @@ Options
   --no-policy-context   force it off (no ARM access, no cache, Logs tab only)
   --mcp                 run the MCP server instead of the viewer; every other option goes to it
 """
-
 from __future__ import annotations
 
 import os
@@ -31,10 +30,11 @@ from viewer.config import BASE_DIR, load_env, policy_context_setting, update_che
 def _maybe_run_wizard() -> bool:
     """Return whether to start the viewer, running setup when needed."""
     has_conn_str = bool(os.environ.get("EVENT_HUB_CONNECTION_STRING"))
-    has_entra = bool(os.environ.get("EVENT_HUB_NAMESPACE") and os.environ.get("EVENT_HUB_NAME"))
+    has_entra = bool(
+        os.environ.get("EVENT_HUB_NAMESPACE") and os.environ.get("EVENT_HUB_NAME")
+    )
     if (not has_conn_str and not has_entra) or "--reconfigure" in sys.argv:
         from setup.app import run_wizard
-
         if not run_wizard(BASE_DIR, reconfigure="--reconfigure" in sys.argv):
             return False
         load_env(BASE_DIR / ".env", override=True)
@@ -46,7 +46,6 @@ def main() -> None:
     if "--mcp" in sys.argv:
         # Before anything TUI-related: the MCP server has its own options and never runs the wizard.
         from mcp_server.cli import main as mcp_main
-
         sys.exit(mcp_main([arg for arg in sys.argv[1:] if arg != "--mcp"]))
     load_env(BASE_DIR / ".env")
     if not _maybe_run_wizard():

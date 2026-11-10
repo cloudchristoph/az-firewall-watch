@@ -1,5 +1,4 @@
 """IP Groups metadata tab view."""
-
 from __future__ import annotations
 
 from textual import events
@@ -45,13 +44,9 @@ class IpGroupDetailDialog(ModalScreen[None]):
 
     def compose(self) -> ComposeResult:
         with Static(id="dialog"):
-            yield Static(
-                f"[b]{escape_markup(self._group.name)}[/b] ({len(self._group.ip_addresses)} entries)", markup=True
-            )
+            yield Static(f"[b]{escape_markup(self._group.name)}[/b] ({len(self._group.ip_addresses)} entries)", markup=True)
             # Escaped entry by entry: escape_markup turns a newline into U+FFFD.
-            items = (
-                "\n".join(escape_markup(a) for a in self._group.ip_addresses) if self._group.ip_addresses else "(empty)"
-            )
+            items = "\n".join(escape_markup(a) for a in self._group.ip_addresses) if self._group.ip_addresses else "(empty)"
             yield Static(items, id="items", markup=True)
             yield Button("Close", variant="primary", id="btn-close")
 
@@ -173,19 +168,15 @@ class IpGroupsView(Static):
         values = "\n".join(escape_markup(a) for a in group.ip_addresses[:20]) if group.ip_addresses else "(empty)"
         if len(group.ip_addresses) > 20:
             values += "\n…"
-        details.update(
-            "\n".join(
-                [
-                    f"[b]{escape_markup(group.name)}[/b]",
-                    "",
-                    f"[dim]Location[/]    {escape_markup(group.location) or '-'}",
-                    f"[dim]Entries[/]     {len(group.ip_addresses)}",
-                    "",
-                    "[dim]Values[/]",
-                    values,
-                ]
-            )
-        )
+        details.update("\n".join([
+            f"[b]{escape_markup(group.name)}[/b]",
+            "",
+            f"[dim]Location[/]    {escape_markup(group.location) or '-'}",
+            f"[dim]Entries[/]     {len(group.ip_addresses)}",
+            "",
+            "[dim]Values[/]",
+            values,
+        ]))
 
         self._render_related_rules(group_id=key)
 

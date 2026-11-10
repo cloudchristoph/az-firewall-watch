@@ -32,7 +32,7 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
       - name: Install pip-audit
-        run: pip install --require-hashes -r requirements-audit.lock.txt
+        run: python -m pip install --require-hashes -r requirements-audit.lock.txt
       # Audits the hashed release lock (runtime plus build) as pinned, without resolving,
       # so pip-audit and bootstrap packages of this runner are not part of the audit
       - name: pip-audit

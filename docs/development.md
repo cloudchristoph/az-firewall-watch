@@ -9,7 +9,7 @@ cd az-firewall-watch
 ```
 
 The start scripts create a virtual environment, install `requirements.txt` and
-launch `main.py`. Python 3.10 or newer is required.
+launch `main.py`. Python 3.11 or newer is required.
 
 ## Project layout
 
@@ -62,7 +62,7 @@ Both are configured in `pyproject.toml`, so neither takes arguments. `ruff` runs
 the `E`, `F`, `W`, `I`, `B` and `UP` rule sets at line length 120, with `E501`
 and `E701` off because long TUI strings and one-line guards are deliberate here.
 `mypy` checks the entry point, the shared modules and the `viewer` and `setup`
-packages against Python 3.10.
+packages against Python 3.11.
 
 A `lint` job in CI runs both on every push, in parallel with the test matrix, so
 a failure here is as blocking as a failing test.
@@ -84,7 +84,7 @@ payloads), and headless runs of both the viewer and the whole setup wizard via
 Textual's test pilot with the Azure CLI mocked out.
 
 **No Azure connection is required.** The same suite runs in CI on every push and
-pull request: Linux on Python 3.10, 3.12 and 3.13, plus Windows and macOS on 3.12.
+pull request: Linux on Python 3.11, 3.12 and 3.13, plus Windows and macOS on 3.12.
 
 Before committing, the full local round is `ruff check .`, `mypy`, `pytest`.
 
@@ -162,7 +162,7 @@ replaced release on PyPI cannot slip into a test run or a shipped binary.
 
 Each `.lock.in` only includes the `.txt` files with `-r`; do not put versions in
 it (except `requirements-audit.lock.in`, which names the CI tool directly). The
-locks are universal: one file covers Linux, Windows and macOS on Python 3.10 and
+locks are universal: one file covers Linux, Windows and macOS on Python 3.11 and
 newer, with environment markers on the entries that only apply to some of them
 (for example `pefile ; sys_platform == 'win32'`).
 
@@ -172,9 +172,9 @@ To add or bump a dependency:
 2. Regenerate the locks with [uv](https://docs.astral.sh/uv/), from the repository root:
 
    ```bash
-   uv pip compile --universal --generate-hashes --python-version 3.10 --output-file=requirements-build.lock.txt requirements-build.lock.in
-   uv pip compile --universal --generate-hashes --python-version 3.10 --output-file=requirements-dev.lock.txt requirements-dev.lock.in
-   uv pip compile --universal --generate-hashes --python-version 3.10 --output-file=requirements-audit.lock.txt requirements-audit.lock.in
+   uv pip compile --universal --generate-hashes --python-version 3.11 --output-file=requirements-build.lock.txt requirements-build.lock.in
+   uv pip compile --universal --generate-hashes --python-version 3.11 --output-file=requirements-dev.lock.txt requirements-dev.lock.in
+   uv pip compile --universal --generate-hashes --python-version 3.11 --output-file=requirements-audit.lock.txt requirements-audit.lock.in
    ```
 
    Existing pins are kept where the ranges still allow them. Add

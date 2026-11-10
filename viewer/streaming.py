@@ -409,7 +409,7 @@ async def run_stream(app: FirewallLogApp) -> None:
                 # namespace is unreachable.
                 try:
                     await asyncio.wait_for(client.get_partition_ids(), timeout=15)
-                except asyncio.TimeoutError:
+                except TimeoutError:
                     raise TimeoutError(
                         "Event Hub did not respond within 15 s — "
                         "check connection string and network"

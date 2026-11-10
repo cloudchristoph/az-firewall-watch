@@ -111,7 +111,7 @@ def main() -> int:
 
     out = Path(args.out)
     starting: dt.datetime | str = "@latest" if args.from_latest else (
-        dt.datetime.now(dt.timezone.utc) - dt.timedelta(minutes=args.minutes))
+        dt.datetime.now(dt.UTC) - dt.timedelta(minutes=args.minutes))
 
     total: dict[str, dict[str, int]] = {}
     for kind, (env_name, hub) in HUBS.items():

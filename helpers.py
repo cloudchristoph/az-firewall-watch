@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import ipaddress
 import re
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from functools import lru_cache
 from pathlib import Path
 
@@ -46,7 +46,7 @@ def _utc_short(ts: str) -> str:
         normalised = _FRACTION_RE.sub(_normalise_fraction, ts.replace("Z", "+00:00"), count=1)
         dt = datetime.fromisoformat(normalised)
         if dt.tzinfo is not None:
-            dt = dt.astimezone(timezone.utc)
+            dt = dt.astimezone(UTC)
         return dt.strftime("%Y-%m-%dT%H:%M:%SZ")
     except (ValueError, TypeError):
         return ts

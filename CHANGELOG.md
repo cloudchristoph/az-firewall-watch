@@ -8,6 +8,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Python 3.10 is no longer supported; running from source needs Python 3.11 or newer.** Python 3.10 reached end of life in October 2026. CI, ruff, mypy and the hashed locks now target 3.11, so the version-specific pins for 3.10 are gone. The Windows, macOS and Linux binaries are built with Python 3.12 and are not affected.
+
 ### Fixed
 
 - **FQDN wildcards in the trace follow Azure Firewall.** `*.contoso.com` no longer matches the apex `contoso.com` (Azure: "If you want to specifically allow `contoso.com`, you must include contoso.com in the rule"), and a leading `*` without a dot such as `*contoso.com` now matches `contoso.com`, `www.contoso.com` and `anycontoso.com`. Before, a deny collection with `*.contoso.com` showed as a local match for the apex, and `*contoso.com` as a miss. ([#55](https://github.com/cloudchristoph/az-firewall-watch/issues/55))

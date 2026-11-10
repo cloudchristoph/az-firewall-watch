@@ -54,6 +54,24 @@ def _v(value: str) -> str:
 _STATE_WIDTH = 12   # "autoscaling" is the longest state word a row starts with
 
 
+def _dns_rows(policy: FirewallPolicyInfo) -> list[str]:
+    """The DNS proxy row. A policy that sets nothing is not "off": the parent's
+    value applies by design, though Azure's known-issues page says child
+    policies do not inherit DNS settings, so both are said."""
+    proxy, servers, source = policy.effective_dns()
+    names = ", ".join(escape_markup(s) for s in servers) or "Azure DNS"
+    if policy.dns_proxy is not None or (proxy is False and not source):
+        return [_row("DNS proxy", "on", f"servers: {names}") if proxy else _row("DNS proxy", "off")]
+    if proxy is None:
+        return [_row("DNS proxy", "[yellow]unknown[/]",
+                     "not set on this policy and the parent policy is not readable")]
+    where = f"inherited from {escape_markup(source)}"
+    note = "Azure lists child inheritance of DNS settings as a known issue, set it on this policy"
+    if proxy:
+        return [_row("DNS proxy", f"on ({where})", f"servers: {names} · {note}")]
+    return [_row("DNS proxy", f"off ({where})", note)]
+
+
 def _row(label: str, value: str, detail: str = "") -> str:
     """One line of a block: dim label, value, and an optional dim detail.
 
@@ -313,6 +331,10 @@ def _nat_gateway_rows(fw: FirewallInfo, subnets: list[SubnetInfo], nat_gateways:
     """
     if fw.sku_name == "AZFW_Hub":
         return [_row("NAT gateway", "not supported on a Virtual WAN hub firewall")]
+    if fw.stopped:
+        # No data plane, so the "egress depends on your routes" note would explain
+        # a forced-tunnel design rather than the real reason.
+        return [_row("NAT gateway", "unknown", "the firewall is deallocated")]
     unread = len(fw.subnet_ids) - len(subnets)
     if not subnets and fw.subnet_ids:
         return [_row("NAT gateway", "unknown", "firewall subnet not readable")]
@@ -528,6 +550,9 @@ class FirewallView(Vertical):
             _row("SKU", _v(" · ".join(filter(None, [fw.sku_tier, fw.sku_name])))),
             _row("Zones", _v(", ".join(fw.zones)) if fw.zones else "none (regional)"),
             _row("Provisioning", state),
+            *([_row("State", "[yellow]stopped[/]",
+                    "deallocated: no IP configurations remain, which is how Azure deallocates a "
+                    "firewall; expect no traffic and no new log rows")] if fw.stopped else []),
             *_scaling_rows(fw),
             *_maintenance_rows(fw, maintenance, maintenance_readable),
             *_additional_property_rows(fw),
@@ -557,14 +582,16 @@ class FirewallView(Vertical):
                         height=2 if cfg.public_ip_name else 1)
         if not rows:
             tbl.add_row(escape_rich_markup(", ".join(fw.private_ips)) or "-", "-",
-                        Text("no IP configurations", style="dim"))
+                        Text("deallocated, no IP configurations" if fw.stopped else "no IP configurations",
+                             style="dim"))
         subnet_names = ", ".join(f"{_short(s)}" for s in fw.subnet_ids) or "-"
         note = self.query_one("#fw-network-note", Static)
         note.update("\n".join([
             _row("Subnets", escape_markup(subnet_names)),
             _row("CIDRs", _v(", ".join(subnet_cidrs))),
             # The configuration only: whether a route tunnels anything is not read here.
-            _row("Management", "own subnet and public IP" if fw.management_ip else "none"),
+            _row("Management", "own subnet and public IP" if fw.management_ip
+                 else "none (deallocated)" if fw.stopped else "none"),
             *_nat_gateway_rows(fw, subnets, nat_gateways),
         ]))
 
@@ -597,8 +624,7 @@ class FirewallView(Vertical):
         out += [
             _row("Threat intel", _v(policy.threat_intel_mode),
                  f"allowlist: {', '.join(allow)}" if allow else "no allowlist"),
-            (_row("DNS proxy", "on", f"servers: {', '.join(escape_markup(s) for s in policy.dns_servers) or 'Azure DNS'}")
-             if policy.dns_proxy else _row("DNS proxy", "off")),
+            *_dns_rows(policy),
             (_row("IDPS", escape_markup(policy.idps_mode),
                   f"{policy.idps_bypass_count} bypass rules · {policy.idps_override_count} signature overrides")
              if policy.idps_mode else _row("IDPS", "off")),
@@ -716,10 +742,26 @@ def connected_event_hub_targets(targets: list[LoggingTarget]) -> list[LoggingTar
 _OPTIONAL_CATEGORIES = ("AZFWFlowTrace",)   # see the comment above
 
 
+def _uncertain_categories(policy: FirewallPolicyInfo | None) -> tuple[str, ...]:
+    """Categories whose expectation depends on a setting this policy does not
+    state itself: an inherited DNS proxy, on or off (Azure lists child
+    inheritance of DNS settings as a known issue), or a parent we could not
+    read."""
+    if policy is None or policy.dns_proxy is not None:
+        return ()
+    state, _, source = policy.effective_dns()
+    # An inherited "off" is as uncertain as an inherited "on": if the parent's
+    # settings do not reach the child, the child's own default applies.
+    return ("AZFWDnsQuery",) if state is None or source else ()
+
+
 def expected_categories(policy: FirewallPolicyInfo | None, fw: FirewallInfo) -> list[str]:
     """The viewer categories this configuration can produce, in display order."""
     props = fw.additional_properties
-    dns_proxy = (policy.dns_proxy if policy is not None
+    # An inherited or unknown proxy state is not evidence either way, so the
+    # category leaves the expectation and is named as optional instead
+    # (see ``_uncertain_categories``).
+    dns_proxy = (policy.dns_proxy is True if policy is not None
                  else props.get(CLASSIC_DNS_PROXY_KEY, "").strip().lower() == "true")
     # An empty mode is not evidence of Off (Azure's default is Alert); only an
     # explicit Off takes the category out of the expectation.
@@ -749,5 +791,6 @@ def _coverage_row(connected: list[LoggingTarget], policy: FirewallPolicyInfo | N
     missing = [c for c in expected_categories(policy, fw) if c not in forwarded]
     if missing:
         return _row("Event Hub coverage", f"[yellow]incomplete, missing {', '.join(missing)}[/]")
-    optional = [f"{c} absent, not counted" for c in _OPTIONAL_CATEGORIES if c not in forwarded]
+    optional = [f"{c} absent, not counted"
+                for c in (*_OPTIONAL_CATEGORIES, *_uncertain_categories(policy)) if c not in forwarded]
     return _row("Event Hub coverage", "[green]complete[/]", "; ".join(optional))

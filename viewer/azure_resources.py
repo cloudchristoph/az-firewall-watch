@@ -124,7 +124,9 @@ class FirewallPolicyInfo:
     rule_collection_groups: list[RuleCollectionGroup] = field(default_factory=list)
     # policy-level settings shown on the Firewall tab
     provisioning_state: str = ""
-    dns_proxy: bool = False
+    # dnsSettings.enableProxy; None when the policy does not set it, which is not
+    # the same as False: a child that sets nothing may inherit the parent's value.
+    dns_proxy: bool | None = None
     dns_servers: list[str] = field(default_factory=list)
     threat_intel_allow_fqdns: list[str] = field(default_factory=list)
     threat_intel_allow_ips: list[str] = field(default_factory=list)
@@ -159,6 +161,23 @@ class FirewallPolicyInfo:
         while top.parent is not None:
             top = top.parent
         return top.parent_unreadable
+
+    def effective_dns(self) -> tuple[bool | None, list[str], str]:
+        """The DNS proxy state as far as the loaded chain tells.
+
+        Returns ``(proxy, servers, source)``: the first policy from this one up
+        that sets ``enableProxy`` decides, ``source`` is its name. ``(False, [],
+        "")`` when nothing in a fully read chain sets it, ``(None, [], "")`` when
+        this policy does not set it and a parent we could not read might.
+        """
+        policy: FirewallPolicyInfo | None = self
+        while policy is not None:
+            if policy.dns_proxy is not None:
+                return policy.dns_proxy, policy.dns_servers, policy.name
+            policy = policy.parent
+        if self.unread_parent():
+            return None, [], ""
+        return False, [], ""
 
     def all_groups(self) -> list[tuple[str, RuleCollectionGroup]]:
         """Groups in firewall evaluation order within one rule-type pass:
@@ -266,6 +285,20 @@ class FirewallInfo:
     autoscale_max: int = 0
     # additionalProperties[ROUTE_SERVER_KEY]: the Route Server auto-learn SNAT needs
     route_server_id: str = ""
+
+    @property
+    def stopped(self) -> bool:
+        """A virtual network firewall without any IP configuration.
+
+        Azure documents that removing all IP configurations deallocates the
+        firewall (management NIC article) and that ``Deallocate()`` removes
+        them (public IP article); ARM keeps ``provisioningState`` ``Succeeded``.
+        Only the virtual network SKU is judged: how a deallocated hub firewall
+        reads in ARM is not documented, so ``AZFW_Hub`` is never reported as
+        stopped. A firewall still being created or updated is not either.
+        """
+        return (self.sku_name == "AZFW_VNet" and not self.ip_configs
+                and self.management_ip is None and self.provisioning_state == "Succeeded")
 
 
 def parse_resource_id(resource_id: str) -> dict[str, str]:
@@ -680,7 +713,7 @@ async def fetch_policy(arm: ArmClient, policy_id: str) -> FirewallPolicyInfo:
         sku_tier=sku_tier,
         threat_intel_mode=threat_intel_mode,
         provisioning_state=props.get("provisioningState") or "",
-        dns_proxy=bool(dns.get("enableProxy")),
+        dns_proxy=None if dns.get("enableProxy") is None else bool(dns.get("enableProxy")),
         dns_servers=list(dns.get("servers") or []),
         threat_intel_allow_fqdns=list(allow.get("fqdns") or []),
         threat_intel_allow_ips=list(allow.get("ipAddresses") or []),

@@ -17,7 +17,9 @@ resource ID from the first log record it receives and fetches from there.
 ### Three extra tabs
 
 - **Firewall**: four blocks about the instance itself.
-  - *Instance*: SKU tier and name, zones, provisioning state, how the firewall
+  - *Instance*: SKU tier and name, zones, provisioning state (a virtual network
+    firewall without any IP configuration is marked `stopped`: Azure deallocates a
+    firewall by removing them, and ARM still reports `Succeeded`), how the firewall
     scales (service default, prescaled range, or fixed capacity with autoscaling
     off), the customer-controlled maintenance window if one is assigned, the
     switches that live in the firewall's property bag (fat flow logging, DNS
@@ -34,7 +36,9 @@ resource ID from the first log record it receives and fetches from there.
     reads no route tables, so both lines say what they cannot know.
   - *Policy*: the attached policy with its number of rule collection groups
     including inherited ones, base policy, Threat Intelligence mode and allowlist,
-    DNS proxy and its servers, IDPS mode with bypass and override counts, TLS
+    DNS proxy and its servers (a policy that sets nothing shows the value it
+    inherits from its parent, named as inherited; Azure lists child inheritance
+    of DNS settings as a known issue, so set it on the child policy), IDPS mode with bypass and override counts, TLS
     inspection with the CA name, SNAT ranges with the auto-learn state and its
     Route Server, explicit proxy with its ports and PAC file, child policies.
   - *Logging*: a matrix of log categories against the targets of the

@@ -40,7 +40,7 @@ _MAX_ATTEMPTS = 3
 _RECONNECT_BACKOFF = [2, 5, 10, 30, 60]
 
 
-def _run_in_daemon_thread(function: Callable[[], Any]) -> asyncio.Future:
+def _run_in_daemon_thread(function: Callable[[], Any], name: str = "eventhub-access-check") -> asyncio.Future:
     """Run blocking work off the loop without holding up shutdown.
 
     Threads of the default executor are joined when ``asyncio.run()`` ends, so
@@ -71,7 +71,7 @@ def _run_in_daemon_thread(function: Callable[[], Any]) -> asyncio.Future:
         except RuntimeError:
             pass  # the loop is closed: nobody is waiting any more
 
-    threading.Thread(target=run, name="eventhub-access-check", daemon=True).start()
+    threading.Thread(target=run, name=name, daemon=True).start()
     return result
 
 

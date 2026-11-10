@@ -7,10 +7,21 @@
 
 cd /d "%~dp0"
 
-:: Create virtual environment if needed
+:: Python 3.11 or newer is required; say so before building a venv that cannot run it
 if not exist ".venv\Scripts\python.exe" (
+    python -c "import sys; sys.exit(sys.version_info < (3, 11))" 2>nul
+    if errorlevel 1 (
+        echo   Python 3.11 or newer is required. Install it with: winget install Python.Python.3.13
+        exit /b 1
+    )
     echo   Creating Python virtual environment...
     python -m venv .venv
+)
+.venv\Scripts\python -c "import sys; sys.exit(sys.version_info < (3, 11))" 2>nul
+if errorlevel 1 (
+    echo   The virtual environment uses an older Python; Python 3.11 or newer is required.
+    echo   Delete the .venv folder and run this script again.
+    exit /b 1
 )
 
 .venv\Scripts\pip install -q --upgrade pip

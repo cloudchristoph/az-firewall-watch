@@ -61,7 +61,7 @@ def test_to_local_handles_fractional_seconds_and_offset(utc_tz):
     ],
 )
 def test_to_local_accepts_any_fraction_length(utc_tz, ts):
-    """Regression: Python 3.10 could not parse Azure's 7-digit fractions and fell back to raw UTC."""
+    """Regression: Azure's 7-digit fractions once fell back to raw UTC (Python 3.10 could not parse them)."""
     assert _to_local(ts) == "2026-09-05 08:00:00"
 
 

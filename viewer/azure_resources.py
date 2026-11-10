@@ -147,6 +147,18 @@ class FirewallPolicyInfo:
     # Inherited (parent) policy, if any. Its groups are always evaluated
     # before this policy's groups, per rule type.
     parent: FirewallPolicyInfo | None = None
+    # Id of the ``basePolicy`` this policy inherits from but we could not load
+    # (no Reader role, deleted, other tenant, or beyond the chain depth limit).
+    # Empty when there is no parent or it was read.
+    parent_unreadable: str = ""
+
+    def unread_parent(self) -> str:
+        """Id of the first inherited policy of the chain that was not loaded,
+        or ``""``. Its groups are evaluated before everything we hold."""
+        top = self
+        while top.parent is not None:
+            top = top.parent
+        return top.parent_unreadable
 
     def all_groups(self) -> list[tuple[str, RuleCollectionGroup]]:
         """Groups in firewall evaluation order within one rule-type pass:
@@ -710,16 +722,22 @@ def collect_ip_group_ids(policy: FirewallPolicyInfo) -> list[str]:
 async def fetch_policy_chain(arm: ArmClient, policy_id: str, max_depth: int = 4) -> FirewallPolicyInfo:
     """Fetch a policy and, best effort, its parent chain (``basePolicy``).
 
-    A parent that cannot be read (RBAC, deleted) is left as ``None``; the
-    child is still returned so the viewer degrades gracefully.
+    A parent that cannot be read (RBAC, deleted) is left as ``None`` and its id
+    is kept in ``parent_unreadable``, as is a parent beyond ``max_depth``; the
+    child is still returned so the viewer degrades gracefully, and the trace
+    can say that part of the chain was not evaluated.
     """
     policy = await fetch_policy(arm, policy_id)
     current = policy
     depth = 0
-    while current.base_policy_id and depth < max_depth:
+    while current.base_policy_id:
+        if depth >= max_depth:
+            current.parent_unreadable = current.base_policy_id
+            break
         try:
             parent = await fetch_policy(arm, current.base_policy_id)
         except ArmError:
+            current.parent_unreadable = current.base_policy_id
             break
         current.parent = parent
         current = parent

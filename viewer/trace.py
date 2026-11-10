@@ -360,15 +360,33 @@ def find_logged_rule(policy: FirewallPolicyInfo | None, logged: LoggedMatch | No
     return None
 
 
+def _unread_parent_placeholder(parent_name: str, kind: str) -> CollectionTrace:
+    """Stands in for the collections of a parent policy we could not load."""
+    group = RuleCollectionGroup(id="", name=f"inherited from {parent_name}", priority=0)
+    # RuleCollection.kind is derived from its rules, so an empty filter collection
+    # would show as "network" in every pass. One nameless rule of the right type
+    # pins the display kind; it is never evaluated (CollectionTrace.rules stays empty).
+    rule_type = {"dnat": "NatRule", "network": "NetworkRule", "application": "ApplicationRule"}[kind]
+    rc_type = "FirewallPolicyNatRuleCollection" if kind == "dnat" else "FirewallPolicyFilterRuleCollection"
+    collection = RuleCollection(name="not readable", rule_collection_type=rc_type,
+                                rules=[Rule(name="", rule_type=rule_type)])
+    return CollectionTrace(policy_name=parent_name, group=group, collection=collection, verdict=UNKNOWN,
+                           note="parent policy not readable: its collections are evaluated first and are unknown")
+
+
 def build_trace(flow: Flow, policy: FirewallPolicyInfo, ip_groups: dict[str, IpGroupInfo],
                 logged: LoggedMatch | None = None) -> Trace:
     warnings: list[str] = []
     logged_found = find_logged_rule(policy, logged) is not None
+    unread = policy.unread_parent()
+    unread_name = unread.rstrip("/").rsplit("/", 1)[-1] if unread else ""
     missing: LoggedMatch | None = None  # the firewall's decision when we cannot locate its rule
     if logged and not logged_found:
+        reason = (f"it probably lives in the parent policy {unread_name}, which could not be loaded"
+                  if unread else "the cache may be stale (Ctrl+R) or the rule was renamed")
         warnings.append(
             f"Logged rule {logged.group} » {logged.collection} » {logged.rule} is not in the "
-            "loaded policy — the cache may be stale (Ctrl+R) or the rule was renamed."
+            f"loaded policy — {reason}."
         )
         missing, logged = logged, None
 
@@ -384,6 +402,14 @@ def build_trace(flow: Flow, policy: FirewallPolicyInfo, ip_groups: dict[str, IpG
                      infrastructure=None, outcome=f"{flow.action or 'handled'} by Threat Intelligence",
                      warnings=warnings)
     threat_intel = f"mode {policy.threat_intel_mode or 'Off'} — no hit"
+    if unread:
+        # Inherited groups run first in every pass, so until the parent is
+        # known nothing before our first collection is known either.
+        warnings.append(
+            f"Parent policy {unread_name} could not be loaded (for example no access, deleted, a "
+            "read error, or beyond the supported depth). Its collections are evaluated first and "
+            "are not part of this trace."
+        )
 
     passes: list[PassTrace] = []
     stopped = False
@@ -399,6 +425,8 @@ def build_trace(flow: Flow, policy: FirewallPolicyInfo, ip_groups: dict[str, IpG
             ptrace.note = f"skipped — protocol {flow.protocol or '?'} is not HTTP, HTTPS or MSSQL"
             passes.append(ptrace)
             continue
+        if unread:
+            ptrace.collections.append(_unread_parent_placeholder(unread_name, kind))
         for policy_name, group in policy.all_groups():
             for rc in sorted(group.rule_collections, key=lambda c: c.priority):
                 if rc.kind != kind:
@@ -454,6 +482,10 @@ def build_trace(flow: Flow, policy: FirewallPolicyInfo, ip_groups: dict[str, IpG
         infrastructure = None
         outcome = (f"{missing.action or 'matched'} by {missing.group} » {missing.collection} » "
                    f"{missing.rule} (rule not in loaded policy)")
+    elif unread:
+        # The unread parent comes first: its collections may have matched.
+        infrastructure = None
+        outcome = f"unknown: the parent policy {unread_name} was not evaluated, so a default deny is not proven"
     else:
         infrastructure = "no match assumed — infrastructure FQDNs are not evaluated locally"
         outcome = "default action: Deny (no rule matched)"

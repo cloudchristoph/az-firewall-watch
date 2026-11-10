@@ -195,9 +195,9 @@ azure-eventhub==5.15.1 \
     --hash=sha256:201de7b6e10b7517c594e529aa7d21c6887ac2a4757fc4850c991a3f640a02fb \
     --hash=sha256:ebe1379d228632d12892f0e2d480e0c13a234c384249b0c2c0fe862cd58b3e48
     # via -r requirements.txt
-azure-identity==1.26.0 \
-    --hash=sha256:3c60d9682b3ac01507388d474cb5a5ffbe54152a96b6cdcaa7013da9315cf186 \
-    --hash=sha256:61b4538b87df10d2d6d44b77cd5ea28a8929fd4929d58b45bf3f230f7daba02e
+azure-identity==1.27.0 \
+    --hash=sha256:6a4c50e25e8e9a47b324a95ad024897e56cb3c6241e0094e93b126a2bf71edc5 \
+    --hash=sha256:92fd2a93c0d2f777dac6c04e5fd7d5734f6643582b983544ef66b4575844e46d
     # via -r requirements.txt
 certifi==2026.10.23 \
     --hash=sha256:a9895e6e2758b371e0545e321a3a8fd1fcfd9829ada8824a936dfb16aaaf36cd \

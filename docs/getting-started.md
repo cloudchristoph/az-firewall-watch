@@ -2,7 +2,7 @@
 
 Three ways to run Azure Firewall Watch: a package manager (winget on Windows,
 Homebrew on macOS and Linux), a self-contained binary, or from source with
-Python 3.10+. Either way the setup wizard takes over on first launch and writes
+Python 3.11+. Either way the setup wizard takes over on first launch and writes
 your `.env`.
 
 ## Before you start
@@ -12,7 +12,7 @@ your `.env`.
   [required Azure permissions](configuration.md#required-azure-permissions).
 - **Azure CLI.** Needed for *Discover* and *Deploy* in the wizard, and for Entra ID
   if you sign in with your own account. Install it and run `az login` once.
-- **Python 3.10+.** Only needed for Option 3 below. The binaries need nothing installed.
+- **Python 3.11+.** Only needed for Option 3 below. The binaries need nothing installed.
 
 ## Option 1: Package manager *(recommended)*
 
@@ -136,7 +136,7 @@ tar -xzf az-firewall-watch-linux-arm64.tar.gz
 ./az-firewall-watch
 ```
 
-## Option 3: Run from source *(Python 3.10+)*
+## Option 3: Run from source *(Python 3.11+)*
 
 ```bash
 git clone https://github.com/cloudchristoph/az-firewall-watch.git

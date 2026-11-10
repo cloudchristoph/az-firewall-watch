@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import os
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 
@@ -87,7 +87,7 @@ def _write_private(env_file: Path, text: str) -> None:
 
 def write_env(env_file: Path, conn_str: str, policy_context: bool = True) -> None:
     """Write a connection-string-based .env file."""
-    ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    ts = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
     _write_private(
         env_file,
         f"# Written by setup.app - {ts}\n"
@@ -102,7 +102,7 @@ def write_env(env_file: Path, conn_str: str, policy_context: bool = True) -> Non
 
 def write_env_entra(env_file: Path, namespace: str, hub_name: str, policy_context: bool = True) -> None:
     """Write an Entra ID (passwordless) .env file."""
-    ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    ts = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
     _write_private(
         env_file,
         f"# Written by setup.app - {ts}\n"

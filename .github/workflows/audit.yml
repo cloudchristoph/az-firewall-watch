@@ -16,15 +16,12 @@ permissions:
 jobs:
   pip-audit:
     # The lock has platform and Python markers that pip-audit evaluates against the
-    # running interpreter, so each release OS (and 3.10 for the older pins) audits its own set
+    # running interpreter, so each release OS audits its own set
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
         python-version: ["3.12"]
-        include:
-          - os: ubuntu-latest
-            python-version: "3.10"
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

@@ -111,7 +111,7 @@ free text, which it splits by word index and separator.
 
 ## Tests and gates
 
-- `pytest` must stay green, `ruff check .` and `mypy` clean. Python 3.10 is the floor, so
+- `pytest` must stay green, `ruff check .` and `mypy` clean. Python 3.11 is the floor, so
   no syntax or typing that needs a later version at runtime.
 - Evaluation logic is tested with constructed policies. Real records from the lab are for
   verification, not for unit tests.

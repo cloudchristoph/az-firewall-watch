@@ -12,6 +12,7 @@ from viewer.azure_resources import (
     fetch_ip_group,
     fetch_ip_groups,
     fetch_policy,
+    fetch_policy_chain,
     fetch_public_ips,
     fetch_subnet_cidrs,
     parse_resource_id,
@@ -246,6 +247,31 @@ async def test_fetch_policy_reads_policy_settings():
     assert pol.tls_ca_name == "fw-tls-intermediate-ca"
     assert pol.snat_private_ranges == ["IANAPrivateRanges", "100.64.0.0/10"] and pol.explicit_proxy
     assert pol.child_policy_count == 1
+
+
+def _policy_json(pid: str, base: str = "") -> dict:
+    props = {"basePolicy": {"id": base}} if base else {}
+    return {"id": pid, "name": pid.rsplit("/", 1)[-1], "properties": props}
+
+
+async def test_fetch_policy_chain_records_an_unreadable_parent():
+    base = f"{SUB}/resourceGroups/rg-x/providers/Microsoft.Network/firewallPolicies/parent"
+    arm = FakeArm({POLICY_ID: _policy_json(POLICY_ID, base), f"{POLICY_ID}/ruleCollectionGroups": {"value": []},
+                   base: ArmError(403, "AuthorizationFailed", "no Reader")})
+    pol = await fetch_policy_chain(arm, POLICY_ID)
+    assert pol.parent is None and pol.parent_unreadable == base and pol.unread_parent() == base
+
+
+async def test_fetch_policy_chain_records_a_parent_beyond_max_depth():
+    ids = [f"{SUB}/resourceGroups/rg-x/providers/Microsoft.Network/firewallPolicies/p{i}" for i in range(4)]
+    routes = {}
+    for i, pid in enumerate(ids):
+        routes[pid] = _policy_json(pid, ids[i + 1] if i + 1 < len(ids) else "")
+        routes[f"{pid}/ruleCollectionGroups"] = {"value": []}
+    pol = await fetch_policy_chain(FakeArm(routes), ids[0], max_depth=2)
+    assert pol.parent.parent.name == "p2" and pol.unread_parent() == ids[3]
+    # a chain that fits is complete
+    assert (await fetch_policy_chain(FakeArm(routes), ids[0], max_depth=4)).unread_parent() == ""
 
 
 async def test_fetch_firewall_propagates_arm_error():

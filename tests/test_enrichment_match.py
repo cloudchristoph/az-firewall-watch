@@ -139,7 +139,11 @@ def test_parsed_address_entries_are_cached_per_entry_list():
     "fqdn, patterns, expected",
     [
         ("www.microsoft.com", ["*.microsoft.com"], True),
-        ("microsoft.com", ["*.microsoft.com"], True),
+        ("microsoft.com", ["*.microsoft.com"], False),
+        ("contoso.com", ["*contoso.com"], True),
+        ("www.contoso.com", ["*contoso.com"], True),
+        ("anycontoso.com", ["*contoso.com"], True),
+        ("evil.com", ["*contoso.com"], False),
         ("evilmicrosoft.com", ["*.microsoft.com"], False),
         ("Example.COM", ["example.com"], True),
         ("anything", ["*"], True),

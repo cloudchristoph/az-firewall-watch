@@ -158,16 +158,16 @@ def test_network_rule_with_fqdn_destination_is_unknown():
     assert next(c for c in r.checks if c.name == "destination").result == UNKNOWN
 
 
-def test_network_rule_fqdn_target_is_compared_with_a_logged_fqdn():
-    """An application-rule log has an FQDN but no IP; a network rule targeting
-    FQDNs is then compared by name instead of reporting 'no address in log'."""
-    rule = net("r", destination_addresses=[], destination_fqdns=["ifconfig.me"])
-    miss = replace(TCP443, category="AppRule", protocol="HTTPS", dst_ip="", dst_fqdn="www.facebook.com")
-    c = next(c for c in evaluate_rule(rule, miss, GROUPS).checks if c.name == "destination")
-    assert c.result == MISS and c.detail == "www.facebook.com not in ifconfig.me"
-    hit = replace(miss, dst_fqdn="ifconfig.me")
-    c = next(c for c in evaluate_rule(rule, hit, GROUPS).checks if c.name == "destination")
-    assert c.result == MATCH and "ifconfig.me" in c.detail
+def test_network_rule_fqdn_target_is_never_compared_with_a_logged_fqdn():
+    """Network rules match the IP the firewall resolved for their FQDN, not the
+    host name or SNI of an application-rule row, so the name decides nothing."""
+    rule = net("r", destination_addresses=[], destination_fqdns=["www.contoso.com"])
+    for name in ("www.contoso.com", "cdn.contoso.com"):
+        row = replace(TCP443, category="AppRule", protocol="HTTPS", dst_ip="", dst_fqdn=name)
+        r = evaluate_rule(rule, row, GROUPS)
+        c = next(c for c in r.checks if c.name == "destination")
+        assert c.result == UNKNOWN and "not the logged host name" in c.detail
+        assert r.verdict == UNKNOWN
 
 
 @pytest.mark.parametrize("flow_proto, rule_protos, expected, detail", [
@@ -348,6 +348,25 @@ def test_trace_computed_match_without_log_is_flagged():
     assert deny.verdict == MATCH and "computed match" in deny.note
 
 
+def test_deny_collection_with_a_wildcard_does_not_match_the_apex():
+    """Azure: *.contoso.com does not match contoso.com, so the deny collection
+    is a plain miss, not a local match the firewall later "continued" past."""
+    deny = rc("deny-apps", 100, "Deny", app("deny-contoso", destination_fqdns=["*.contoso.com"]))
+    allow = rc("allow-apps", 200, "Allow", app("allow-apex", destination_fqdns=["contoso.com"]))
+    pol = policy(rcg("rcg", 100, deny, allow))
+    flow = Flow(category="AppRule", protocol="HTTPS", src_ip="10.0.1.4", dst_fqdn="contoso.com", dst_port="443")
+    logged = LoggedMatch(policy="pol", group="rcg", collection="allow-apps", rule="allow-apex", action="Allow")
+    cols = build_trace(flow, pol, {}, logged).passes[2].collections
+    assert cols[0].verdict == MISS and not cols[0].note
+    assert cols[1].rules[0].logged
+    # no logged rule: the deny collection is no "computed match" either
+    cols = build_trace(flow, pol, {}, None).passes[2].collections
+    assert cols[0].verdict == MISS and cols[1].verdict == MATCH
+    # the left-most asterisk without a dot does include the apex
+    wild = policy(rcg("rcg", 100, rc("deny-apps", 100, "Deny", app("deny-contoso", destination_fqdns=["*contoso.com"]))))
+    assert build_trace(flow, wild, {}, None).passes[2].collections[0].verdict == MATCH
+
+
 def test_trace_parent_policy_groups_come_first_per_pass():
     parent = policy(rcg("base-net", 9000, rc("base-allow", 100, "Allow", net("base-rule"))), name="base")
     child = policy(rcg("child-net", 100, rc("child-allow", 100, "Allow", net("child-rule"))), name="child", parent=parent)
@@ -358,6 +377,48 @@ def test_trace_parent_policy_groups_come_first_per_pass():
     # the parent rule would match locally, but the log names the child rule → downgraded, never claimed as the match
     assert cols[0].verdict == UNKNOWN and "firewall continued" in cols[0].note
     assert cols[1].rules[0].logged
+
+
+PARENT_ID = "/subscriptions/0/resourceGroups/rg/providers/Microsoft.Network/firewallPolicies/parent-policy"
+
+
+def _child_with_unread_parent():
+    child = policy(rcg("rcg", 100, rc("cn", 100, "Allow", net("r", source_addresses=["10.9.0.0/16"], destination_addresses=["*"]))),
+                   name="child")
+    child.base_policy_id = child.parent_unreadable = PARENT_ID
+    return child
+
+
+def test_unreadable_parent_is_reported_and_no_match_is_unknown_not_default_deny():
+    t = build_trace(TCP443, _child_with_unread_parent(), GROUPS, None)
+    assert any("parent-policy" in w and "could not be loaded" in w and "read error" in w for w in t.warnings)
+    placeholder = t.passes[1].collections[0]
+    assert placeholder.verdict == UNKNOWN and "parent-policy" in placeholder.group.name and not placeholder.rules
+    assert t.passes[1].collections[1].verdict == MISS   # the child's own miss stays a miss
+    assert t.outcome.startswith("unknown:") and "default" not in t.outcome.replace("a default deny is not proven", "")
+    assert t.infrastructure is None
+
+
+def test_unreadable_parent_placeholder_is_labelled_with_the_kind_of_its_pass():
+    flow = Flow(category="AppRule", protocol="HTTPS", src_ip="10.3.5.4", dst_fqdn="example.com", dst_port="443")
+    t = build_trace(flow, _child_with_unread_parent(), GROUPS, None)
+    kinds = {p_.kind: p_.collections[0] for p_ in t.passes if p_.collections}
+    assert {k: c.collection.kind for k, c in kinds.items()} == {k: k for k in ("dnat", "network", "application")}
+    assert all(not c.rules and c.verdict == UNKNOWN for c in kinds.values())
+
+
+def test_unreadable_parent_explains_a_logged_rule_that_is_not_loaded():
+    logged = LoggedMatch(policy="parent-policy", group="g", collection="c", rule="r", action="Allow")
+    t = build_trace(TCP443, _child_with_unread_parent(), GROUPS, logged)
+    assert any("probably lives in the parent policy parent-policy" in w for w in t.warnings)
+    assert not any("stale" in w for w in t.warnings)
+    assert "rule not in loaded policy" in t.outcome
+
+
+def test_trace_without_an_unread_parent_is_unchanged():
+    t = build_trace(TCP443, LAB, GROUPS, None)
+    assert t.outcome == "default action: Deny (no rule matched)"
+    assert not t.warnings and all(c.policy_name == "pol" for p in t.passes for c in p.collections)
 
 
 def test_dnat_rule_against_a_named_destination_is_a_destination_miss_not_a_port_question():

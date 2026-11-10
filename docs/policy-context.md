@@ -126,17 +126,30 @@ For `Deny · no rule matched` rows the whole path is computed, and the near miss
 show which criterion failed, for example `port: 8443 not in 443`. That is usually
 the fastest way to find the rule you *meant* to write.
 
+That holds only while the whole policy chain is loaded. If a parent policy cannot be
+loaded (your identity has no Reader role on it, it was deleted, a read failed, or the
+chain is longer than four policies), the trace warns about it and starts every pass with
+an unknown *inherited from …* entry. Azure evaluates inherited collections first, so a
+row that matched no rule then ends in `unknown: the parent policy … was not evaluated`
+instead of `default action: Deny`, and a logged rule that is not in the loaded policy is
+said to probably live in the parent. Collections of the loaded policies keep their
+verdicts.
+
 ### What `?` means
 
 `?` marks criteria that cannot be evaluated locally, so the trace neither confirms
 nor rejects them:
 
 - service tags such as `AzureMonitor`
-- FQDNs in network rules, FQDN tags and web categories
+- FQDNs in network rules (Azure matches them against the IP the firewall resolved,
+  so even the host name of an application-rule row decides nothing), FQDN tags and
+  web categories
 - target URLs
 - IP groups your identity is not allowed to read
 - an address entry the viewer cannot read, in a rule's address list or in an IP
   group. The entry is named, so a typo is visible instead of silently dropped
+- the collections of a parent policy that could not be loaded. They are evaluated
+  first, so everything after them is only as certain as that gap allows
 - destination addresses on an **application** rule: Azure matches those against
   the address the firewall resolved from the `Host` header or the SNI, and that
   resolution is nowhere in the log

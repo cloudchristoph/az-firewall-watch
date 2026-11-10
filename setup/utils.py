@@ -48,15 +48,24 @@ def cli_error_text(exc: BaseException) -> str:
 
 
 _LOC_SHORT: dict[str, str] = {
-    "germanywestcentral": "gwc", "germanynorth": "gn",
-    "westeurope": "we",          "northeurope": "ne",
-    "eastus": "eus",             "eastus2": "eus2",
-    "westus": "wus",             "westus2": "wus2",
-    "centralus": "cus",          "uksouth": "uks",
-    "ukwest": "ukw",             "francecentral": "frc",
-    "swedencentral": "swc",      "switzerlandnorth": "swn",
-    "australiaeast": "ae",       "southeastasia": "sea",
-    "eastasia": "ea",            "japaneast": "jpe",
+    "germanywestcentral": "gwc",
+    "germanynorth": "gn",
+    "westeurope": "we",
+    "northeurope": "ne",
+    "eastus": "eus",
+    "eastus2": "eus2",
+    "westus": "wus",
+    "westus2": "wus2",
+    "centralus": "cus",
+    "uksouth": "uks",
+    "ukwest": "ukw",
+    "francecentral": "frc",
+    "swedencentral": "swc",
+    "switzerlandnorth": "swn",
+    "australiaeast": "ae",
+    "southeastasia": "sea",
+    "eastasia": "ea",
+    "japaneast": "jpe",
 }
 
 

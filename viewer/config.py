@@ -1,4 +1,5 @@
 """Constants and configuration helpers for the viewer TUI."""
+
 from __future__ import annotations
 
 import os
@@ -101,8 +102,8 @@ CATEGORY_GROUPS: dict[str, frozenset[str]] = {
 }
 CATEGORY_OPTIONS: list[tuple[str, str]] = [
     ("Decisions", "group:decisions"),  # rules, ThreatIntel, IDPS
-    ("Traffic", "group:traffic"),      # FlowTrace, FatFlow
-    ("DNS", "group:dns"),              # DnsQuery, DnsFailure
+    ("Traffic", "group:traffic"),  # FlowTrace, FatFlow
+    ("DNS", "group:dns"),  # DnsQuery, DnsFailure
     ("NetworkRule", "networkrule"),
     ("AppRule", "apprule"),
     ("NATRule", "natrule"),
@@ -151,6 +152,24 @@ def update_check_enabled(argv: list[str], environ: Mapping[str, str]) -> bool:
     return not raw or raw in _ON_VALUES
 
 
-__all__ = ["BASE_DIR", "SRC_DIR", "INSTALL_SOURCE", "UPGRADE_COMMANDS", "WINGET_ID",
-           "install_source", "install_source_of", "frozen_base_dir", "prepare_base_dir", "VERSION", "MAX_ROWS", "TABLE_TRIM_SLACK", "CATEGORY_OPTIONS", "CATEGORY_GROUPS",
-           "POLICY_CONTEXT_KEY", "policy_context_setting", "UPDATE_CHECK_KEY", "update_check_enabled", "load_env"]
+__all__ = [
+    "BASE_DIR",
+    "SRC_DIR",
+    "INSTALL_SOURCE",
+    "UPGRADE_COMMANDS",
+    "WINGET_ID",
+    "install_source",
+    "install_source_of",
+    "frozen_base_dir",
+    "prepare_base_dir",
+    "VERSION",
+    "MAX_ROWS",
+    "TABLE_TRIM_SLACK",
+    "CATEGORY_OPTIONS",
+    "CATEGORY_GROUPS",
+    "POLICY_CONTEXT_KEY",
+    "policy_context_setting",
+    "UPDATE_CHECK_KEY",
+    "update_check_enabled",
+    "load_env",
+]

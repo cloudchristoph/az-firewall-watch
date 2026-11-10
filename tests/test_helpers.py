@@ -1,4 +1,5 @@
 """Tests for helpers.py."""
+
 from __future__ import annotations
 
 import os
@@ -32,13 +33,16 @@ def utc_tz(monkeypatch):
         time.tzset()
 
 
-@pytest.mark.parametrize("raw, expected", [
-    ("2026-09-07T16:14:09.903912+00:00", "2026-09-07T16:14:09Z"),   # ARM-style, six digits
-    ("2026-09-05T08:00:00.5000000Z", "2026-09-05T08:00:00Z"),       # seven digits, Z suffix
-    ("2026-09-05T08:00:00Z", "2026-09-05T08:00:00Z"),
-    ("2026-09-05T10:00:00+02:00", "2026-09-05T08:00:00Z"),          # converted to UTC
-    ("not a time", "not a time"),
-])
+@pytest.mark.parametrize(
+    "raw, expected",
+    [
+        ("2026-09-07T16:14:09.903912+00:00", "2026-09-07T16:14:09Z"),  # ARM-style, six digits
+        ("2026-09-05T08:00:00.5000000Z", "2026-09-05T08:00:00Z"),  # seven digits, Z suffix
+        ("2026-09-05T08:00:00Z", "2026-09-05T08:00:00Z"),
+        ("2026-09-05T10:00:00+02:00", "2026-09-05T08:00:00Z"),  # converted to UTC
+        ("not a time", "not a time"),
+    ],
+)
 def test_utc_short_trims_to_seconds(raw, expected):
     assert _utc_short(raw) == expected
 
@@ -54,10 +58,10 @@ def test_to_local_handles_fractional_seconds_and_offset(utc_tz):
 @pytest.mark.parametrize(
     "ts",
     [
-        "2026-09-05T08:00:00.1234567Z",   # Azure diagnostics: 7 digits
-        "2026-09-05T08:00:00.123456Z",    # 6 digits
-        "2026-09-05T08:00:00.123Z",       # 3 digits
-        "2026-09-05T08:00:00.1Z",         # 1 digit
+        "2026-09-05T08:00:00.1234567Z",  # Azure diagnostics: 7 digits
+        "2026-09-05T08:00:00.123456Z",  # 6 digits
+        "2026-09-05T08:00:00.123Z",  # 3 digits
+        "2026-09-05T08:00:00.1Z",  # 1 digit
     ],
 )
 def test_to_local_accepts_any_fraction_length(utc_tz, ts):
@@ -147,8 +151,8 @@ def test_load_env_reads_utf8_and_falls_back_to_latin1(tmp_path, monkeypatch):
     [
         ("10.1.1.1:1234", ("10.1.1.1", "1234")),
         ("10.1.1.1", ("10.1.1.1", "-")),
-        ("fd00::1", ("fd00::1", "-")),                     # bare IPv6, no port
-        ("[fd00::1]:1234", ("fd00::1", "1234")),            # bracketed IPv6 + port
+        ("fd00::1", ("fd00::1", "-")),  # bare IPv6, no port
+        ("[fd00::1]:1234", ("fd00::1", "1234")),  # bracketed IPv6 + port
         ("example.com:443", ("example.com", "443")),
         ("example.com", ("example.com", "-")),
         ("-", ("-", "-")),
@@ -213,46 +217,67 @@ V6 = "fd10:2:0:2::10"
 V6_EXPANDED = "fd10:2:0:2:0:0:0:10"
 
 
-@pytest.mark.parametrize("value, ok", [
-    ("10.0.1.4", True), (V6, True), (" fd00::1 ", True),
-    ("", False), ("-", False), ("example.com", False), ("10.0.1", False), ("fd00", False),
-])
+@pytest.mark.parametrize(
+    "value, ok",
+    [
+        ("10.0.1.4", True),
+        (V6, True),
+        (" fd00::1 ", True),
+        ("", False),
+        ("-", False),
+        ("example.com", False),
+        ("10.0.1", False),
+        ("fd00", False),
+    ],
+)
 def test_parse_address_never_raises(value, ok):
     assert (parse_address(value) is not None) is ok
 
 
-@pytest.mark.parametrize("value, ok", [
-    ("10.0.0.0/8", True), ("10.0.0.7/8", True), ("fd10:2::/32", True), ("fd00::1", True),
-    ("", False), ("AzureMonitor", False), ("10.0.0.0/33", False), ("fd00::/129", False),
-])
+@pytest.mark.parametrize(
+    "value, ok",
+    [
+        ("10.0.0.0/8", True),
+        ("10.0.0.7/8", True),
+        ("fd10:2::/32", True),
+        ("fd00::1", True),
+        ("", False),
+        ("AzureMonitor", False),
+        ("10.0.0.0/33", False),
+        ("fd00::/129", False),
+    ],
+)
 def test_parse_network_tolerates_host_bits(value, ok):
     assert (parse_network(value) is not None) is ok
 
 
-@pytest.mark.parametrize("needle, value, expected", [
-    ("", "10.0.1.4", True),
-    ("10.0.1", "10.0.1.4", True),                    # fragment: substring, as before
-    ("10.0.2", "10.0.1.4", False),
-    ("10.0.1.4", "10.0.1.44", True),                 # substring still wins; a CIDR is the precise tool
-    ("example", "www.Example.com", True),            # FQDNs: substring only
-    ("10.0.0.0/8", "10.0.1.4", True),                # IPv4 CIDR
-    ("10.0.0.0/8", "192.168.0.1", False),
-    ("10.0.0.0/8", "www.example.com", False),        # a CIDR never matches a name
-    ("10.0.0.0/8", "", False),
-    ("fd10:2::/32", V6, True),                       # IPv6 CIDR, both spellings
-    ("fd10:2::/32", V6_EXPANDED, True),
-    ("fd10:3::/32", V6, False),
-    ("fd10:2::/32", "10.0.1.4", False),              # other family: a miss, not an error
-    ("10.0.0.0/8", V6, False),
-    ("10.0.0.0/99", "10.0.1.4", False),              # not a CIDR: plain text
-    ("10.0/8", "10.0/8", True),
-    (V6, V6_EXPANDED, True),                         # same address, other spelling
-    (V6_EXPANDED, V6, True),
-    ("fd00::1", "fd00:0:0:0:0:0:0:1", True),
-    ("::10", V6_EXPANDED, True),                     # fragment against the compressed form
-    ("2:0:2::", V6_EXPANDED, True),
-    ("2:0:3::", V6, False),
-    ("fd10:2", "FD10:2:0:2::10", True),              # upper-case hex in the log
-])
+@pytest.mark.parametrize(
+    "needle, value, expected",
+    [
+        ("", "10.0.1.4", True),
+        ("10.0.1", "10.0.1.4", True),  # fragment: substring, as before
+        ("10.0.2", "10.0.1.4", False),
+        ("10.0.1.4", "10.0.1.44", True),  # substring still wins; a CIDR is the precise tool
+        ("example", "www.Example.com", True),  # FQDNs: substring only
+        ("10.0.0.0/8", "10.0.1.4", True),  # IPv4 CIDR
+        ("10.0.0.0/8", "192.168.0.1", False),
+        ("10.0.0.0/8", "www.example.com", False),  # a CIDR never matches a name
+        ("10.0.0.0/8", "", False),
+        ("fd10:2::/32", V6, True),  # IPv6 CIDR, both spellings
+        ("fd10:2::/32", V6_EXPANDED, True),
+        ("fd10:3::/32", V6, False),
+        ("fd10:2::/32", "10.0.1.4", False),  # other family: a miss, not an error
+        ("10.0.0.0/8", V6, False),
+        ("10.0.0.0/99", "10.0.1.4", False),  # not a CIDR: plain text
+        ("10.0/8", "10.0/8", True),
+        (V6, V6_EXPANDED, True),  # same address, other spelling
+        (V6_EXPANDED, V6, True),
+        ("fd00::1", "fd00:0:0:0:0:0:0:1", True),
+        ("::10", V6_EXPANDED, True),  # fragment against the compressed form
+        ("2:0:2::", V6_EXPANDED, True),
+        ("2:0:3::", V6, False),
+        ("fd10:2", "FD10:2:0:2::10", True),  # upper-case hex in the log
+    ],
+)
 def test_address_matches(needle, value, expected):
     assert address_matches(needle, value) is expected

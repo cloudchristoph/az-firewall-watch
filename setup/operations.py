@@ -3,6 +3,7 @@
 All functions are pure-async (no Textual imports) and accept a ``log``
 callback so the TUI can stream progress messages in real-time.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -20,9 +21,15 @@ HubItem = tuple[str, str, str, str, str]
 # the diagnostic setting the wizard creates — the *Aggregation categories
 # (Policy Analytics) and AZFWDnsAdditional would only add Event Hub volume.
 VIEWER_CATEGORIES: tuple[str, ...] = (
-    "AZFWNetworkRule", "AZFWApplicationRule", "AZFWNatRule",
-    "AZFWThreatIntel", "AZFWIdpsSignature", "AZFWDnsQuery",
-    "AZFWFqdnResolveFailure", "AZFWFlowTrace", "AZFWFatFlow",
+    "AZFWNetworkRule",
+    "AZFWApplicationRule",
+    "AZFWNatRule",
+    "AZFWThreatIntel",
+    "AZFWIdpsSignature",
+    "AZFWDnsQuery",
+    "AZFWFqdnResolveFailure",
+    "AZFWFlowTrace",
+    "AZFWFatFlow",
 )
 Log = Callable[[Any], Any]
 
@@ -30,6 +37,7 @@ Log = Callable[[Any], Any]
 # ---------------------------------------------------------------------------
 # Login / subscription helpers
 # ---------------------------------------------------------------------------
+
 
 async def cli_ensure_login(
     log: Log,
@@ -68,23 +76,20 @@ async def cli_ensure_login(
     username = acc.stdout.strip()
     log(f"[green]✓[/] Logged in as [bold]{username}[/]")
 
-    oid_result = await az_async(
-        "ad", "signed-in-user", "show", "--query", "id", "-o", "tsv"
-    )
-    user_id = (
-        oid_result.stdout.strip()
-        if oid_result.returncode == 0 and oid_result.stdout.strip()
-        else ""
-    )
+    oid_result = await az_async("ad", "signed-in-user", "show", "--query", "id", "-o", "tsv")
+    user_id = oid_result.stdout.strip() if oid_result.returncode == 0 and oid_result.stdout.strip() else ""
     return username, user_id
 
 
 async def list_subscriptions(log: Log) -> list[dict]:
     """Return all enabled subscriptions as ``[{id, name}, …]``."""
     result = await az_async(
-        "account", "list",
-        "--query", "[?state=='Enabled'].{id:id, name:name}",
-        "-o", "json",
+        "account",
+        "list",
+        "--query",
+        "[?state=='Enabled'].{id:id, name:name}",
+        "-o",
+        "json",
     )
     subs: list[dict] = json.loads(result.stdout) if result.returncode == 0 else []
     log(f"[cyan]i[/] Found {len(subs)} subscription(s)")
@@ -94,6 +99,7 @@ async def list_subscriptions(log: Log) -> list[dict]:
 # ---------------------------------------------------------------------------
 # Discovery helpers
 # ---------------------------------------------------------------------------
+
 
 async def scan_event_hubs(
     subs: list[dict],
@@ -108,26 +114,38 @@ async def scan_event_hubs(
         sub_id, sub_name = sub["id"], sub["name"]
         log(f"[cyan]i[/] Scanning {sub_name}…")
         ns_result = await az_async(
-            "eventhubs", "namespace", "list",
-            "--subscription", sub_id,
-            "--query", "[].{name:name, rg:resourceGroup}",
-            "-o", "json",
+            "eventhubs",
+            "namespace",
+            "list",
+            "--subscription",
+            sub_id,
+            "--query",
+            "[].{name:name, rg:resourceGroup}",
+            "-o",
+            "json",
         )
         if ns_result.returncode != 0:
             continue
-        for ns_info in (json.loads(ns_result.stdout) or []):
+        for ns_info in json.loads(ns_result.stdout) or []:
             ns, rg = ns_info["name"], ns_info["rg"]
             eh_result = await az_async(
-                "eventhubs", "eventhub", "list",
-                "--namespace-name", ns,
-                "--resource-group", rg,
-                "--subscription", sub_id,
-                "--query", "[].name",
-                "-o", "json",
+                "eventhubs",
+                "eventhub",
+                "list",
+                "--namespace-name",
+                ns,
+                "--resource-group",
+                rg,
+                "--subscription",
+                sub_id,
+                "--query",
+                "[].name",
+                "-o",
+                "json",
             )
             if eh_result.returncode != 0:
                 continue
-            for eh in (json.loads(eh_result.stdout) or []):
+            for eh in json.loads(eh_result.stdout) or []:
                 items.append((sub_id, sub_name, rg, ns, eh))
                 log(f"[green]✓[/] {eh}  (ns: {ns}, rg: {rg})")
     return items
@@ -144,10 +162,15 @@ async def scan_firewalls(
     """
     log(f"[cyan]i[/] Scanning for firewalls in {sub_name}…")
     result = await az_async(
-        "network", "firewall", "list",
-        "--subscription", sub_id,
-        "--query", "[].{name:name, rg:resourceGroup, location:location, id:id}",
-        "-o", "json",
+        "network",
+        "firewall",
+        "list",
+        "--subscription",
+        sub_id,
+        "--query",
+        "[].{name:name, rg:resourceGroup, location:location, id:id}",
+        "-o",
+        "json",
     )
     return json.loads(result.stdout) if result.returncode == 0 else []
 
@@ -155,6 +178,7 @@ async def scan_firewalls(
 # ---------------------------------------------------------------------------
 # SAS connection-string resolution
 # ---------------------------------------------------------------------------
+
 
 def _has_listen_rights(rule: dict) -> bool:
     rights = rule.get("rights") or []
@@ -194,15 +218,23 @@ async def resolve_sas_conn_str(
 
     # 1) Entity-level rules
     entity_result = await az_async(
-        "eventhubs", "eventhub", "authorization-rule", "list",
-        "--subscription", sub_id, "--resource-group", rg,
-        "--namespace-name", ns, "--eventhub-name", eh,
-        "-o", "json",
+        "eventhubs",
+        "eventhub",
+        "authorization-rule",
+        "list",
+        "--subscription",
+        sub_id,
+        "--resource-group",
+        rg,
+        "--namespace-name",
+        ns,
+        "--eventhub-name",
+        eh,
+        "-o",
+        "json",
     )
     entity_rules: list[dict] = (
-        json.loads(entity_result.stdout)
-        if entity_result.returncode == 0 and entity_result.stdout.strip()
-        else []
+        json.loads(entity_result.stdout) if entity_result.returncode == 0 and entity_result.stdout.strip() else []
     )
     preferred = next(
         (r for r in entity_rules if r.get("name") == rule_name and _has_listen_rights(r)),
@@ -213,10 +245,25 @@ async def resolve_sas_conn_str(
         name = chosen["name"]
         log(f"[green]✓[/] Using existing Event Hub rule '{name}'")
         keys = await az_async(
-            "eventhubs", "eventhub", "authorization-rule", "keys", "list",
-            "--subscription", sub_id, "--resource-group", rg,
-            "--namespace-name", ns, "--eventhub-name", eh,
-            "--name", name, "--query", "primaryConnectionString", "-o", "tsv",
+            "eventhubs",
+            "eventhub",
+            "authorization-rule",
+            "keys",
+            "list",
+            "--subscription",
+            sub_id,
+            "--resource-group",
+            rg,
+            "--namespace-name",
+            ns,
+            "--eventhub-name",
+            eh,
+            "--name",
+            name,
+            "--query",
+            "primaryConnectionString",
+            "-o",
+            "tsv",
         )
         if keys.returncode == 0 and keys.stdout.strip():
             conn_str = _with_entity_path(keys.stdout.strip(), eh)
@@ -224,35 +271,51 @@ async def resolve_sas_conn_str(
     # 2) Namespace-level rules
     if not conn_str:
         ns_result = await az_async(
-            "eventhubs", "namespace", "authorization-rule", "list",
-            "--subscription", sub_id, "--resource-group", rg,
-            "--namespace-name", ns,
-            "-o", "json",
+            "eventhubs",
+            "namespace",
+            "authorization-rule",
+            "list",
+            "--subscription",
+            sub_id,
+            "--resource-group",
+            rg,
+            "--namespace-name",
+            ns,
+            "-o",
+            "json",
         )
         ns_rules: list[dict] = (
-            json.loads(ns_result.stdout)
-            if ns_result.returncode == 0 and ns_result.stdout.strip()
-            else []
+            json.loads(ns_result.stdout) if ns_result.returncode == 0 and ns_result.stdout.strip() else []
         )
         preferred_ns = next(
             (r for r in ns_rules if r.get("name") == rule_name and _has_listen_rights(r)),
             None,
         )
         chosen_ns = preferred_ns or next(
-            (
-                r for r in ns_rules
-                if r.get("name") != "RootManageSharedAccessKey" and _has_listen_rights(r)
-            ),
+            (r for r in ns_rules if r.get("name") != "RootManageSharedAccessKey" and _has_listen_rights(r)),
             None,
         )
         if chosen_ns:
             name = chosen_ns["name"]
             log(f"[green]✓[/] Using existing namespace rule '{name}'")
             keys = await az_async(
-                "eventhubs", "namespace", "authorization-rule", "keys", "list",
-                "--subscription", sub_id, "--resource-group", rg,
-                "--namespace-name", ns,
-                "--name", name, "--query", "primaryConnectionString", "-o", "tsv",
+                "eventhubs",
+                "namespace",
+                "authorization-rule",
+                "keys",
+                "list",
+                "--subscription",
+                sub_id,
+                "--resource-group",
+                rg,
+                "--namespace-name",
+                ns,
+                "--name",
+                name,
+                "--query",
+                "primaryConnectionString",
+                "-o",
+                "tsv",
             )
             if keys.returncode == 0 and keys.stdout.strip():
                 conn_str = _with_entity_path(keys.stdout.strip(), eh)
@@ -264,17 +327,46 @@ async def resolve_sas_conn_str(
             return ""
         log(f"[yellow]![/] No reusable Listen rule found — creating '{rule_name}'…")
         await az_async(
-            "eventhubs", "eventhub", "authorization-rule", "create",
-            "--subscription", sub_id, "--resource-group", rg,
-            "--namespace-name", ns, "--eventhub-name", eh,
-            "--name", rule_name, "--rights", "Listen", "--output", "none",
+            "eventhubs",
+            "eventhub",
+            "authorization-rule",
+            "create",
+            "--subscription",
+            sub_id,
+            "--resource-group",
+            rg,
+            "--namespace-name",
+            ns,
+            "--eventhub-name",
+            eh,
+            "--name",
+            rule_name,
+            "--rights",
+            "Listen",
+            "--output",
+            "none",
             check=True,
         )
         keys = await az_async(
-            "eventhubs", "eventhub", "authorization-rule", "keys", "list",
-            "--subscription", sub_id, "--resource-group", rg,
-            "--namespace-name", ns, "--eventhub-name", eh,
-            "--name", rule_name, "--query", "primaryConnectionString", "-o", "tsv",
+            "eventhubs",
+            "eventhub",
+            "authorization-rule",
+            "keys",
+            "list",
+            "--subscription",
+            sub_id,
+            "--resource-group",
+            rg,
+            "--namespace-name",
+            ns,
+            "--eventhub-name",
+            eh,
+            "--name",
+            rule_name,
+            "--query",
+            "primaryConnectionString",
+            "-o",
+            "tsv",
             check=True,
         )
         conn_str = _with_entity_path(keys.stdout.strip(), eh)
@@ -286,6 +378,7 @@ async def resolve_sas_conn_str(
 # ---------------------------------------------------------------------------
 # Full deployment
 # ---------------------------------------------------------------------------
+
 
 async def deploy_new_hub(
     sub_id: str,
@@ -318,10 +411,18 @@ async def deploy_new_hub(
     else:
         log(f"[cyan]i[/] Creating resource group '{rg}'…")
         await az_async(
-            "group", "create",
-            "--subscription", sub_id,
-            "--name", rg, "--location", location,
-            "--tags", *tags, "--output", "none",
+            "group",
+            "create",
+            "--subscription",
+            sub_id,
+            "--name",
+            rg,
+            "--location",
+            location,
+            "--tags",
+            *tags,
+            "--output",
+            "none",
             check=True,
         )
     log("[green]✓[/] Resource group ready")
@@ -329,11 +430,25 @@ async def deploy_new_hub(
     # Namespace
     log(f"[cyan]i[/] Creating namespace '{ns}' (Basic SKU)…")
     await az_async(
-        "eventhubs", "namespace", "create",
-        "--subscription", sub_id,
-        "--name", ns, "--resource-group", rg, "--location", location,
-        "--sku", "Basic", "--minimum-tls-version", "1.2",
-        "--tags", *tags, "--output", "none",
+        "eventhubs",
+        "namespace",
+        "create",
+        "--subscription",
+        sub_id,
+        "--name",
+        ns,
+        "--resource-group",
+        rg,
+        "--location",
+        location,
+        "--sku",
+        "Basic",
+        "--minimum-tls-version",
+        "1.2",
+        "--tags",
+        *tags,
+        "--output",
+        "none",
         check=True,
     )
     log("[green]✓[/] Namespace ready")
@@ -344,12 +459,25 @@ async def deploy_new_hub(
     # and plenty for a live viewer.
     log(f"[cyan]i[/] Creating Event Hub '{eh_name}'…")
     await az_async(
-        "eventhubs", "eventhub", "create",
-        "--subscription", sub_id,
-        "--name", eh_name, "--namespace-name", ns,
-        "--resource-group", rg, "--partition-count", "1",
-        "--cleanup-policy", "Delete", "--retention-time-in-hours", "24",
-        "--output", "none",
+        "eventhubs",
+        "eventhub",
+        "create",
+        "--subscription",
+        sub_id,
+        "--name",
+        eh_name,
+        "--namespace-name",
+        ns,
+        "--resource-group",
+        rg,
+        "--partition-count",
+        "1",
+        "--cleanup-policy",
+        "Delete",
+        "--retention-time-in-hours",
+        "24",
+        "--output",
+        "none",
         check=True,
     )
     log("[green]✓[/] Event Hub ready")
@@ -359,20 +487,47 @@ async def deploy_new_hub(
     if auth_method == "sas":
         log(f"[cyan]i[/] Creating Listen rule '{listen_rule}'…")
         await az_async(
-            "eventhubs", "eventhub", "authorization-rule", "create",
-            "--subscription", sub_id,
-            "--resource-group", rg, "--namespace-name", ns,
-            "--eventhub-name", eh_name, "--name", listen_rule,
-            "--rights", "Listen", "--output", "none",
+            "eventhubs",
+            "eventhub",
+            "authorization-rule",
+            "create",
+            "--subscription",
+            sub_id,
+            "--resource-group",
+            rg,
+            "--namespace-name",
+            ns,
+            "--eventhub-name",
+            eh_name,
+            "--name",
+            listen_rule,
+            "--rights",
+            "Listen",
+            "--output",
+            "none",
             check=True,
         )
         log("[green]✓[/] Listen rule created")
         keys = await az_async(
-            "eventhubs", "eventhub", "authorization-rule", "keys", "list",
-            "--subscription", sub_id,
-            "--resource-group", rg, "--namespace-name", ns,
-            "--eventhub-name", eh_name, "--name", listen_rule,
-            "--query", "primaryConnectionString", "-o", "tsv",
+            "eventhubs",
+            "eventhub",
+            "authorization-rule",
+            "keys",
+            "list",
+            "--subscription",
+            sub_id,
+            "--resource-group",
+            rg,
+            "--namespace-name",
+            ns,
+            "--eventhub-name",
+            eh_name,
+            "--name",
+            listen_rule,
+            "--query",
+            "primaryConnectionString",
+            "-o",
+            "tsv",
             check=True,
         )
         conn_str = keys.stdout.strip()
@@ -380,20 +535,43 @@ async def deploy_new_hub(
     # Send rule (used by diagnostics)
     log(f"[cyan]i[/] Creating Send rule '{send_rule}'…")
     await az_async(
-        "eventhubs", "namespace", "authorization-rule", "create",
-        "--subscription", sub_id,
-        "--resource-group", rg, "--namespace-name", ns,
-        "--name", send_rule, "--rights", "Send",
-        "--output", "none",
+        "eventhubs",
+        "namespace",
+        "authorization-rule",
+        "create",
+        "--subscription",
+        sub_id,
+        "--resource-group",
+        rg,
+        "--namespace-name",
+        ns,
+        "--name",
+        send_rule,
+        "--rights",
+        "Send",
+        "--output",
+        "none",
         check=True,
     )
     log("[green]✓[/] Send rule created")
 
     send_rule_result = await az_async(
-        "eventhubs", "namespace", "authorization-rule", "show",
-        "--subscription", sub_id,
-        "--resource-group", rg, "--namespace-name", ns,
-        "--name", send_rule, "--query", "id", "-o", "tsv",
+        "eventhubs",
+        "namespace",
+        "authorization-rule",
+        "show",
+        "--subscription",
+        sub_id,
+        "--resource-group",
+        rg,
+        "--namespace-name",
+        ns,
+        "--name",
+        send_rule,
+        "--query",
+        "id",
+        "-o",
+        "tsv",
         check=True,
     )
     send_rule_id = send_rule_result.stdout.strip()
@@ -401,10 +579,16 @@ async def deploy_new_hub(
     # Diagnostics
     log("[cyan]i[/] Discovering diagnostic log categories…")
     cats_result = await az_async(
-        "monitor", "diagnostic-settings", "categories", "list",
-        "--resource", fw["id"],
-        "--query", "value[?categoryType=='Logs'].name",
-        "-o", "json",
+        "monitor",
+        "diagnostic-settings",
+        "categories",
+        "list",
+        "--resource",
+        fw["id"],
+        "--query",
+        "value[?categoryType=='Logs'].name",
+        "-o",
+        "json",
     )
     available_cats: list[str] = []
     if cats_result.returncode == 0 and cats_result.stdout.strip():
@@ -419,13 +603,21 @@ async def deploy_new_hub(
 
     log(f"[cyan]i[/] Configuring diagnostic settings '{diag_name}'…")
     diag_result = await az_async(
-        "monitor", "diagnostic-settings", "create",
-        "--name", diag_name,
-        "--resource", fw["id"],
-        "--event-hub", eh_name,
-        "--event-hub-rule", send_rule_id,
-        "--logs", diag_logs,
-        "--output", "none",
+        "monitor",
+        "diagnostic-settings",
+        "create",
+        "--name",
+        diag_name,
+        "--resource",
+        fw["id"],
+        "--event-hub",
+        eh_name,
+        "--event-hub-rule",
+        send_rule_id,
+        "--logs",
+        diag_logs,
+        "--output",
+        "none",
     )
     if diag_result.returncode == 0:
         log("[green]✓[/] Diagnostic settings configured — logs will start flowing shortly")
@@ -446,12 +638,19 @@ async def deploy_new_hub(
         log("[cyan]i[/] Assigning 'Azure Event Hubs Data Receiver' role…")
         if current_user_id:
             rbac_result = await az_async(
-                "role", "assignment", "create",
-                "--assignee-object-id", current_user_id,
-                "--assignee-principal-type", "User",
-                "--role", "a638d3c7-ab3a-418d-83e6-5f17a39d4fde",
-                "--scope", eh_scope,
-                "--output", "none",
+                "role",
+                "assignment",
+                "create",
+                "--assignee-object-id",
+                current_user_id,
+                "--assignee-principal-type",
+                "User",
+                "--role",
+                "a638d3c7-ab3a-418d-83e6-5f17a39d4fde",
+                "--scope",
+                eh_scope,
+                "--output",
+                "none",
             )
             if rbac_result.returncode == 0:
                 log("[green]✓[/] Data Receiver role assigned")

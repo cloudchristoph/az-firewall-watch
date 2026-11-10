@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import os
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 
@@ -19,7 +19,7 @@ def get_existing_conn_str(env_file: Path) -> str | None:
         return None
     for line in _read_env_text(env_file).splitlines():
         if line.startswith("EVENT_HUB_CONNECTION_STRING="):
-            value = line[len("EVENT_HUB_CONNECTION_STRING="):].strip()
+            value = line[len("EVENT_HUB_CONNECTION_STRING=") :].strip()
             return value if value else None
     return None
 
@@ -87,7 +87,7 @@ def _write_private(env_file: Path, text: str) -> None:
 
 def write_env(env_file: Path, conn_str: str, policy_context: bool = True) -> None:
     """Write a connection-string-based .env file."""
-    ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    ts = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
     _write_private(
         env_file,
         f"# Written by setup.app - {ts}\n"
@@ -95,14 +95,15 @@ def write_env(env_file: Path, conn_str: str, policy_context: bool = True) -> Non
         f"EVENT_HUB_CONNECTION_STRING={conn_str}\n"
         "EVENT_HUB_CONSUMER_GROUP=$Default\n"
         "EVENT_HUB_START_POSITION=latest\n"
-        + _POLICY_CONTEXT_COMMENT + _policy_context_line(policy_context)
+        + _POLICY_CONTEXT_COMMENT
+        + _policy_context_line(policy_context)
         + _update_check_block(env_file),
     )
 
 
 def write_env_entra(env_file: Path, namespace: str, hub_name: str, policy_context: bool = True) -> None:
     """Write an Entra ID (passwordless) .env file."""
-    ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    ts = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
     _write_private(
         env_file,
         f"# Written by setup.app - {ts}\n"
@@ -112,7 +113,8 @@ def write_env_entra(env_file: Path, namespace: str, hub_name: str, policy_contex
         f"EVENT_HUB_NAME={hub_name}\n"
         "EVENT_HUB_CONSUMER_GROUP=$Default\n"
         "EVENT_HUB_START_POSITION=latest\n"
-        + _POLICY_CONTEXT_COMMENT + _policy_context_line(policy_context)
+        + _POLICY_CONTEXT_COMMENT
+        + _policy_context_line(policy_context)
         + _update_check_block(env_file),
     )
 

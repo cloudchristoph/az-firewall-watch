@@ -5,6 +5,7 @@ The :func:`run_stream` coroutine connects to the configured Event Hub
 Permissions API when using Entra ID, and dispatches parsed records
 back into the app's pending queue.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -28,8 +29,13 @@ if TYPE_CHECKING:
 
 # Keywords that indicate a configuration error rather than a transient fault.
 _AUTH_KEYWORDS = (
-    "unauthorized", "authentication", "forbidden",
-    "401", "403", "invalid signature", "saskey",
+    "unauthorized",
+    "authentication",
+    "forbidden",
+    "401",
+    "403",
+    "invalid signature",
+    "saskey",
 )
 # Initial connection: three attempts with these delays, then an error dialog
 # (a first-time failure is most likely a configuration problem).
@@ -76,7 +82,11 @@ def _run_in_daemon_thread(function: Callable[[], Any]) -> asyncio.Future:
 
 
 async def _verify_data_plane_access(
-    credential, eh_namespace: str, eh_name: str, *, allowed: Callable[[], bool] | None = None,
+    credential,
+    eh_namespace: str,
+    eh_name: str,
+    *,
+    allowed: Callable[[], bool] | None = None,
 ) -> None:
     """Probe ARM Permissions API to check the identity can receive from this hub.
 
@@ -94,9 +104,7 @@ async def _verify_data_plane_access(
     if allowed is not None and not allowed():
         return
 
-    _arm_token = (
-        await credential.get_token("https://management.azure.com/.default")
-    ).token
+    _arm_token = (await credential.get_token("https://management.azure.com/.default")).token
     if allowed is not None and not allowed():
         return
     _arm_auth = {"Authorization": f"Bearer {_arm_token}"}
@@ -104,20 +112,21 @@ async def _verify_data_plane_access(
     # 1. Resolve namespace resource ID via Azure Resource Graph.
     _ns_short = eh_namespace.split(".")[0]
     _rg_req = _urllib_req.Request(
-        "https://management.azure.com/providers/"
-        "Microsoft.ResourceGraph/resources"
-        "?api-version=2021-03-01",
-        data=json.dumps({
-            "query": (
-                "Resources"
-                " | where type =~ 'microsoft.eventhub/namespaces'"
-                f" | where name =~ '{_ns_short}'"
-                " | project id | limit 1"
-            )
-        }).encode(),
+        "https://management.azure.com/providers/Microsoft.ResourceGraph/resources?api-version=2021-03-01",
+        data=json.dumps(
+            {
+                "query": (
+                    "Resources"
+                    " | where type =~ 'microsoft.eventhub/namespaces'"
+                    f" | where name =~ '{_ns_short}'"
+                    " | project id | limit 1"
+                )
+            }
+        ).encode(),
         headers={**_arm_auth, "Content-Type": "application/json"},
         method="POST",
     )
+
     def read_if_allowed(request):
         # The thread may start after the user disabled context. An already
         # running HTTP request cannot be recalled, but no later request
@@ -128,18 +137,14 @@ async def _verify_data_plane_access(
 
     if allowed is not None and not allowed():
         return
-    _rg_resp = json.loads(
-        await _run_in_daemon_thread(lambda: read_if_allowed(_rg_req))
-    )
+    _rg_resp = json.loads(await _run_in_daemon_thread(lambda: read_if_allowed(_rg_req)))
     if allowed is not None and not allowed():
         return
     _rg_rows = _rg_resp.get("data") or []
     if not _rg_rows:
         return  # could not resolve — skip the check
 
-    _ns_id: str = (
-        _rg_rows[0]["id"] if isinstance(_rg_rows[0], dict) else _rg_rows[0][0]
-    )
+    _ns_id: str = _rg_rows[0]["id"] if isinstance(_rg_rows[0], dict) else _rg_rows[0][0]
 
     # 2. Check effective data-plane permissions at the hub's scope.
     _perm_req = _urllib_req.Request(
@@ -152,17 +157,14 @@ async def _verify_data_plane_access(
     if allowed is not None and not allowed():
         return
     _data_actions: list[str] = []
-    for _entry in json.loads(
-        await _run_in_daemon_thread(lambda: read_if_allowed(_perm_req))
-    ).get("value", []):
+    for _entry in json.loads(await _run_in_daemon_thread(lambda: read_if_allowed(_perm_req))).get("value", []):
         _data_actions.extend(_entry.get("dataActions", []))
     if allowed is not None and not allowed():
         return
     if not any(
         # RG/subscription-inherited assignments use wildcard form like
         # "Microsoft.EventHub/*/receive/action"
-        ("eventhub" in _a.lower() and "receive" in _a.lower())
-        or _a.lower() in ("*", "microsoft.eventhub/*")
+        ("eventhub" in _a.lower() and "receive" in _a.lower()) or _a.lower() in ("*", "microsoft.eventhub/*")
         for _a in _data_actions
     ):
         raise PermissionError(
@@ -171,7 +173,9 @@ async def _verify_data_plane_access(
         )
 
 
-async def _receive_with_access_check(client, on_event, position, credential, namespace, hub, app: FirewallLogApp) -> None:
+async def _receive_with_access_check(
+    client, on_event, position, credential, namespace, hub, app: FirewallLogApp
+) -> None:
     """Receive immediately; stop the receiver if ARM confirms a missing role.
 
     ARM failures remain best effort. Both tasks are drained before the client
@@ -187,6 +191,7 @@ async def _receive_with_access_check(client, on_event, position, credential, nam
     async def check_access() -> None:
         if not await app.wait_for_arm_permission():
             return
+
         async def verify_allowed() -> None:
             # The task may start after a disable action in the same loop turn.
             if await app.wait_for_arm_permission():
@@ -409,10 +414,9 @@ async def run_stream(app: FirewallLogApp) -> None:
                 # namespace is unreachable.
                 try:
                     await asyncio.wait_for(client.get_partition_ids(), timeout=15)
-                except asyncio.TimeoutError:
+                except TimeoutError:
                     raise TimeoutError(
-                        "Event Hub did not respond within 15 s — "
-                        "check connection string and network"
+                        "Event Hub did not respond within 15 s — check connection string and network"
                     ) from None
 
                 attempt = 0  # reset backoff counter after a successful connect
@@ -470,8 +474,13 @@ async def run_stream(app: FirewallLogApp) -> None:
                         await _remove_splash(app)
 
                 await _receive_with_access_check(
-                    client, on_event, position,
-                    _credential if use_entra else None, eh_namespace, eh_name, app,
+                    client,
+                    on_event,
+                    position,
+                    _credential if use_entra else None,
+                    eh_namespace,
+                    eh_name,
+                    app,
                 )
 
         except asyncio.CancelledError:
@@ -491,9 +500,7 @@ async def run_stream(app: FirewallLogApp) -> None:
             status.eh_error = _safe_error_text(exc)
 
             # Auth / configuration errors will not fix themselves — skip retries.
-            if isinstance(exc, PermissionError) or any(
-                kw in str(exc).lower() for kw in _AUTH_KEYWORDS
-            ):
+            if isinstance(exc, PermissionError) or any(kw in str(exc).lower() for kw in _AUTH_KEYWORDS):
                 attempt = _MAX_ATTEMPTS
                 break
 
@@ -504,8 +511,9 @@ async def run_stream(app: FirewallLogApp) -> None:
                 app.sub_title = "Live Log Monitor  |  connection lost"
                 status.eh_state = "reconnecting"
                 if attempt == 1:
-                    app.notify(f"Connection lost: {status.eh_error}", title="Event Hub", severity="warning",
-                               markup=False)
+                    app.notify(
+                        f"Connection lost: {status.eh_error}", title="Event Hub", severity="warning", markup=False
+                    )
                 for remaining in range(delay, 0, -1):
                     status.eh_detail = f"attempt {attempt} in {remaining}s"
                     await asyncio.sleep(1)
@@ -517,8 +525,7 @@ async def run_stream(app: FirewallLogApp) -> None:
             delay = _BACKOFF[attempt - 1]
             status.eh_state = "retrying"
             if attempt == 1:
-                app.notify(f"Connection error: {status.eh_error}", title="Event Hub", severity="warning",
-                           markup=False)
+                app.notify(f"Connection error: {status.eh_error}", title="Event Hub", severity="warning", markup=False)
             for remaining in range(delay, 0, -1):
                 status.eh_detail = f"attempt {attempt}/{_MAX_ATTEMPTS} in {remaining}s"
                 await asyncio.sleep(1)
@@ -526,9 +533,7 @@ async def run_stream(app: FirewallLogApp) -> None:
     # ── all attempts exhausted ────────────────────────────────────────────
     if last_exc is not None:
         err_lower = str(last_exc).lower()
-        is_cfg_error = isinstance(last_exc, PermissionError) or any(
-            kw in err_lower for kw in _AUTH_KEYWORDS
-        )
+        is_cfg_error = isinstance(last_exc, PermissionError) or any(kw in err_lower for kw in _AUTH_KEYWORDS)
         if is_cfg_error:
             hint = _error_hint(last_exc, use_entra)
         else:
@@ -540,7 +545,9 @@ async def run_stream(app: FirewallLogApp) -> None:
         # A configuration error stops after the first try; only network
         # trouble actually went through the retries.
         status.eh_state = "failed"
-        status.eh_detail = "configuration error, see dialog" if is_cfg_error else f"after {_MAX_ATTEMPTS} attempts, see dialog"
+        status.eh_detail = (
+            "configuration error, see dialog" if is_cfg_error else f"after {_MAX_ATTEMPTS} attempts, see dialog"
+        )
         if _splash_shown:
             _splash_shown = False
             await _remove_splash(app)

@@ -7,6 +7,7 @@ state to report, not a caller mistake. Caller mistakes (unknown rule, bad
 address, bad port) are raised as ``ToolError`` with a sentence that names
 what was wrong and, for names, the nearest existing ones.
 """
+
 from __future__ import annotations
 
 from typing import Annotated, Any
@@ -41,24 +42,42 @@ from .tools_logs import DEFAULT_LIMIT, MAX_LIMIT, READ_ONLY, _call, _clamp
 REFRESH = ToolAnnotations(read_only_hint=False, destructive_hint=False, idempotent_hint=True, open_world_hint=True)
 
 KINDS = ("dnat", "network", "application")
-_KIND_ALIASES = {"nat": "dnat", "natrule": "dnat", "networkrule": "network", "net": "network",
-                 "app": "application", "apprule": "application", "applicationrule": "application"}
+_KIND_ALIASES = {
+    "nat": "dnat",
+    "natrule": "dnat",
+    "networkrule": "network",
+    "net": "network",
+    "app": "application",
+    "apprule": "application",
+    "applicationrule": "application",
+}
 
-NO_POLICY_REASON = ("The policy context is loaded, but carries no policy: the firewall has no policy attached "
-                    "(classic rules), or the identity cannot read it.")
-NO_POLICY_HINT = ("Check that the identity has Reader on the firewall policy (and its parent), then call "
-                  "refresh_policy_context. get_firewall still answers from the loaded context.")
+NO_POLICY_REASON = (
+    "The policy context is loaded, but carries no policy: the firewall has no policy attached "
+    "(classic rules), or the identity cannot read it."
+)
+NO_POLICY_HINT = (
+    "Check that the identity has Reader on the firewall policy (and its parent), then call "
+    "refresh_policy_context. get_firewall still answers from the loaded context."
+)
 
 
 # ── shared helpers ───────────────────────────────────────────────────────────
+
 
 def _snapshot(state: AppState) -> CachedSnapshot | None:
     return state.context.snapshot
 
 
 def _no_policy_answer(snap: CachedSnapshot) -> dict[str, Any]:
-    return {"available": False, "state": "loaded", "reason": NO_POLICY_REASON, "hint": NO_POLICY_HINT,
-            "firewall": snap.firewall.name, "policy_id": snap.firewall.policy_id or None}
+    return {
+        "available": False,
+        "state": "loaded",
+        "reason": NO_POLICY_REASON,
+        "hint": NO_POLICY_HINT,
+        "firewall": snap.firewall.name,
+        "policy_id": snap.firewall.policy_id or None,
+    }
 
 
 def _age(snap: CachedSnapshot) -> float:
@@ -109,8 +128,10 @@ def _resolve_ip_group(snap: CachedSnapshot, wanted: str) -> tuple[str, IpGroupIn
     for gid in referenced:
         if folded in (gid.casefold(), gid.rstrip("/").split("/")[-1].casefold()):
             return gid, lookup_ip_group(gid, snap.ip_groups)
-    raise ValueError(f"No IP group {wanted!r} in the policy context. Nearest IP groups: "
-                     f"{nearest_names(text, _ip_group_names(snap))}.")
+    raise ValueError(
+        f"No IP group {wanted!r} in the policy context. Nearest IP groups: "
+        f"{nearest_names(text, _ip_group_names(snap))}."
+    )
 
 
 def _check_name(kind: str, wanted: str, names: list[str]) -> None:
@@ -119,37 +140,62 @@ def _check_name(kind: str, wanted: str, names: list[str]) -> None:
 
 
 def _unreadable_group(group_id: str, *, used_by: Any) -> dict[str, Any]:
-    return {"id": group_id, "name": None, "location": None, "readable": False, "address_count": None,
-            "used_by": used_by,
-            "reason": "Referenced by a rule, but not loaded: the identity has no Reader on the IP group, "
-                      "or it was deleted."}
+    return {
+        "id": group_id,
+        "name": None,
+        "location": None,
+        "readable": False,
+        "address_count": None,
+        "used_by": used_by,
+        "reason": "Referenced by a rule, but not loaded: the identity has no Reader on the IP group, "
+        "or it was deleted.",
+    }
 
 
 # ── argument types (descriptions end up in the tool's JSON schema) ───────────
-KindArg = Annotated[str | None, Field(
-    description="Rule type: 'dnat', 'network' or 'application' (the firewall's three evaluation passes).")]
-GroupArg = Annotated[str | None, Field(
-    description="Rule collection group name, exact but case-insensitive. An unknown name is an error that "
-                "lists the nearest names.")]
+KindArg = Annotated[
+    str | None,
+    Field(description="Rule type: 'dnat', 'network' or 'application' (the firewall's three evaluation passes)."),
+]
+GroupArg = Annotated[
+    str | None,
+    Field(
+        description="Rule collection group name, exact but case-insensitive. An unknown name is an error that "
+        "lists the nearest names."
+    ),
+]
 CollectionArg = Annotated[str | None, Field(description="Rule collection name, exact but case-insensitive.")]
-RuleActionArg = Annotated[str | None, Field(
-    description="Collection action, case-insensitive: Allow, Deny or Dnat.")]
+RuleActionArg = Annotated[str | None, Field(description="Collection action, case-insensitive: Allow, Deny or Dnat.")]
 NameArg = Annotated[str | None, Field(description="Substring of the rule name, case-insensitive.")]
-AddressArg = Annotated[str | None, Field(
-    description="An IP address or CIDR (IPv4 or IPv6). Keeps rules whose source or destination addresses, or "
-                "the addresses of their IP groups, cover it: an entry that contains it, a wildcard '*', or for a "
-                "CIDR also an entry that only overlaps it. Each rule then carries 'address_match' per side with "
-                "the covering entry, the IP group it came from and relation 'contains', 'overlaps' or 'wildcard'. "
-                "Service tags and unreadable IP groups cannot be compared and never match.")]
-FqdnArg = Annotated[str | None, Field(
-    description="A destination FQDN (www.example.com). Keeps rules whose destination FQDNs, target URL hosts or "
-                "DNAT target FQDN match it as the firewall would ('*.example.com' covers www.example.com, '*' "
-                "covers everything), or whose pattern text contains it as a substring.")]
-PortArg = Annotated[str | int | None, Field(
-    description="One destination port number. Keeps rules whose destination ports include it (single port, "
-                "range such as 8000-8100, or '*').")]
-IpGroupArg = Annotated[str | None, Field(
-    description="IP group name or resource id. Keeps rules that use the group as source or destination.")]
+AddressArg = Annotated[
+    str | None,
+    Field(
+        description="An IP address or CIDR (IPv4 or IPv6). Keeps rules whose source or destination addresses, or "
+        "the addresses of their IP groups, cover it: an entry that contains it, a wildcard '*', or for a "
+        "CIDR also an entry that only overlaps it. Each rule then carries 'address_match' per side with "
+        "the covering entry, the IP group it came from and relation 'contains', 'overlaps' or 'wildcard'. "
+        "Service tags and unreadable IP groups cannot be compared and never match."
+    ),
+]
+FqdnArg = Annotated[
+    str | None,
+    Field(
+        description="A destination FQDN (www.example.com). Keeps rules whose destination FQDNs, target URL hosts or "
+        "DNAT target FQDN match it as the firewall would ('*.example.com' covers www.example.com, '*' "
+        "covers everything), or whose pattern text contains it as a substring."
+    ),
+]
+PortArg = Annotated[
+    str | int | None,
+    Field(
+        description="One destination port number. Keeps rules whose destination ports include it (single port, "
+        "range such as 8000-8100, or '*')."
+    ),
+]
+IpGroupArg = Annotated[
+    str | None,
+    Field(description="IP group name or resource id. Keeps rules that use the group as source or destination."),
+]
 
 
 def register(server: MCPServer) -> None:
@@ -165,7 +211,8 @@ def register(server: MCPServer) -> None:
             "storage, categories, all_logs), autoscale {min, max, mode: service_default | range | fixed | "
             "not_supported (Basic) | not_understood}, route_server_id, additional_properties, tags, cache_age_s "
             "(seconds since the snapshot was fetched). Answers available=false with a reason while the policy "
-            "context is not loaded."),
+            "context is not loaded."
+        ),
         annotations=READ_ONLY,
     )
     async def get_firewall(ctx: Context[Any, Any]) -> dict[str, Any]:
@@ -186,13 +233,15 @@ def register(server: MCPServer) -> None:
             "(inherited first) with policy, priority, collection_count, rule_count and per collection name, "
             "priority, action, kind, rule_count. include_rules=true adds each collection's rules in the get_rule "
             "shape (can be large; prefer list_rules with filters). Answers available=false with a reason while "
-            "the policy context is not loaded."),
+            "the policy context is not loaded."
+        ),
         annotations=READ_ONLY,
     )
     async def get_policy(
         ctx: Context[Any, Any],
-        include_rules: Annotated[bool, Field(
-            description="Add every rule to its collection (default false: counts only).")] = False,
+        include_rules: Annotated[
+            bool, Field(description="Add every rule to its collection (default false: counts only).")
+        ] = False,
     ) -> dict[str, Any]:
         state = get_state(ctx)
         snap = _snapshot(state)
@@ -200,8 +249,10 @@ def register(server: MCPServer) -> None:
             return state.context.unavailable_answer()
         if snap.policy is None:
             return _no_policy_answer(snap)
-        return {**policy_to_dict(snap.policy, include_rules=include_rules, ip_groups=snap.ip_groups),
-                "cache_age_s": _age(snap)}
+        return {
+            **policy_to_dict(snap.policy, include_rules=include_rules, ip_groups=snap.ip_groups),
+            "cache_age_s": _age(snap),
+        }
 
     @server.tool(
         name="list_rules",
@@ -214,7 +265,8 @@ def register(server: MCPServer) -> None:
             "names, FQDNs, ports, and the application or DNAT extras when present. Filters combine with AND. "
             f"Paging: limit (default {DEFAULT_LIMIT}, clamped to 1..{MAX_LIMIT}) and offset (default 0); the "
             "answer has total (matches before paging), returned, offset, has_more and next_offset. Answers "
-            "available=false with a reason while the policy context is not loaded."),
+            "available=false with a reason while the policy context is not loaded."
+        ),
         annotations=READ_ONLY,
     )
     async def list_rules(
@@ -243,8 +295,11 @@ def register(server: MCPServer) -> None:
         if group:
             _call(lambda: _check_name("rule collection group", group, [g.name for _, g in groups]))
         if collection:
-            _call(lambda: _check_name("rule collection", collection,
-                                      [rc.name for _, g in groups for rc in g.rule_collections]))
+            _call(
+                lambda: _check_name(
+                    "rule collection", collection, [rc.name for _, g in groups for rc in g.rule_collections]
+                )
+            )
         net = _call(lambda: parse_network(address)) if address else None
         want_port = _call(lambda: _port_number(port)) if port is not None and str(port).strip() else None
         group_id = _call(lambda: _resolve_ip_group(snap, ip_group))[0] if ip_group else None
@@ -276,18 +331,29 @@ def register(server: MCPServer) -> None:
                 covered = address_matches(r, net, snap.ip_groups)
                 if not covered:
                     continue
-            entry = {**ref.placement(),
-                     **rule_to_dict(r, ref=ref.ref, ip_groups=snap.ip_groups, sku_tier=policy.sku_tier, compact=True)}
+            entry = {
+                **ref.placement(),
+                **rule_to_dict(r, ref=ref.ref, ip_groups=snap.ip_groups, sku_tier=policy.sku_tier, compact=True),
+            }
             if covered is not None:
                 entry["address_match"] = covered
             matches.append(entry)
 
         count = _clamp(limit, 1, MAX_LIMIT)
         start = max(0, int(offset))
-        page = matches[start:start + count]
+        page = matches[start : start + count]
         has_more = start + len(page) < len(matches)
-        echo = {"kind": want_kind, "group": group, "collection": collection, "action": action, "name": name,
-                "address": address, "fqdn": fqdn, "port": want_port, "ip_group": ip_group}
+        echo = {
+            "kind": want_kind,
+            "group": group,
+            "collection": collection,
+            "action": action,
+            "name": name,
+            "address": address,
+            "fqdn": fqdn,
+            "port": want_port,
+            "ip_group": ip_group,
+        }
         return {
             "rules": page,
             "total": len(matches),
@@ -311,14 +377,18 @@ def register(server: MCPServer) -> None:
             "web categories, target URLs, the DNAT translated target, terminate_tls, http_headers (header NAMES "
             "only, values are never returned) and inserted_headers_land_in (which traffic gets those headers). An "
             "unknown name is an error that lists the nearest names. Answers available=false with a reason while "
-            "the policy context is not loaded."),
+            "the policy context is not loaded."
+        ),
         annotations=READ_ONLY,
     )
     async def get_rule(
         ctx: Context[Any, Any],
-        ref: Annotated[str | None, Field(
-            description="'policy » group » collection » rule' or 'group » collection » rule'.")] = None,
-        group: Annotated[str | None, Field(description="Rule collection group name (with collection and rule).")] = None,
+        ref: Annotated[
+            str | None, Field(description="'policy » group » collection » rule' or 'group » collection » rule'.")
+        ] = None,
+        group: Annotated[
+            str | None, Field(description="Rule collection group name (with collection and rule).")
+        ] = None,
         collection: Annotated[str | None, Field(description="Rule collection name (with group and rule).")] = None,
         rule: Annotated[str | None, Field(description="Rule name (with group and collection).")] = None,
     ) -> dict[str, Any]:
@@ -330,9 +400,11 @@ def register(server: MCPServer) -> None:
             return _no_policy_answer(snap)
         policy = snap.policy
         found = _call(lambda: find_rule(policy, ref, group=group, collection=collection, rule=rule))
-        return {**found.placement(),
-                **rule_to_dict(found.rule, ref=found.ref, ip_groups=snap.ip_groups, sku_tier=policy.sku_tier),
-                "cache_age_s": _age(snap)}
+        return {
+            **found.placement(),
+            **rule_to_dict(found.rule, ref=found.ref, ip_groups=snap.ip_groups, sku_tier=policy.sku_tier),
+            "cache_age_s": _age(snap),
+        }
 
     @server.tool(
         name="list_ip_groups",
@@ -342,7 +414,8 @@ def register(server: MCPServer) -> None:
             "rules that use the group as source or destination). Groups a rule references but the identity could "
             "not read appear with readable=false and their id. 'name' filters by a case-insensitive substring of "
             "the name. Use get_ip_group for the addresses. Answers available=false with a reason while the policy "
-            "context is not loaded."),
+            "context is not loaded."
+        ),
         annotations=READ_ONLY,
     )
     async def list_ip_groups(
@@ -358,15 +431,15 @@ def register(server: MCPServer) -> None:
         def used_by(group_id: str) -> int:
             return len(rules_using_ip_group(policy, group_id)) if policy is not None else 0
 
-        entries: list[dict[str, Any]] = [ip_group_to_dict(grp, used_by=used_by(gid), include_addresses=False)
-                                         for gid, grp in snap.ip_groups.items()]
+        entries: list[dict[str, Any]] = [
+            ip_group_to_dict(grp, used_by=used_by(gid), include_addresses=False) for gid, grp in snap.ip_groups.items()
+        ]
         for gid in referenced_ip_group_ids(policy) if policy is not None else []:
             if lookup_ip_group(gid, snap.ip_groups) is None:
                 entries.append(_unreadable_group(gid, used_by=used_by(gid)))
         if name:
             needle = name.casefold()
-            entries = [e for e in entries
-                       if needle in (e["name"] or e["id"].rstrip("/").split("/")[-1]).casefold()]
+            entries = [e for e in entries if needle in (e["name"] or e["id"].rstrip("/").split("/")[-1]).casefold()]
         entries.sort(key=lambda e: (e["name"] or e["id"]).casefold())
         return {"ip_groups": entries, "total": len(entries), "cache_age_s": _age(snap)}
 
@@ -378,7 +451,8 @@ def register(server: MCPServer) -> None:
             "addresses, CIDRs, ranges), address_count and used_by (the rules that reference it, each with ref, "
             "kind, action and the sides 'source' / 'destination'). A group a rule references but the identity "
             "cannot read answers readable=false without addresses. An unknown group is an error that lists the "
-            "nearest names. Answers available=false with a reason while the policy context is not loaded."),
+            "nearest names. Answers available=false with a reason while the policy context is not loaded."
+        ),
         annotations=READ_ONLY,
     )
     async def get_ip_group(
@@ -395,8 +469,10 @@ def register(server: MCPServer) -> None:
             raise ToolError("Pass the IP group's name or id.")
         group_id, grp = _call(lambda: _resolve_ip_group(snap, wanted))
         refs = rules_using_ip_group(snap.policy, group_id) if snap.policy is not None else []
-        used_by = [{"ref": r.ref, "kind": r.kind, "action": r.action or None,
-                    "sides": rule_ip_group_sides(r.rule, group_id)} for r in refs]
+        used_by = [
+            {"ref": r.ref, "kind": r.kind, "action": r.action or None, "sides": rule_ip_group_sides(r.rule, group_id)}
+            for r in refs
+        ]
         if grp is None:
             return {**_unreadable_group(group_id, used_by=used_by), "addresses": None, "cache_age_s": _age(snap)}
         return {**ip_group_to_dict(grp), "used_by": used_by, "cache_age_s": _age(snap)}
@@ -410,7 +486,8 @@ def register(server: MCPServer) -> None:
             "get_status shows the context unavailable. Returns the context state ('loaded', 'unavailable'), "
             "available, age_s, fetched_at (ISO 8601 UTC) and reason (why a fetch failed; a failed refresh keeps "
             "the previous snapshot). Answers available=false without fetching while the context is off or no "
-            "firewall is known yet."),
+            "firewall is known yet."
+        ),
         annotations=REFRESH,
     )
     async def refresh_policy_context(ctx: Context[Any, Any]) -> dict[str, Any]:

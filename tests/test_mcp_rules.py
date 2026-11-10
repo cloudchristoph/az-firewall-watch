@@ -1,4 +1,5 @@
 """Rule helpers of the MCP server (mcp_server/rules.py): order, lookup, address coverage, IP group use."""
+
 from __future__ import annotations
 
 import pytest
@@ -25,18 +26,24 @@ def test_iter_rules_follows_the_trace_order():
 
 def test_iter_rules_puts_parent_groups_first_within_each_pass():
     parent = policy(rcg("p-net", 500, rc("p-rc", 100, "Deny", net("p-rule"))), name="parent")
-    child = policy(rcg("c-net", 100, rc("c-rc", 100, "Allow", net("c-rule"))),
-                   rcg("c-nat", 100, rc("c-dnat", 100, "Dnat", nat("c-nat"), rc_type="FirewallPolicyNatRuleCollection")),
-                   name="child", parent=parent)
+    child = policy(
+        rcg("c-net", 100, rc("c-rc", 100, "Allow", net("c-rule"))),
+        rcg("c-nat", 100, rc("c-dnat", 100, "Dnat", nat("c-nat"), rc_type="FirewallPolicyNatRuleCollection")),
+        name="child",
+        parent=parent,
+    )
     out = iter_rules(child)
     assert [(r.rule.name, r.inherited) for r in out] == [("c-nat", False), ("p-rule", True), ("c-rule", False)]
 
 
-@pytest.mark.parametrize("ref, expected", [
-    ("a » b » c » d", ["a", "b", "c", "d"]),
-    ("b»c»d", ["b", "c", "d"]),
-    ("a|b|c|d", ["a", "b", "c", "d"]),
-])
+@pytest.mark.parametrize(
+    "ref, expected",
+    [
+        ("a » b » c » d", ["a", "b", "c", "d"]),
+        ("b»c»d", ["b", "c", "d"]),
+        ("a|b|c|d", ["a", "b", "c", "d"]),
+    ],
+)
 def test_split_ref(ref, expected):
     assert split_ref(ref) == expected
 
@@ -51,19 +58,23 @@ def test_find_rule_is_case_insensitive_and_names_ambiguity():
     assert find_rule(LAB, "RCG-NET » NET-ALLOW » ALLOW-WEB").rule.name == "allow-web"
     parent = policy(rcg("same", 100, rc("rc", 100, "Deny", net("r"))), name="parent")
     child = policy(rcg("same", 100, rc("rc", 100, "Allow", net("r"))), name="child", parent=parent)
-    with pytest.raises(ValueError, match="2 rules match; add the policy to the ref: parent » same » rc » r; "
-                                         "child » same » rc » r"):
+    with pytest.raises(
+        ValueError, match="2 rules match; add the policy to the ref: parent » same » rc » r; child » same » rc » r"
+    ):
         find_rule(child, "same » rc » r")
     assert find_rule(child, "child » same » rc » r").inherited is False
 
 
-@pytest.mark.parametrize("address, expected", [
-    ("10.3.5.4", {"source"}),              # inside the spokes IP group
-    ("10.3.0.0/24", {"source"}),           # a CIDR the group's /16 contains
-    ("10.0.0.0/8", {"source"}),            # a CIDR that only overlaps the /16
-    ("10.9.0.1", set()),
-    ("fd00::1", set()),                    # other family than every entry
-])
+@pytest.mark.parametrize(
+    "address, expected",
+    [
+        ("10.3.5.4", {"source"}),  # inside the spokes IP group
+        ("10.3.0.0/24", {"source"}),  # a CIDR the group's /16 contains
+        ("10.0.0.0/8", {"source"}),  # a CIDR that only overlaps the /16
+        ("10.9.0.1", set()),
+        ("fd00::1", set()),  # other family than every entry
+    ],
+)
 def test_rule_covers_address_through_ip_groups(address, expected):
     rule = net("r", source_addresses=[], source_ip_groups=[G_SPOKES], destination_addresses=["AzureMonitor"])
     assert rule_covers_address(rule, address, GROUPS) == expected

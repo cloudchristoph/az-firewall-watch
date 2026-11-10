@@ -1,4 +1,5 @@
 """Pure enrichment helpers (viewer/enrichment.py): no I/O."""
+
 from __future__ import annotations
 
 import ipaddress
@@ -18,25 +19,33 @@ from viewer.enrichment import (
 SUBNETS = ["10.2.0.0/26", "10.2.0.64/26"]
 GROUPS = {
     "/g/spokes": IpGroupInfo(id="/g/spokes", name="ipgroup-all-spokes", location="gwc", ip_addresses=["10.3.0.0/16"]),
-    "/g/onprem": IpGroupInfo(id="/g/onprem", name="ipgroup-onpremises", location="gwc", ip_addresses=["192.168.0.0/16", "10.3.5.4"]),
+    "/g/onprem": IpGroupInfo(
+        id="/g/onprem", name="ipgroup-onpremises", location="gwc", ip_addresses=["192.168.0.0/16", "10.3.5.4"]
+    ),
     "/g/bad": IpGroupInfo(id="/g/bad", name="broken", location="gwc", ip_addresses=["not-an-ip"]),
 }
 RANGE_GROUPS = {
-    "/g/dmz": IpGroupInfo(id="/g/dmz", name="ipgroup-dmz", location="gwc",
-                          ip_addresses=["10.2.0.0-10.2.0.31", "fd00::10-fd00::1f"]),
-    "/g/junk": IpGroupInfo(id="/g/junk", name="ipgroup-junk", location="gwc",
-                           ip_addresses=["10.9.0.5-10.9.0.1", "10.0.0.1-fd00::1", "nonsense"]),
+    "/g/dmz": IpGroupInfo(
+        id="/g/dmz", name="ipgroup-dmz", location="gwc", ip_addresses=["10.2.0.0-10.2.0.31", "fd00::10-fd00::1f"]
+    ),
+    "/g/junk": IpGroupInfo(
+        id="/g/junk",
+        name="ipgroup-junk",
+        location="gwc",
+        ip_addresses=["10.9.0.5-10.9.0.1", "10.0.0.1-fd00::1", "nonsense"],
+    ),
 }
 
 
 # ── firewall instance ────────────────────────────────────────────────────────
 
+
 @pytest.mark.parametrize(
     "ip, expected",
     [
-        ("10.2.0.6", "AzFw.6"),       # AzureFirewallSubnet
-        ("10.2.0.70", "AzFw.70"),     # AzureFirewallManagementSubnet
-        ("10.3.5.4", None),           # a spoke client
+        ("10.2.0.6", "AzFw.6"),  # AzureFirewallSubnet
+        ("10.2.0.70", "AzFw.70"),  # AzureFirewallManagementSubnet
+        ("10.3.5.4", None),  # a spoke client
         ("-", None),
         ("", None),
         ("garbage", None),
@@ -50,9 +59,9 @@ def test_resolve_fw_instance(ip, expected):
     "ip, expected",
     [
         ("fd00::1:2:3:abcd", "AzFw.abcd"),
-        ("fd00::", "AzFw.0"),                 # compressed trailing zeros (Copilot review)
-        ("fd00::00ab", "AzFw.ab"),            # leading zeros are not part of the label
-        ("fd00:0:0:0:0:0:0:1", "AzFw.1"),     # uncompressed input, same label
+        ("fd00::", "AzFw.0"),  # compressed trailing zeros (Copilot review)
+        ("fd00::00ab", "AzFw.ab"),  # leading zeros are not part of the label
+        ("fd00:0:0:0:0:0:0:1", "AzFw.1"),  # uncompressed input, same label
     ],
 )
 def test_resolve_fw_instance_ipv6_uses_last_hextet(ip, expected):
@@ -77,6 +86,7 @@ def test_parsed_networks_are_cached_per_cidr_list():
 
 # ── IP groups ────────────────────────────────────────────────────────────────
 
+
 def test_find_matching_ip_groups_returns_all_containing_groups():
     assert find_matching_ip_groups("10.3.5.4", GROUPS) == ["ipgroup-all-spokes", "ipgroup-onpremises"]
 
@@ -91,15 +101,15 @@ def test_find_matching_ip_groups_single_and_none():
 @pytest.mark.parametrize(
     "ip, expected",
     [
-        ("10.2.0.0", ["ipgroup-dmz"]),        # first address of the range
+        ("10.2.0.0", ["ipgroup-dmz"]),  # first address of the range
         ("10.2.0.17", ["ipgroup-dmz"]),
-        ("10.2.0.31", ["ipgroup-dmz"]),       # last address of the range
-        ("10.2.0.32", []),                    # one past the end
-        ("10.1.255.255", []),                 # one before the start
+        ("10.2.0.31", ["ipgroup-dmz"]),  # last address of the range
+        ("10.2.0.32", []),  # one past the end
+        ("10.1.255.255", []),  # one before the start
         ("fd00::10", ["ipgroup-dmz"]),
         ("fd00::1f", ["ipgroup-dmz"]),
         ("fd00::20", []),
-        ("10.9.0.3", []),                     # inside a reversed range: not a match
+        ("10.9.0.3", []),  # inside a reversed range: not a match
     ],
 )
 def test_find_matching_ip_groups_handles_range_entries(ip, expected):
@@ -109,8 +119,7 @@ def test_find_matching_ip_groups_handles_range_entries(ip, expected):
 
 def test_parse_address_entries_separates_the_unreadable_ones():
     parsed, unreadable = parse_address_entries(
-        ["10.0.0.0", "10.1.0.0/32", "10.2.0.0-10.2.0.31", "AzureMonitor",
-         "10.9.0.5-10.9.0.1", "10.0.0.1-fd00::1", ""]
+        ["10.0.0.0", "10.1.0.0/32", "10.2.0.0-10.2.0.31", "AzureMonitor", "10.9.0.5-10.9.0.1", "10.0.0.1-fd00::1", ""]
     )
     assert [entry for entry, _ in parsed] == ["10.0.0.0", "10.1.0.0/32", "10.2.0.0-10.2.0.31"]
     # reversed and mixed-family ranges describe nothing, so they are unreadable, not empty

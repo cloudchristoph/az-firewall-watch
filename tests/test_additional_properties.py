@@ -1,4 +1,5 @@
 """The firewall's additionalProperties bag rendered as proper rows on the Instance panel."""
+
 from __future__ import annotations
 
 import pytest
@@ -18,8 +19,9 @@ from viewer.views.firewall import (
 
 
 def _fw(**props: str) -> FirewallInfo:
-    return FirewallInfo(id="/fw", name="fw", subscription_id="s", resource_group="rg", location="gwc",
-                        additional_properties=props)
+    return FirewallInfo(
+        id="/fw", name="fw", subscription_id="s", resource_group="rg", location="gwc", additional_properties=props
+    )
 
 
 def test_empty_bag_shows_only_fat_flow_logging_and_no_additional_line():
@@ -45,15 +47,23 @@ def test_active_ftp_row_only_when_the_key_is_present():
 
 
 def test_classic_dns_proxy_and_snat_rows():
-    rows = _additional_property_rows(_fw(**{CLASSIC_DNS_PROXY_KEY: "true", CLASSIC_DNS_SERVERS_KEY: "10.0.0.53",
-                                             CLASSIC_SNAT_KEY: "10.0.0.0/8, 172.16.0.0/12"}))
+    rows = _additional_property_rows(
+        _fw(
+            **{
+                CLASSIC_DNS_PROXY_KEY: "true",
+                CLASSIC_DNS_SERVERS_KEY: "10.0.0.53",
+                CLASSIC_SNAT_KEY: "10.0.0.0/8, 172.16.0.0/12",
+            }
+        )
+    )
     assert _row("DNS proxy (classic)", "on", "servers: 10.0.0.53") in rows
     assert _row("SNAT ranges (classic)", "10.0.0.0/8, 172.16.0.0/12") in rows
 
 
 def test_unknown_keys_stay_visible_under_additional_and_known_ones_are_not_repeated():
-    rows = _additional_property_rows(_fw(**{FAT_FLOW_KEY: "true", ROUTE_SERVER_KEY: "/rs",
-                                             "Network.Future.Switch": "42", "Other": "[b]x[/]"}))
+    rows = _additional_property_rows(
+        _fw(**{FAT_FLOW_KEY: "true", ROUTE_SERVER_KEY: "/rs", "Network.Future.Switch": "42", "Other": "[b]x[/]"})
+    )
     additional = [r for r in rows if "Additional" in r]
     assert len(additional) == 1
     assert "Network.Future.Switch=42" in additional[0] and "Other=\\[b]x\\[/]" in additional[0]

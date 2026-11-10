@@ -71,7 +71,7 @@ From the binary:
 ./az-firewall-watch --mcp
 ```
 
-From source (Python 3.10+, with `requirements.txt` installed):
+From source (Python 3.11+, with `requirements.txt` installed):
 
 ```bash
 python -m mcp_server

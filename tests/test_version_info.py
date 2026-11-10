@@ -1,4 +1,5 @@
 """scripts/version_info.py: the Windows version resource SignPath pins (ProductName, ProductVersion)."""
+
 from __future__ import annotations
 
 import importlib.util

@@ -5,6 +5,7 @@ with no terminal attached, and with the stdio transport the terminal is the
 protocol channel. Missing settings end the process with exit code 2 and a
 message on stderr that names the wizard.
 """
+
 from __future__ import annotations
 
 import logging
@@ -43,7 +44,7 @@ def configure_logging(level: str) -> None:
 def main(argv: list[str] | None = None) -> int:
     """Run the server; returns the process exit code."""
     args_list = list(sys.argv[1:] if argv is None else argv)
-    args = build_arg_parser().parse_args(args_list)   # usage errors exit with 2 on stderr
+    args = build_arg_parser().parse_args(args_list)  # usage errors exit with 2 on stderr
 
     env_file = Path(args.env_file).expanduser() if args.env_file else BASE_DIR / ".env"
     if args.env_file and not env_file.is_file():
@@ -63,8 +64,13 @@ def main(argv: list[str] | None = None) -> int:
 
     configure_logging(config.log_level)
     namespace, hub = config.eventhub.display_endpoint
-    log.info("Starting MCP server (%s transport) for Event Hub %s/%s, policy context %s",
-             config.transport, namespace, hub, "on" if config.policy_context else "off")
+    log.info(
+        "Starting MCP server (%s transport) for Event Hub %s/%s, policy context %s",
+        config.transport,
+        namespace,
+        hub,
+        "on" if config.policy_context else "off",
+    )
 
     from .server import build_server  # the SDK import is the slow part; config errors answer first
 

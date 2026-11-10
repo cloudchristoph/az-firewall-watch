@@ -9,6 +9,7 @@ States:
   and says so in ``reason``, like the TUI keeps the previous context on screen.
 * ``unavailable``: the fetch failed and there is nothing to show; ``reason`` says why.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -39,9 +40,15 @@ WAITING_REASON = "No firewall known yet: the context loads when the first log re
 class ContextHolder:
     """Owns the snapshot and every fetch of it; tools only read."""
 
-    def __init__(self, *, enabled: bool, firewall_id: str | None = None, loader: Loader | None = None,
-                 auto_refresh_min_age: float = AUTO_REFRESH_MIN_AGE_S,
-                 auto_refresh_interval: float = AUTO_REFRESH_INTERVAL_S) -> None:
+    def __init__(
+        self,
+        *,
+        enabled: bool,
+        firewall_id: str | None = None,
+        loader: Loader | None = None,
+        auto_refresh_min_age: float = AUTO_REFRESH_MIN_AGE_S,
+        auto_refresh_interval: float = AUTO_REFRESH_INTERVAL_S,
+    ) -> None:
         self.enabled = enabled
         self.firewall_id: str | None = firewall_id
         self._loader = loader
@@ -52,7 +59,7 @@ class ContextHolder:
         self.last_attempt_at: float | None = None
         self._loading = False
         self._known_rules: set[tuple[str, str, str]] = set()
-        self._last_auto_refresh: float | None = None     # monotonic; None, not 0.0 (young machines)
+        self._last_auto_refresh: float | None = None  # monotonic; None, not 0.0 (young machines)
         self._lock = asyncio.Lock()
         self._task: asyncio.Task[Any] | None = None
 
@@ -68,7 +75,7 @@ class ContextHolder:
         if self.firewall_id is None:
             return "waiting_for_firewall_id"
         if self.last_attempt_at is None:
-            return "loading"   # an id is known and the first load is about to start
+            return "loading"  # an id is known and the first load is about to start
         return "unavailable"
 
     @property
@@ -110,11 +117,15 @@ class ContextHolder:
             "waiting_for_firewall_id": "Wait for the first log record, or start the server with --firewall-id.",
             "loading": "The context is loading; ask again in a few seconds.",
             "unavailable": "Check that the identity has Reader on the firewall, its policy and IP groups, "
-                           "then call refresh_policy_context.",
+            "then call refresh_policy_context.",
         }
         status = self.status()
-        return {"available": False, "state": state, "reason": status["reason"] or "The policy context is not loaded.",
-                "hint": hints.get(state, "")}
+        return {
+            "available": False,
+            "state": state,
+            "reason": status["reason"] or "The policy context is not loaded.",
+            "hint": hints.get(state, ""),
+        }
 
     # ── loading ──────────────────────────────────────────────────────────────
     def start(self) -> None:
@@ -135,7 +146,7 @@ class ContextHolder:
             return self._task
         try:
             self._task = asyncio.get_running_loop().create_task(self.refresh(force=force), name="azfw-policy-context")
-        except RuntimeError:   # no running loop: the caller loads explicitly later
+        except RuntimeError:  # no running loop: the caller loads explicitly later
             return None
         return self._task
 
@@ -151,7 +162,7 @@ class ContextHolder:
                 snap = await loader(self.firewall_id, force=force, errors=errors)
             except asyncio.CancelledError:
                 raise
-            except Exception as exc:   # a loader bug must not kill the server
+            except Exception as exc:  # a loader bug must not kill the server
                 log.exception("Policy context load failed")
                 snap, errors = None, [str(exc) or type(exc).__name__]
             finally:
@@ -171,7 +182,8 @@ class ContextHolder:
                 self._known_rules = {
                     (g.name, rc.name, r.name)
                     for _, g in (snap.policy.all_groups() if snap.policy else [])
-                    for rc in g.rule_collections for r in rc.rules
+                    for rc in g.rule_collections
+                    for r in rc.rules
                 }
                 log.info("Policy context loaded for %s", snap.firewall.name or self.firewall_id)
         return self.status()
@@ -183,8 +195,11 @@ class ContextHolder:
             return False
         for item in rows:
             r = item.row
-            if r.rule_name and r.rule_collection_group and \
-                    (r.rule_collection_group, r.rule_collection, r.rule_name) not in self._known_rules:
+            if (
+                r.rule_name
+                and r.rule_collection_group
+                and (r.rule_collection_group, r.rule_collection, r.rule_name) not in self._known_rules
+            ):
                 return self.note_unknown_rule(r.rule_name)
         return False
 

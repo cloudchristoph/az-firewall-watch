@@ -1,8 +1,9 @@
 """LogBuffer (mcp_server/buffer.py): ids, capacity, counters, long-poll wait, time parsing."""
+
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 
@@ -12,13 +13,26 @@ from mcp_server.buffer import LogBuffer, parse_log_time
 
 @pytest.fixture
 def make_row(structured_record):
-    def _make(source: str = "10.0.0.1", action: str = "Allow", category: str = "AZFWNetworkRule",
-              time: str = "2026-09-05T08:00:00Z"):
-        rec = structured_record(category, time=time, Protocol="TCP", SourceIp=source, SourcePort=1234,
-                                DestinationIp="10.1.0.1", DestinationPort=443, Action=action)
+    def _make(
+        source: str = "10.0.0.1",
+        action: str = "Allow",
+        category: str = "AZFWNetworkRule",
+        time: str = "2026-09-05T08:00:00Z",
+    ):
+        rec = structured_record(
+            category,
+            time=time,
+            Protocol="TCP",
+            SourceIp=source,
+            SourcePort=1234,
+            DestinationIp="10.1.0.1",
+            DestinationPort=443,
+            Action=action,
+        )
         row = parse_record(rec)
         assert row is not None
         return row, rec
+
     return _make
 
 
@@ -31,7 +45,7 @@ def test_append_assigns_consecutive_ids_and_keeps_raw(make_row):
     row, rec = make_row()
     item = buf.append(row, rec, received_at=1000.0)
     assert (item.id, item.raw, item.received_at) == (1, rec, 1000.0)
-    assert item.time_epoch == datetime(2026, 9, 5, 8, tzinfo=timezone.utc).timestamp()
+    assert item.time_epoch == datetime(2026, 9, 5, 8, tzinfo=UTC).timestamp()
     assert buf.get(1) is item
     assert (buf.size, buf.first_id, buf.last_id) == (1, 1, 1)
 
@@ -44,7 +58,7 @@ def test_capacity_trims_oldest_and_ids_stay_monotonic(make_row):
     assert (buf.first_id, buf.last_id, buf.size, len(buf)) == (3, 5, 3, 3)
     assert buf.get(2) is None and buf.get(6) is None and buf.get(4) is items[3]
     assert [i.id for i in buf.after(3)] == [4, 5]
-    assert [i.id for i in buf.after(0)] == [3, 4, 5]   # a cursor older than the buffer starts at its head
+    assert [i.id for i in buf.after(0)] == [3, 4, 5]  # a cursor older than the buffer starts at its head
     assert buf.after(5) == []
 
 
@@ -55,7 +69,7 @@ def test_clear_keeps_counting(make_row):
     assert (buf.size, buf.first_id, buf.last_id) == (0, None, 4)
     assert buf.get(1) is None and buf.after(0) == []
     assert buf.append(*make_row()).id == 5
-    assert buf.received == 5   # received counts every row since start
+    assert buf.received == 5  # received counts every row since start
 
 
 def test_counters(make_row):
@@ -95,12 +109,12 @@ async def test_wait_for_returns_buffered_match_immediately(make_row):
 
 async def test_wait_for_wakes_on_matching_row_only(make_row):
     buf = LogBuffer(10)
-    is_deny = lambda item: item.row.action == "Deny"   # noqa: E731
+    is_deny = lambda item: item.row.action == "Deny"  # noqa: E731
     waiter = asyncio.create_task(buf.wait_for(0, timeout=5, predicate=is_deny))
     await asyncio.sleep(0.01)
     buf.append(*make_row(action="Allow"))
     await asyncio.sleep(0.01)
-    assert not waiter.done()                 # a non-matching row does not end the wait
+    assert not waiter.done()  # a non-matching row does not end the wait
     buf.append(*make_row(action="Deny"))
     rows = await asyncio.wait_for(waiter, 1)
     assert [r.id for r in rows] == [2]
@@ -120,14 +134,17 @@ async def test_wait_for_respects_limit(make_row):
     assert [r.id for r in await buf.wait_for(0, timeout=1, limit=2)] == [1, 2]
 
 
-@pytest.mark.parametrize("text, expected", [
-    ("2026-09-05T08:00:00.1234567Z", datetime(2026, 9, 5, 8, 0, 0, 123456, tzinfo=timezone.utc)),   # Azure's 7 digits
-    ("2026-09-05T08:00:00.5Z", datetime(2026, 9, 5, 8, 0, 0, 500000, tzinfo=timezone.utc)),
-    ("2026-09-05T08:00:00Z", datetime(2026, 9, 5, 8, tzinfo=timezone.utc)),
-    ("2026-09-05T10:00:00+02:00", datetime(2026, 9, 5, 8, tzinfo=timezone.utc)),
-    ("2026-09-05T08:00:00", datetime(2026, 9, 5, 8, tzinfo=timezone.utc)),   # no zone: UTC, like Azure means it
-    ("2026-09-05T08:00:00.918521+00:00", datetime(2026, 9, 5, 8, 0, 0, 918521, tzinfo=timezone.utc)),
-])
+@pytest.mark.parametrize(
+    "text, expected",
+    [
+        ("2026-09-05T08:00:00.1234567Z", datetime(2026, 9, 5, 8, 0, 0, 123456, tzinfo=UTC)),  # Azure's 7 digits
+        ("2026-09-05T08:00:00.5Z", datetime(2026, 9, 5, 8, 0, 0, 500000, tzinfo=UTC)),
+        ("2026-09-05T08:00:00Z", datetime(2026, 9, 5, 8, tzinfo=UTC)),
+        ("2026-09-05T10:00:00+02:00", datetime(2026, 9, 5, 8, tzinfo=UTC)),
+        ("2026-09-05T08:00:00", datetime(2026, 9, 5, 8, tzinfo=UTC)),  # no zone: UTC, like Azure means it
+        ("2026-09-05T08:00:00.918521+00:00", datetime(2026, 9, 5, 8, 0, 0, 918521, tzinfo=UTC)),
+    ],
+)
 def test_parse_log_time(text, expected):
     assert parse_log_time(text) == expected.timestamp()
 

@@ -17,6 +17,7 @@ Two kinds of check:
   check and a not-evaluated collection all at once, in both the app's default
   theme (flexoki) and ``textual-light``.
 """
+
 from __future__ import annotations
 
 import html
@@ -55,6 +56,7 @@ def mgmt(_mgmt):  # noqa: F811  (re-bound so it can be used as a test parameter 
 
 # ── unit tests: the plain building blocks ─────────────────────────────────────
 
+
 def test_action_tag_weights():
     """deny loud, allow quiet, dnat in between — 0.6.0's weights, unchanged."""
     assert _action_tag("Deny", "network") == "[bold red]deny[/]"
@@ -78,42 +80,106 @@ def test_legend_matches_the_new_weights():
 
 # ── a trace with one of everything ────────────────────────────────────────────
 
+
 def _colour_snapshot() -> CachedSnapshot:
     """One application group: a miss (deny-tagged, so it also gives us a
     ``deny`` tag to contrast against), an FQDN-tag rule the trace cannot
     evaluate (?), the logged match, and a collection after it that is never
     evaluated — a ✓, a ✗, a ? and a not-evaluated collection in one trace."""
-    fw = FirewallInfo(id="/fw", name="fw", subscription_id="s", resource_group="rg", location="gwc",
-                      sku_tier="Premium")
-    group = RuleCollectionGroup(id="/p/app", name="rcg-app-demo", priority=100, rule_collections=[
-        RuleCollection(name="rc-app-miss", priority=10, action="Deny", rule_collection_type="Filter", rules=[
-            Rule(name="app-miss", rule_type="ApplicationRule", source_addresses=["*"],
-                 destination_fqdns=["other.example.com"], destination_ports=["443"], protocols=["Https"]),
-        ]),
-        RuleCollection(name="rc-app-unknown", priority=20, action="Allow", rule_collection_type="Filter", rules=[
-            Rule(name="app-fqdntag", rule_type="ApplicationRule", source_addresses=["*"],
-                 fqdn_tags=["AzureBackup"], destination_ports=["443"], protocols=["Https"]),
-        ]),
-        RuleCollection(name="rc-app-match", priority=30, action="Allow", rule_collection_type="Filter", rules=[
-            Rule(name="app-match", rule_type="ApplicationRule", source_addresses=["*"],
-                 destination_fqdns=["www.example.com"], destination_ports=["443"], protocols=["Https"]),
-        ]),
-        RuleCollection(name="rc-app-after", priority=40, action="Allow", rule_collection_type="Filter", rules=[
-            Rule(name="app-after", rule_type="ApplicationRule", source_addresses=["*"],
-                 destination_fqdns=["later.example.com"], destination_ports=["443"], protocols=["Https"]),
-        ]),
-    ])
-    policy = FirewallPolicyInfo(id="/p", name="fwp-colour", sku_tier="Premium", threat_intel_mode="Off",
-                                rule_collection_groups=[group])
+    fw = FirewallInfo(id="/fw", name="fw", subscription_id="s", resource_group="rg", location="gwc", sku_tier="Premium")
+    group = RuleCollectionGroup(
+        id="/p/app",
+        name="rcg-app-demo",
+        priority=100,
+        rule_collections=[
+            RuleCollection(
+                name="rc-app-miss",
+                priority=10,
+                action="Deny",
+                rule_collection_type="Filter",
+                rules=[
+                    Rule(
+                        name="app-miss",
+                        rule_type="ApplicationRule",
+                        source_addresses=["*"],
+                        destination_fqdns=["other.example.com"],
+                        destination_ports=["443"],
+                        protocols=["Https"],
+                    ),
+                ],
+            ),
+            RuleCollection(
+                name="rc-app-unknown",
+                priority=20,
+                action="Allow",
+                rule_collection_type="Filter",
+                rules=[
+                    Rule(
+                        name="app-fqdntag",
+                        rule_type="ApplicationRule",
+                        source_addresses=["*"],
+                        fqdn_tags=["AzureBackup"],
+                        destination_ports=["443"],
+                        protocols=["Https"],
+                    ),
+                ],
+            ),
+            RuleCollection(
+                name="rc-app-match",
+                priority=30,
+                action="Allow",
+                rule_collection_type="Filter",
+                rules=[
+                    Rule(
+                        name="app-match",
+                        rule_type="ApplicationRule",
+                        source_addresses=["*"],
+                        destination_fqdns=["www.example.com"],
+                        destination_ports=["443"],
+                        protocols=["Https"],
+                    ),
+                ],
+            ),
+            RuleCollection(
+                name="rc-app-after",
+                priority=40,
+                action="Allow",
+                rule_collection_type="Filter",
+                rules=[
+                    Rule(
+                        name="app-after",
+                        rule_type="ApplicationRule",
+                        source_addresses=["*"],
+                        destination_fqdns=["later.example.com"],
+                        destination_ports=["443"],
+                        protocols=["Https"],
+                    ),
+                ],
+            ),
+        ],
+    )
+    policy = FirewallPolicyInfo(
+        id="/p", name="fwp-colour", sku_tier="Premium", threat_intel_mode="Off", rule_collection_groups=[group]
+    )
     return CachedSnapshot(firewall=fw, policy=policy, ip_groups={}, fetched_at=time.time())
 
 
 def _colour_row(structured_record):
-    return parse_record(structured_record(
-        "AZFWApplicationRule", Protocol="HTTPS", SourceIp="10.3.5.4", SourcePort=1, DestinationPort=443,
-        Fqdn="www.example.com", Action="Allow", Policy="fwp-colour", RuleCollectionGroup="rcg-app-demo",
-        RuleCollection="rc-app-match", Rule="app-match",
-    ))
+    return parse_record(
+        structured_record(
+            "AZFWApplicationRule",
+            Protocol="HTTPS",
+            SourceIp="10.3.5.4",
+            SourcePort=1,
+            DestinationPort=443,
+            Fqdn="www.example.com",
+            Action="Allow",
+            Policy="fwp-colour",
+            RuleCollectionGroup="rcg-app-demo",
+            RuleCollection="rc-app-match",
+            Rule="app-match",
+        )
+    )
 
 
 def _walk(node):
@@ -152,7 +218,7 @@ def _node(tree: Tree, predicate):
 # "green"s apart.
 
 _TEXT_RE = re.compile(r'<text class="([\w-]+)"[^>]*>([^<]*)</text>')
-_FILL_RE = re.compile(r'\.([\w-]+)\s*\{\s*fill:\s*(#[0-9a-fA-F]{6})')
+_FILL_RE = re.compile(r"\.([\w-]+)\s*\{\s*fill:\s*(#[0-9a-fA-F]{6})")
 _RECT_FILL_RE = re.compile(r'<rect fill="(#[0-9a-fA-F]{6})"')
 
 
@@ -184,8 +250,7 @@ def _glyph_fills(svg: str, glyph: str) -> set[str]:
     found: set[str] = set()
     for cls, raw in _TEXT_RE.findall(svg):
         text = _decode(raw)
-        if text == glyph or (text.startswith(glyph) and len(text) > len(glyph)
-                             and text[len(glyph)] == " "):
+        if text == glyph or (text.startswith(glyph) and len(text) > len(glyph) and text[len(glyph)] == " "):
             fill = fills.get(cls)
             if fill:
                 found.add(fill)
@@ -308,6 +373,7 @@ async def test_glyph_weights_are_distinct_and_consistent_textual_light(structure
 
 # ── the not-evaluated collection: dim as a whole, never a miss ───────────────
 
+
 async def test_not_evaluated_collection_is_dim_as_a_whole_not_red(structured_record, mgmt, firewall_id):
     mgmt["snapshot"] = _colour_snapshot()
     app = FirewallLogApp()
@@ -354,9 +420,17 @@ def test_verdict_class_and_border_title(structured_record):
     assert _verdict_class("DNAT") == "dnat"
     assert _verdict_class("-") == "" and _verdict_class("") == ""
 
-    deny = parse_record(structured_record(
-        "AZFWNetworkRule", Protocol="TCP", SourceIp="10.3.5.4", SourcePort=1, DestinationIp="1.1.1.1",
-        DestinationPort=443, Action="Deny"))
+    deny = parse_record(
+        structured_record(
+            "AZFWNetworkRule",
+            Protocol="TCP",
+            SourceIp="10.3.5.4",
+            SourcePort=1,
+            DestinationIp="1.1.1.1",
+            DestinationPort=443,
+            Action="Deny",
+        )
+    )
     assert _border_title(deny, None) == "DENY"
     dns = parse_record(structured_record("AZFWDnsQuery", SourceIp="10.3.5.4", QueryName="www.example.com"))
     assert _border_title(dns, None) == "REQUEST"  # a DNS row's action is the query itself

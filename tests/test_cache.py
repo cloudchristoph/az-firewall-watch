@@ -1,4 +1,5 @@
 """On-disk metadata cache (viewer/cache.py)."""
+
 from __future__ import annotations
 
 import json
@@ -31,18 +32,55 @@ def cache_file(tmp_path: Path, monkeypatch) -> Path:
 
 
 def _snapshot(fetched_at: float | None = None) -> cache.CachedSnapshot:
-    fw = FirewallInfo(id=FW_ID, name="fw", subscription_id="s", resource_group="rg", location="gwc",
-                      sku_tier="Premium", private_ips=["10.2.0.4"], subnet_ids=["/sn"], policy_id="/p")
-    policy = FirewallPolicyInfo(id="/p", name="pol", sku_tier="Premium", threat_intel_mode="Alert", rule_collection_groups=[
-        RuleCollectionGroup(id="/g", name="rcg", priority=100, rule_collections=[
-            RuleCollection(name="rc", priority=200, action="Allow", rule_collection_type="Filter", rules=[
-                Rule(name="r", rule_type="NetworkRule", source_ip_groups=["/ipg"], destination_ports=["443"], protocols=["TCP"]),
-            ]),
-        ]),
-    ])
+    fw = FirewallInfo(
+        id=FW_ID,
+        name="fw",
+        subscription_id="s",
+        resource_group="rg",
+        location="gwc",
+        sku_tier="Premium",
+        private_ips=["10.2.0.4"],
+        subnet_ids=["/sn"],
+        policy_id="/p",
+    )
+    policy = FirewallPolicyInfo(
+        id="/p",
+        name="pol",
+        sku_tier="Premium",
+        threat_intel_mode="Alert",
+        rule_collection_groups=[
+            RuleCollectionGroup(
+                id="/g",
+                name="rcg",
+                priority=100,
+                rule_collections=[
+                    RuleCollection(
+                        name="rc",
+                        priority=200,
+                        action="Allow",
+                        rule_collection_type="Filter",
+                        rules=[
+                            Rule(
+                                name="r",
+                                rule_type="NetworkRule",
+                                source_ip_groups=["/ipg"],
+                                destination_ports=["443"],
+                                protocols=["TCP"],
+                            ),
+                        ],
+                    ),
+                ],
+            ),
+        ],
+    )
     groups = {"/ipg": IpGroupInfo(id="/ipg", name="grp", location="gwc", ip_addresses=["10.3.0.0/16"])}
-    return cache.CachedSnapshot(firewall=fw, policy=policy, ip_groups=groups, subnet_cidrs=["10.2.0.0/26"],
-                                fetched_at=time.time() if fetched_at is None else fetched_at)
+    return cache.CachedSnapshot(
+        firewall=fw,
+        policy=policy,
+        ip_groups=groups,
+        subnet_cidrs=["10.2.0.0/26"],
+        fetched_at=time.time() if fetched_at is None else fetched_at,
+    )
 
 
 def test_round_trip_preserves_everything(cache_file):
@@ -92,12 +130,15 @@ def test_version_mismatch_is_ignored_and_reset(cache_file):
     assert json.loads(cache_file.read_text())["_version"] == cache._CACHE_VERSION
 
 
-@pytest.mark.parametrize("content", [
-    "[]",                                                       # valid JSON, wrong shape
-    "42",
-    json.dumps({"_version": cache._CACHE_VERSION, "entries": []}),   # entries not a mapping
-    json.dumps({"_version": cache._CACHE_VERSION, "entries": {FW_ID: "x"}}),  # entry not a dict
-])
+@pytest.mark.parametrize(
+    "content",
+    [
+        "[]",  # valid JSON, wrong shape
+        "42",
+        json.dumps({"_version": cache._CACHE_VERSION, "entries": []}),  # entries not a mapping
+        json.dumps({"_version": cache._CACHE_VERSION, "entries": {FW_ID: "x"}}),  # entry not a dict
+    ],
+)
 def test_malformed_but_valid_json_is_a_miss_and_reset(cache_file, content):
     cache_file.write_text(content)
     assert cache.load(FW_ID) is None
@@ -121,8 +162,13 @@ def test_invalidate_tolerates_unwritable_file(cache_file, monkeypatch):
 
 def test_round_trip_keeps_firewall_details_and_diagnostics(cache_file):
     from viewer.azure_resources import DiagnosticSetting, IpConfig
+
     snap = _snapshot()
-    snap.firewall.ip_configs = [IpConfig(name="c0", private_ip="10.2.0.4", public_ip_id="/pip", public_ip_name="pip", public_ip_address="1.2.3.4")]
+    snap.firewall.ip_configs = [
+        IpConfig(
+            name="c0", private_ip="10.2.0.4", public_ip_id="/pip", public_ip_name="pip", public_ip_address="1.2.3.4"
+        )
+    ]
     snap.firewall.management_ip = IpConfig(name="mgmt", subnet_id="/mgmt")
     snap.firewall.zones = ["1", "2"]
     snap.firewall.tags = {"env": "lab"}
@@ -142,7 +188,7 @@ def test_ttl(cache_file):
     old = _snapshot(fetched_at=time.time() - cache.DEFAULT_TTL_SECONDS - 5)
     assert not old.is_fresh()
     assert old.age_seconds() > cache.DEFAULT_TTL_SECONDS
-    assert old.is_fresh(ttl=10 ** 9)
+    assert old.is_fresh(ttl=10**9)
 
 
 def test_unreadable_parent_survives_the_cache(cache_file):
@@ -173,17 +219,29 @@ def test_invalidate_removes_only_that_entry(cache_file):
 
 def test_malformed_priority_is_a_cache_miss_not_a_crash(cache_file):
     """Copilot review: int('abc') raised ValueError out of load()."""
-    entry = {"firewall": {"id": FW_ID, "name": "fw", "subscription_id": "s", "resource_group": "rg", "location": "gwc"},
-             "policy": {"id": "/p", "name": "p", "rule_collection_groups": [{"name": "g", "priority": "abc", "rule_collections": []}]},
-             "fetched_at": 1.0}
+    entry = {
+        "firewall": {"id": FW_ID, "name": "fw", "subscription_id": "s", "resource_group": "rg", "location": "gwc"},
+        "policy": {
+            "id": "/p",
+            "name": "p",
+            "rule_collection_groups": [{"name": "g", "priority": "abc", "rule_collections": []}],
+        },
+        "fetched_at": 1.0,
+    }
     cache_file.write_text(json.dumps({"_version": cache._CACHE_VERSION, "entries": {FW_ID: entry}}))
     assert cache.load(FW_ID) is None
 
 
 def test_hydrate_tolerates_missing_optional_fields(cache_file):
-    entry = {"firewall": {"id": FW_ID, "name": "fw", "subscription_id": "s", "resource_group": "rg", "location": "gwc"},
-             "policy": {"id": "/p", "name": "p", "rule_collection_groups": [{"name": "g", "rule_collections": [{"name": "rc", "rules": [{"name": "r"}]}]}]},
-             "fetched_at": 1.0}
+    entry = {
+        "firewall": {"id": FW_ID, "name": "fw", "subscription_id": "s", "resource_group": "rg", "location": "gwc"},
+        "policy": {
+            "id": "/p",
+            "name": "p",
+            "rule_collection_groups": [{"name": "g", "rule_collections": [{"name": "rc", "rules": [{"name": "r"}]}]}],
+        },
+        "fetched_at": 1.0,
+    }
     cache_file.write_text(json.dumps({"_version": cache._CACHE_VERSION, "entries": {FW_ID: entry}}))
     loaded = cache.load(FW_ID)
     assert loaded is not None
@@ -209,7 +267,7 @@ def test_cache_dir_is_not_the_old_dotfile_in_home():
     """0.6.0 wrote ~/.az-firewall-watch; the OS cache directory is elsewhere."""
     directory = cache.cache_dir()
     assert directory != cache.Path.home() / ".az-firewall-watch"
-    assert "az-firewall-watch" in directory.parts          # .../az-firewall-watch or .../az-firewall-watch/Cache
+    assert "az-firewall-watch" in directory.parts  # .../az-firewall-watch or .../az-firewall-watch/Cache
     assert directory.is_absolute()
 
 

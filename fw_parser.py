@@ -8,6 +8,7 @@ AZFWFatFlow).
 
 Ported from azure-firewall-mon/firewall-mon-app/src/app/services/event-hub-source.service.ts
 """
+
 from __future__ import annotations
 
 import re
@@ -123,17 +124,26 @@ def _parse_record(record: dict) -> FirewallDataRow | None:
 
     # ── Structured log format (new) ──────────────────────────────────────────
     structured = {
-        "AZFWNetworkRule", "AZFWApplicationRule", "AZFWNatRule",
-        "AZFWDnsQuery", "AZFWIdpsSignature", "AZFWThreatIntel",
-        "AZFWFqdnResolveFailure", "AZFWInternalFqdnResolutionFailure", "AZFWFlowTrace", "AZFWFatFlow",
+        "AZFWNetworkRule",
+        "AZFWApplicationRule",
+        "AZFWNatRule",
+        "AZFWDnsQuery",
+        "AZFWIdpsSignature",
+        "AZFWThreatIntel",
+        "AZFWFqdnResolveFailure",
+        "AZFWInternalFqdnResolutionFailure",
+        "AZFWFlowTrace",
+        "AZFWFatFlow",
     }
     if category in structured:
         return _parse_structured(record, category, time, resource_id)
 
     # ── Legacy format ────────────────────────────────────────────────────────
     legacy = {
-        "AzureFirewallNetworkRule", "AzureFirewallApplicationRule",
-        "AzureFirewallNatRule", "AzureFirewallDnsProxy",
+        "AzureFirewallNetworkRule",
+        "AzureFirewallApplicationRule",
+        "AzureFirewallNatRule",
+        "AzureFirewallDnsProxy",
     }
     if category in legacy:
         return _parse_legacy(record, op_name, time)
@@ -142,6 +152,7 @@ def _parse_record(record: dict) -> FirewallDataRow | None:
 
 
 # ── helpers ───────────────────────────────────────────────────────────────────
+
 
 def _s(props: dict, key: str) -> str:
     v = props.get(key)
@@ -203,11 +214,11 @@ def _parse_structured(record: dict, category: str, time: str, resource_id: str =
             rowid=_next_id(),
             time=time,
             category="DnsQuery",
-            protocol=_s(props, "QueryType"),        # A/AAAA/MX/… → Proto column
+            protocol=_s(props, "QueryType"),  # A/AAAA/MX/… → Proto column
             sourceip=_ip(props, "SourceIp"),
             srcport=_port(props, "SourcePort"),
             targetip=_s(props, "QueryName").rstrip("."),  # hostname without trailing dot, like legacy
-            targetport="53",                        # DNS is always port 53
+            targetport="53",  # DNS is always port 53
             action=_s(props, "ResponseCode") or "Request",  # NOERROR/NXDOMAIN/… → Action column
             moreinfo=_s(props, "ErrorMessage"),
             resource_id=resource_id,
@@ -315,12 +326,17 @@ def _parse_structured(record: dict, category: str, time: str, resource_id: str =
             targetport=_port(props, "DestinationPort"),
             action=_capitalise(_s(props, "Action")),  # the firewall sends "alert" / "deny"
             # " · " separated so the detail dialog can split it back into fields
-            moreinfo=" · ".join(filter(None, [
-                f"SEV:{_s(props, 'Severity')}" if _s(props, "Severity") else "",
-                _s(props, "SignatureId"),
-                _s(props, "Category"),
-                _s(props, "Description"),
-            ])),
+            moreinfo=" · ".join(
+                filter(
+                    None,
+                    [
+                        f"SEV:{_s(props, 'Severity')}" if _s(props, "Severity") else "",
+                        _s(props, "SignatureId"),
+                        _s(props, "Category"),
+                        _s(props, "Description"),
+                    ],
+                )
+            ),
             resource_id=resource_id,
         )
 
@@ -439,7 +455,7 @@ def _parse_legacy(record: dict, op_name: str, time: str) -> FirewallDataRow:
                 key, val = kv[0].strip(), kv[1].rstrip(".")
                 if key == "Action":
                     action = val
-                elif key == "Policy":          # written by dual-stack firewalls, absent on older ones
+                elif key == "Policy":  # written by dual-stack firewalls, absent on older ones
                     policy_name = val
                 elif key == "Rule Collection Group":
                     rcg = val
@@ -579,10 +595,10 @@ def _parse_legacy(record: dict, op_name: str, time: str) -> FirewallDataRow:
                 category="DnsQuery",
                 sourceip=src_ip,
                 srcport=src_port,
-                protocol=words[5] if len(words) > 5 else "-",          # QueryType: A/AAAA/…
+                protocol=words[5] if len(words) > 5 else "-",  # QueryType: A/AAAA/…
                 targetip=words[7].rstrip(".") if len(words) > 7 else "-",  # QueryName
                 targetport="53",
-                action=words[12] if len(words) > 12 else "-",           # ResponseCode
+                action=words[12] if len(words) > 12 else "-",  # ResponseCode
             )
 
     except Exception:

@@ -3,6 +3,7 @@
 Includes the regression for Escape being swallowed by the app-level
 "Clear Filters" binding before modal screens could see it.
 """
+
 from __future__ import annotations
 
 import time
@@ -58,9 +59,16 @@ def no_update_check(monkeypatch):
 
 def _network_row(structured_record, **extra):
     props = dict(
-        Protocol="TCP", SourceIp="10.0.1.4", SourcePort=51000,
-        DestinationIp="10.0.2.5", DestinationPort=443, Action="Deny",
-        Policy="pol-hub", RuleCollectionGroup="rcg", RuleCollection="rc", Rule="r-web",
+        Protocol="TCP",
+        SourceIp="10.0.1.4",
+        SourcePort=51000,
+        DestinationIp="10.0.2.5",
+        DestinationPort=443,
+        Action="Deny",
+        Policy="pol-hub",
+        RuleCollectionGroup="rcg",
+        RuleCollection="rc",
+        Rule="r-web",
     )
     props.update(extra)
     return parse_record(structured_record("AZFWNetworkRule", **props))
@@ -98,10 +106,15 @@ async def test_enter_opens_detail_dialog_with_all_fields(structured_record):
 
 
 async def test_detail_dialog_shows_action_reason_when_no_rule_matched(structured_record):
-    row = parse_record(structured_record(
-        "AZFWNetworkRule", Action="Deny", SourceIp="1.1.1.1", DestinationIp="2.2.2.2",
-        ActionReason="No rule matched. Proceeding with default action.",
-    ))
+    row = parse_record(
+        structured_record(
+            "AZFWNetworkRule",
+            Action="Deny",
+            SourceIp="1.1.1.1",
+            DestinationIp="2.2.2.2",
+            ActionReason="No rule matched. Proceeding with default action.",
+        )
+    )
     app = FirewallLogApp()
     async with app.run_test(size=(140, 40)) as pilot:
         await pilot.pause()
@@ -123,19 +136,28 @@ async def test_detail_dialog_escapes_rich_markup_in_values(structured_record):
 
 async def test_threat_intel_entry_labels_and_long_values(structured_record):
     fqdn = "testmaliciousdomain.eastus.cloudapp.azure.com"
-    row = parse_record(structured_record(
-        "AZFWThreatIntel", time="2026-09-07T16:14:09.903912+00:00", Protocol="HTTP", SourceIp="10.3.8.4",
-        SourcePort=47074, DestinationIp="", DestinationPort=80, Fqdn=fqdn, Action="alert",
-        ThreatDescription="This is a test indicator for a Microsoft owned domain.",
-    ))
+    row = parse_record(
+        structured_record(
+            "AZFWThreatIntel",
+            time="2026-09-07T16:14:09.903912+00:00",
+            Protocol="HTTP",
+            SourceIp="10.3.8.4",
+            SourcePort=47074,
+            DestinationIp="",
+            DestinationPort=80,
+            Fqdn=fqdn,
+            Action="alert",
+            ThreatDescription="This is a test indicator for a Microsoft owned domain.",
+        )
+    )
     app = FirewallLogApp()
     async with app.run_test(size=(140, 40)) as pilot:
         await pilot.pause()
         dialog = await _open_detail(app, pilot, row)
         contents = [str(s.content) for s in dialog.query(Static)]
         text = "\n".join(contents)
-        assert "16:14:09Z" in text and ".903912" not in text      # UTC trimmed to seconds, date only when it differs
-        assert "Threat" in text and "More Info" not in text                   # category-specific label
+        assert "16:14:09Z" in text and ".903912" not in text  # UTC trimmed to seconds, date only when it differs
+        assert "Threat" in text and "More Info" not in text  # category-specific label
         # The destination and protocol are the header's job now (ThreatIntel's
         # Source/Destination equal it exactly); no separate field repeats them.
         assert fqdn in text and "HTTP" in text
@@ -146,27 +168,42 @@ async def test_threat_intel_entry_labels_and_long_values(structured_record):
 
 async def test_flowtrace_dialog_shows_connection_and_packet_direction(structured_record):
     """A SYN-ACK is logged with the server as source; the dialog must not leave that ambiguous."""
-    row = parse_record(structured_record(
-        "AZFWFlowTrace", Protocol="TCP", SourceIp="51.116.242.155", SourcePort=443,
-        DestinationIp="10.3.14.4", DestinationPort=50674, Flag="SYN-ACK", Action="Log", ActionReason="Additional TCP Log",
-    ))
+    row = parse_record(
+        structured_record(
+            "AZFWFlowTrace",
+            Protocol="TCP",
+            SourceIp="51.116.242.155",
+            SourcePort=443,
+            DestinationIp="10.3.14.4",
+            DestinationPort=50674,
+            Flag="SYN-ACK",
+            Action="Log",
+            ActionReason="Additional TCP Log",
+        )
+    )
     app = FirewallLogApp()
     async with app.run_test(size=(140, 40)) as pilot:
         await pilot.pause()
         dialog = await _open_detail(app, pilot, row)
         text = _dialog_text(dialog)
-        assert "Flow" in text and "10.3.14.4:50674 → 51.116.242.155:443" in text   # client → server
+        assert "Flow" in text and "10.3.14.4:50674 → 51.116.242.155:443" in text  # client → server
         assert "Packet" in text and "51.116.242.155 → 10.3.14.4  (server → client)" in text
         assert "Flag" in text and "SYN-ACK" in text
-        assert "Log Additional TCP Log" not in text                                # boilerplate gone
+        assert "Log Additional TCP Log" not in text  # boilerplate gone
         assert "Action" not in text and "More Info" not in text and "Policy SKU" not in text
 
 
 async def test_dns_query_dialog_uses_dns_wording(structured_record):
-    row = parse_record(structured_record(
-        "AZFWDnsQuery", SourceIp="10.3.8.4", SourcePort=39294, QueryName="www.lonelyplanet.com",
-        QueryType="A", ResponseCode="NOERROR",
-    ))
+    row = parse_record(
+        structured_record(
+            "AZFWDnsQuery",
+            SourceIp="10.3.8.4",
+            SourcePort=39294,
+            QueryName="www.lonelyplanet.com",
+            QueryType="A",
+            ResponseCode="NOERROR",
+        )
+    )
     app = FirewallLogApp()
     async with app.run_test(size=(140, 40)) as pilot:
         await pilot.pause()
@@ -178,11 +215,21 @@ async def test_dns_query_dialog_uses_dns_wording(structured_record):
 
 
 async def test_idps_dialog_splits_the_signature(structured_record):
-    row = parse_record(structured_record(
-        "AZFWIdpsSignature", Protocol="TCP", SourceIp="10.3.8.4", SourcePort=55460, DestinationIp="10.3.6.4",
-        DestinationPort=80, Action="alert", Severity=2, SignatureId=2032081,
-        Category="Potentially Bad Traffic", Description="USER_AGENTS Suspicious User-Agent (HaxerMen)",
-    ))
+    row = parse_record(
+        structured_record(
+            "AZFWIdpsSignature",
+            Protocol="TCP",
+            SourceIp="10.3.8.4",
+            SourcePort=55460,
+            DestinationIp="10.3.6.4",
+            DestinationPort=80,
+            Action="alert",
+            Severity=2,
+            SignatureId=2032081,
+            Category="Potentially Bad Traffic",
+            Description="USER_AGENTS Suspicious User-Agent (HaxerMen)",
+        )
+    )
     app = FirewallLogApp()
     async with app.run_test(size=(140, 40)) as pilot:
         await pilot.pause()
@@ -196,26 +243,44 @@ async def test_idps_dialog_splits_the_signature(structured_record):
 
 
 async def test_fatflow_dialog_shows_flow_and_rate(structured_record):
-    row = parse_record(structured_record(
-        "AZFWFatFlow", Protocol="TCP", SourceIp="142.251.14.97", SourcePort=443, DestinationIp="10.2.0.6",
-        DestinationPort=24994, FlowRate="0.048",
-    ))
+    row = parse_record(
+        structured_record(
+            "AZFWFatFlow",
+            Protocol="TCP",
+            SourceIp="142.251.14.97",
+            SourcePort=443,
+            DestinationIp="10.2.0.6",
+            DestinationPort=24994,
+            FlowRate="0.048",
+        )
+    )
     app = FirewallLogApp()
     async with app.run_test(size=(140, 40)) as pilot:
         await pilot.pause()
         text = _dialog_text(await _open_detail(app, pilot, row))
-    assert "10.2.0.6:24994 → 142.251.14.97:443" in text      # client → server
+    assert "10.2.0.6:24994 → 142.251.14.97:443" in text  # client → server
     assert "(server → client)" in text
     assert "Rate" in text and "Mbps" in text
     assert "Top flow by bandwidth" not in text and "Action" not in text
 
 
 async def test_dnat_dialog_shows_public_destination_and_translation(structured_record):
-    row = parse_record(structured_record(
-        "AZFWNatRule", Protocol="TCP", SourceIp="95.91.87.6", SourcePort=60223,
-        DestinationIp="72.144.131.50", DestinationPort=18080, TranslatedIp="10.3.6.4", TranslatedPort=80,
-        Policy="p", RuleCollectionGroup="g", RuleCollection="c", Rule="r",
-    ))
+    row = parse_record(
+        structured_record(
+            "AZFWNatRule",
+            Protocol="TCP",
+            SourceIp="95.91.87.6",
+            SourcePort=60223,
+            DestinationIp="72.144.131.50",
+            DestinationPort=18080,
+            TranslatedIp="10.3.6.4",
+            TranslatedPort=80,
+            Policy="p",
+            RuleCollectionGroup="g",
+            RuleCollection="c",
+            Rule="r",
+        )
+    )
     app = FirewallLogApp()
     async with app.run_test(size=(140, 40)) as pilot:
         await pilot.pause()
@@ -377,5 +442,12 @@ def test_status_bar_degrades_details_then_labels_when_narrow():
 
 
 def test_ago_formats_compactly():
-    assert [_ago(s) for s in (0, 4, 59, 60, 3599, 3600, 3 * 3600 + 5)] == \
-        ["0s ago", "4s ago", "59s ago", "1m ago", "59m ago", "1h ago", "3h ago"]
+    assert [_ago(s) for s in (0, 4, 59, 60, 3599, 3600, 3 * 3600 + 5)] == [
+        "0s ago",
+        "4s ago",
+        "59s ago",
+        "1m ago",
+        "59m ago",
+        "1h ago",
+        "3h ago",
+    ]

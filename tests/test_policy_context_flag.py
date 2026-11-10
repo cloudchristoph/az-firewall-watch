@@ -1,4 +1,5 @@
 """The POLICY_CONTEXT feature flag: config resolution, .env persistence, viewer behaviour."""
+
 from __future__ import annotations
 
 import os
@@ -23,10 +24,22 @@ CONN = "Endpoint=sb://x.servicebus.windows.net/;SharedAccessKeyName=k;SharedAcce
 
 # ── config resolution ────────────────────────────────────────────────────────
 
-@pytest.mark.parametrize("value, enabled", [
-    ("on", True), ("ON", True), ("true", True), ("1", True), ("yes", True),
-    ("off", False), ("false", False), ("0", False), ("no", False), ("anything", False),
-])
+
+@pytest.mark.parametrize(
+    "value, enabled",
+    [
+        ("on", True),
+        ("ON", True),
+        ("true", True),
+        ("1", True),
+        ("yes", True),
+        ("off", False),
+        ("false", False),
+        ("0", False),
+        ("no", False),
+        ("anything", False),
+    ],
+)
 def test_env_value_is_explicit(value, enabled):
     assert policy_context_setting([], {"POLICY_CONTEXT": value}) == (enabled, True)
 
@@ -44,9 +57,11 @@ def test_cli_flags_override_environment():
 
 # ── .env persistence ─────────────────────────────────────────────────────────
 
+
 def _values(env: Path) -> dict[str, str]:
     return dict(
-        line.split("=", 1) for line in env.read_text(encoding="utf-8").splitlines()
+        line.split("=", 1)
+        for line in env.read_text(encoding="utf-8").splitlines()
         if "=" in line and not line.startswith("#")
     )
 
@@ -100,6 +115,7 @@ def test_set_env_value_creates_missing_file(tmp_path: Path):
 
 # ── viewer with policy context off ───────────────────────────────────────────────
 
+
 @pytest.fixture
 def arm_calls(monkeypatch):
     calls: list[str] = []
@@ -118,7 +134,9 @@ async def test_off_means_logs_only_and_no_arm(arm_calls):
         await pilot.pause()
         assert not app.query(TabbedContent)
         assert app.query_one("#log-table", DataTable).has_focus
-        app.request_mgmt_load("/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg/providers/Microsoft.Network/azureFirewalls/fw")
+        app.request_mgmt_load(
+            "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg/providers/Microsoft.Network/azureFirewalls/fw"
+        )
         await pilot.pause()
         await pilot.pause()
         assert arm_calls == []
@@ -175,6 +193,7 @@ async def test_on_without_notice_is_silent(arm_calls):
 
 # ── first-run notice ─────────────────────────────────────────────────────────
 
+
 async def _open_notice(tmp_path: Path, arm_calls) -> tuple[FirewallLogApp, Path]:
     env = tmp_path / ".env"
     env.write_text(f"EVENT_HUB_CONNECTION_STRING={CONN}\n", encoding="utf-8")
@@ -190,7 +209,9 @@ async def test_notice_keep_persists_on(tmp_path: Path, arm_calls):
         await pilot.click("#btn-keep")
         await wait_until(pilot, lambda: not isinstance(app.screen, PolicyContextNoticeDialog))
         assert app.query_one(TabbedContent)
-        app.request_mgmt_load("/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg/providers/Microsoft.Network/azureFirewalls/fw")
+        app.request_mgmt_load(
+            "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg/providers/Microsoft.Network/azureFirewalls/fw"
+        )
         await wait_until(pilot, lambda: len(arm_calls) == 1)
     assert _values(env)["POLICY_CONTEXT"] == "on"
     assert _values(env)["EVENT_HUB_CONNECTION_STRING"] == CONN
@@ -205,13 +226,13 @@ async def test_notice_blocks_arm_until_kept(tmp_path: Path, arm_calls):
     async with app.run_test(size=(160, 45)) as pilot:
         await wait_until(pilot, lambda: isinstance(app.screen, PolicyContextNoticeDialog))
         await pilot.pause()
-        app.request_mgmt_load(FW)          # the stream sees the firewall while the dialog is open
+        app.request_mgmt_load(FW)  # the stream sees the firewall while the dialog is open
         app.request_mgmt_load(FW)
         await pilot.pause(0.3)
-        assert arm_calls == []             # nothing left the process
+        assert arm_calls == []  # nothing left the process
         assert app._firewall_id is None
         await pilot.click("#btn-keep")
-        await wait_until(pilot, lambda: arm_calls == [FW])   # answered → the parked id loads once
+        await wait_until(pilot, lambda: arm_calls == [FW])  # answered → the parked id loads once
         assert app._firewall_id == FW
 
 
@@ -223,7 +244,7 @@ async def test_notice_disable_never_touches_arm(tmp_path: Path, arm_calls):
         app.request_mgmt_load(FW)
         await pilot.click("#btn-disable")
         await wait_until(pilot, lambda: not isinstance(app.screen, PolicyContextNoticeDialog))
-        app.request_mgmt_load(FW)          # later events stay ignored as well
+        app.request_mgmt_load(FW)  # later events stay ignored as well
         await pilot.pause(0.3)
         assert arm_calls == []
     assert not (Path.home() / ".az-firewall-watch" / "never-written").exists()  # (sanity: no exception above)
@@ -266,7 +287,9 @@ async def test_notice_disable_removes_tabs_and_persists_off(tmp_path: Path, arm_
         tabs = app.query_one(TabbedContent)
         assert [p.id for p in tabs.query("TabPane")] == ["tab-logs"]
         assert app.query_one("#status", StatusBar).ctx_state == "off"
-        app.request_mgmt_load("/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg/providers/Microsoft.Network/azureFirewalls/fw")
+        app.request_mgmt_load(
+            "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg/providers/Microsoft.Network/azureFirewalls/fw"
+        )
         await pilot.pause()
         await pilot.pause()
         assert arm_calls == []

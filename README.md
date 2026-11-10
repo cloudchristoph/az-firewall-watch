@@ -119,7 +119,7 @@ tar -xzf az-firewall-watch-linux-arm64.tar.gz
 ./az-firewall-watch
 ```
 
-Or run from source (Python 3.10+):
+Or run from source (Python 3.11+):
 
 ```bash
 git clone https://github.com/cloudchristoph/az-firewall-watch.git

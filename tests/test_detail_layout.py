@@ -6,6 +6,7 @@ to a few rows) and 80x24 (used to be unusable) — with and without a trace,
 reusing the app fixtures already established in test_views.py and the dialog
 helper from test_dialogs.py rather than duplicating them.
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -37,8 +38,14 @@ SIZES = [(160, 45), (120, 30), (80, 24)]
 
 def _no_trace_row(structured_record, **extra):
     """A row with no rule fields at all — no trace, in any mode or size."""
-    props = dict(Protocol="TCP", SourceIp="10.0.1.4", SourcePort=51000,
-                 DestinationIp="10.0.2.5", DestinationPort=443, Action="Deny")
+    props = dict(
+        Protocol="TCP",
+        SourceIp="10.0.1.4",
+        SourcePort=51000,
+        DestinationIp="10.0.2.5",
+        DestinationPort=443,
+        Action="Deny",
+    )
     props.update(extra)
     return parse_record(structured_record("AZFWNetworkRule", **props))
 
@@ -50,8 +57,9 @@ def _many_ip_groups_snapshot():
     extra = {}
     for i in range(20):
         gid = f"/subscriptions/s/resourceGroups/rg/providers/Microsoft.Network/ipGroups/ipgroup-extra-{i}"
-        extra[gid] = IpGroupInfo(id=gid, name=f"ipgroup-extra-{i}", location="germanywestcentral",
-                                 ip_addresses=["10.3.5.0/24"])
+        extra[gid] = IpGroupInfo(
+            id=gid, name=f"ipgroup-extra-{i}", location="germanywestcentral", ip_addresses=["10.3.5.0/24"]
+        )
     snap.ip_groups.update(extra)
     return snap
 
@@ -76,6 +84,7 @@ def _logged_node_visible(tree: Tree) -> bool:
 
 
 # ── layout mode per size ───────────────────────────────────────────────────────
+
 
 @pytest.mark.parametrize("size,expect_tabbed", [((160, 45), False), ((120, 30), False), ((80, 24), True)])
 async def test_layout_mode_matches_terminal_size_with_trace(structured_record, mgmt, firewall_id, size, expect_tabbed):  # noqa: F811
@@ -112,7 +121,7 @@ async def test_fields_and_trace_sit_side_by_side_at_160_and_120(structured_recor
         pane = screen.query_one("#detail-pane")
         tree = screen.query_one("#trace-tree", Tree)
         assert pane.region.width > 0 and tree.region.width > 0  # both visible at once
-        assert pane.region.x < tree.region.x                    # fields left of the trace
+        assert pane.region.x < tree.region.x  # fields left of the trace
 
 
 async def test_narrow_with_trace_uses_two_tabs_trace_active_first(structured_record, mgmt, firewall_id):  # noqa: F811
@@ -124,11 +133,11 @@ async def test_narrow_with_trace_uses_two_tabs_trace_active_first(structured_rec
         assert screen.has_class("-tabbed")
         tabs = screen.query_one(TabbedContent)
         assert len(screen.query(TabPane)) == 2
-        assert tabs.active == "tab-trace"          # the logged rule is what you see first
+        assert tabs.active == "tab-trace"  # the logged rule is what you see first
         tree = screen.query_one("#trace-tree", Tree)
         fields = screen.query_one("#detail-pane")
         assert tree.region.width > 0
-        assert fields.region.width == 0            # the Fields tab is not the one showing
+        assert fields.region.width == 0  # the Fields tab is not the one showing
 
         await pilot.press("tab")
         await pilot.pause(0.2)
@@ -142,6 +151,7 @@ async def test_narrow_with_trace_uses_two_tabs_trace_active_first(structured_rec
 
 
 # ── the logged rule stays reachable ────────────────────────────────────────────
+
 
 @pytest.mark.parametrize("size", SIZES)
 async def test_logged_rule_is_cursor_and_visible_at_every_size(structured_record, mgmt, firewall_id, size):  # noqa: F811
@@ -174,6 +184,7 @@ async def test_medium_terminal_gives_the_tree_at_least_eight_rows(structured_rec
 
 # ── every pane scrolls on its own ──────────────────────────────────────────────
 
+
 async def test_fields_pane_scrolls_at_80x24_with_many_ip_groups(structured_record, mgmt, firewall_id):  # noqa: F811
     mgmt["snapshot"] = _many_ip_groups_snapshot()
     app = FirewallLogApp()
@@ -181,7 +192,7 @@ async def test_fields_pane_scrolls_at_80x24_with_many_ip_groups(structured_recor
         await pilot.pause()
         await _load(app, pilot, firewall_id)
         screen = await _open_matched_trace(app, pilot, structured_record)
-        await pilot.press("tab")                  # switch to the Fields tab
+        await pilot.press("tab")  # switch to the Fields tab
         await pilot.pause(0.2)
         pane = screen.query_one("#detail-pane")
         assert pane.max_scroll_y > 0
@@ -189,10 +200,11 @@ async def test_fields_pane_scrolls_at_80x24_with_many_ip_groups(structured_recor
         await pilot.pause(0.2)
         assert pane.scroll_y == pane.max_scroll_y
         text = "\n".join(str(s.content) for s in pane.query(Static))
-        assert "ipgroup-extra-19" in text          # the last field, reached by scrolling
+        assert "ipgroup-extra-19" in text  # the last field, reached by scrolling
 
 
 # ── keys still work in the trace tab at 80x24 ──────────────────────────────────
+
 
 async def test_enter_and_a_still_work_in_the_trace_tab_at_80x24(structured_record, mgmt, firewall_id):  # noqa: F811
     app = FirewallLogApp()
@@ -207,7 +219,7 @@ async def test_enter_and_a_still_work_in_the_trace_tab_at_80x24(structured_recor
         await pilot.pause()
         await pilot.press("enter")
         await pilot.pause()
-        assert not pass_node.is_expanded           # Enter toggled it, nothing else
+        assert not pass_node.is_expanded  # Enter toggled it, nothing else
         assert app.screen is screen
 
         panel = screen.query_one(TracePanel)
@@ -247,6 +259,7 @@ async def test_esc_and_q_close_from_the_trace_tab_at_80x24(structured_record, mg
 
 # ── footer and header text ─────────────────────────────────────────────────────
 
+
 @pytest.mark.parametrize("size,expect_hint", [((160, 45), False), ((120, 30), False), ((80, 24), True)])
 async def test_footer_tab_hint_only_in_tabbed_mode(structured_record, mgmt, firewall_id, size, expect_hint):  # noqa: F811
     app = FirewallLogApp()
@@ -269,16 +282,26 @@ def _long_names_snapshot():
     snap = make_snapshot()
     group = snap.policy.rule_collection_groups[0]
     group.name = _LONG_GROUP
-    group.rule_collections[1].name = _LONG_COLLECTION     # rc-web, the one allow-web sits in
+    group.rule_collections[1].name = _LONG_COLLECTION  # rc-web, the one allow-web sits in
     return snap
 
 
 def _net_in_long_names(structured_record):
-    return parse_record(structured_record(
-        "AZFWNetworkRule", Protocol="TCP", SourceIp="10.3.5.4", SourcePort=1, DestinationIp="1.1.1.1",
-        DestinationPort=443, Action="Allow", Policy="fwp-hub-premium-gwc",
-        RuleCollectionGroup=_LONG_GROUP, RuleCollection=_LONG_COLLECTION, Rule="allow-web",
-    ))
+    return parse_record(
+        structured_record(
+            "AZFWNetworkRule",
+            Protocol="TCP",
+            SourceIp="10.3.5.4",
+            SourcePort=1,
+            DestinationIp="1.1.1.1",
+            DestinationPort=443,
+            Action="Allow",
+            Policy="fwp-hub-premium-gwc",
+            RuleCollectionGroup=_LONG_GROUP,
+            RuleCollection=_LONG_COLLECTION,
+            Rule="allow-web",
+        )
+    )
 
 
 def test_header_line2_shortens_until_it_fits(structured_record):
@@ -289,8 +312,9 @@ def test_header_line2_shortens_until_it_fits(structured_record):
 
     snap = _long_names_snapshot()
     row = _net_in_long_names(structured_record)
-    trace = build_trace(FirewallLogApp._flow_from_row(row), snap.policy, snap.ip_groups,
-                        FirewallLogApp._logged_from_row(row))
+    trace = build_trace(
+        FirewallLogApp._flow_from_row(row), snap.policy, snap.ip_groups, FirewallLogApp._logged_from_row(row)
+    )
     full = _header_line2(trace, "fresh")
     assert full == f"[green]✓[/] matched in {_LONG_GROUP} » {_LONG_COLLECTION}   [dim]cached policy · fresh[/]"
     assert _header_line2(trace, "fresh", width=200) == full
@@ -298,7 +322,7 @@ def test_header_line2_shortens_until_it_fits(structured_record):
     assert medium == f"[green]✓[/] matched in {_LONG_GROUP} » {_LONG_COLLECTION}"
     tight = _header_line2(trace, "fresh", width=60)
     assert tight == f"[green]✓[/] matched in {_LONG_COLLECTION}"
-    assert _header_line2(trace, "fresh", width=5) == tight   # never shorter than that
+    assert _header_line2(trace, "fresh", width=5) == tight  # never shorter than that
 
 
 async def test_header_stays_two_lines_on_a_narrow_terminal(structured_record, mgmt, firewall_id):  # noqa: F811
@@ -330,6 +354,7 @@ async def test_header_line2_stays_full_at_160x45(structured_record, mgmt, firewa
 
 # ── screenshots: a cheap guard that rendering does not raise ──────────────────
 
+
 @pytest.mark.parametrize("size", SIZES)
 async def test_screenshot_renders_with_trace(structured_record, mgmt, firewall_id, size, tmp_path):  # noqa: F811
     app = FirewallLogApp()
@@ -353,6 +378,7 @@ async def test_screenshot_renders_without_trace(structured_record, size, tmp_pat
 
 # ── what the screenshots showed and the fixtures above did not ─────────────────
 
+
 def _wide_policy_snapshot():
     """``make_snapshot()`` plus an application group with eight collections,
     the logged rule in the last: more tree lines than a 120x30 or 80x24 tree
@@ -360,30 +386,85 @@ def _wide_policy_snapshot():
     from viewer.azure_resources import Rule, RuleCollection, RuleCollectionGroup
 
     snap = make_snapshot()
-    apps = [RuleCollection(name=f"demo-{i}", priority=100 + i * 10, action="Allow", rule_collection_type="Filter",
-                           rules=[Rule(name=f"allow-{i}", rule_type="ApplicationRule", source_addresses=["*"],
-                                       destination_fqdns=[f"*.site{i}.example"], protocols=["Https"],
-                                       destination_ports=["443"])])
-            for i in range(6)]
-    apps.append(RuleCollection(name="tags", priority=195, action="Allow", rule_collection_type="Filter", rules=[
-        Rule(name="allow-wu", rule_type="ApplicationRule", source_addresses=["*"], fqdn_tags=["WindowsUpdate"],
-             protocols=["Https"], destination_ports=["443"])]))
-    apps.append(RuleCollection(name="outbound-access-demo-app-rules", priority=200, action="Allow",
-                               rule_collection_type="Filter", rules=[
-        Rule(name="allow-outbound-web-traffic", rule_type="ApplicationRule", source_addresses=["*"],
-             destination_fqdns=["*"], protocols=["Http", "Https"], destination_ports=["80", "443"])]))
-    snap.policy.rule_collection_groups.append(RuleCollectionGroup(
-        id="/p/app", name="cclab-application-rule-collection-group", priority=100, rule_collections=apps))
+    apps = [
+        RuleCollection(
+            name=f"demo-{i}",
+            priority=100 + i * 10,
+            action="Allow",
+            rule_collection_type="Filter",
+            rules=[
+                Rule(
+                    name=f"allow-{i}",
+                    rule_type="ApplicationRule",
+                    source_addresses=["*"],
+                    destination_fqdns=[f"*.site{i}.example"],
+                    protocols=["Https"],
+                    destination_ports=["443"],
+                )
+            ],
+        )
+        for i in range(6)
+    ]
+    apps.append(
+        RuleCollection(
+            name="tags",
+            priority=195,
+            action="Allow",
+            rule_collection_type="Filter",
+            rules=[
+                Rule(
+                    name="allow-wu",
+                    rule_type="ApplicationRule",
+                    source_addresses=["*"],
+                    fqdn_tags=["WindowsUpdate"],
+                    protocols=["Https"],
+                    destination_ports=["443"],
+                )
+            ],
+        )
+    )
+    apps.append(
+        RuleCollection(
+            name="outbound-access-demo-app-rules",
+            priority=200,
+            action="Allow",
+            rule_collection_type="Filter",
+            rules=[
+                Rule(
+                    name="allow-outbound-web-traffic",
+                    rule_type="ApplicationRule",
+                    source_addresses=["*"],
+                    destination_fqdns=["*"],
+                    protocols=["Http", "Https"],
+                    destination_ports=["80", "443"],
+                )
+            ],
+        )
+    )
+    snap.policy.rule_collection_groups.append(
+        RuleCollectionGroup(
+            id="/p/app", name="cclab-application-rule-collection-group", priority=100, rule_collections=apps
+        )
+    )
     return snap
 
 
 def _app_row(structured_record):
-    return parse_record(structured_record(
-        "AZFWApplicationRule", Protocol="HTTPS", SourceIp="10.3.11.4", SourcePort=41644, DestinationPort=443,
-        Fqdn="www.petmd.com", Action="Allow", Policy="fwp-hub-premium-gwc",
-        RuleCollectionGroup="cclab-application-rule-collection-group",
-        RuleCollection="outbound-access-demo-app-rules", Rule="allow-outbound-web-traffic",
-    ))
+    return parse_record(
+        structured_record(
+            "AZFWApplicationRule",
+            Protocol="HTTPS",
+            SourceIp="10.3.11.4",
+            SourcePort=41644,
+            DestinationPort=443,
+            Fqdn="www.petmd.com",
+            Action="Allow",
+            Policy="fwp-hub-premium-gwc",
+            RuleCollectionGroup="cclab-application-rule-collection-group",
+            RuleCollection="outbound-access-demo-app-rules",
+            Rule="allow-outbound-web-traffic",
+        )
+    )
 
 
 @pytest.mark.parametrize("size", [(120, 30), (80, 24)])
@@ -399,9 +480,9 @@ async def test_logged_rule_beyond_the_first_screen_is_scrolled_into_view(structu
         screen = await _open_trace(app, pilot, _app_row(structured_record))
         tree = screen.query_one("#trace-tree", Tree)
         assert tree.cursor_node is not None and "LOGGED" in tree.cursor_node.label.plain
-        assert tree.cursor_node.line >= tree.scrollable_content_region.height   # not on the first screen
+        assert tree.cursor_node.line >= tree.scrollable_content_region.height  # not on the first screen
         await wait_until(pilot, lambda: _logged_node_visible(tree))
-        assert not tree.show_horizontal_scrollbar                              # no row lost to a bar
+        assert not tree.show_horizontal_scrollbar  # no row lost to a bar
 
 
 async def test_footer_fits_one_row_at_80_columns(structured_record, mgmt, firewall_id):  # noqa: F811
@@ -425,7 +506,9 @@ async def test_resize_switches_between_columns_and_tabs(structured_record, mgmt,
         await pilot.pause()
         await _load(app, pilot, firewall_id)
         screen = await _open_matched_trace(app, pilot, structured_record)
-        assert not screen.query(TabbedContent) and "Tab fields/trace" not in str(screen.query_one("#dialog-footer", Static).content)
+        assert not screen.query(TabbedContent) and "Tab fields/trace" not in str(
+            screen.query_one("#dialog-footer", Static).content
+        )
 
         await pilot.resize_terminal(80, 24)
         await wait_until(pilot, lambda: bool(screen.query(TabbedContent)))

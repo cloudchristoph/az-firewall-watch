@@ -1,4 +1,5 @@
 """UPDATE_CHECK / --no-update-check: the start-up request to api.github.com can be turned off."""
+
 from __future__ import annotations
 
 import re
@@ -18,17 +19,20 @@ from viewer.config import update_check_enabled
 _GITHUB_HOST = re.compile(r"(?<![\w.])api\.github\.com(?![\w.])")
 
 
-@pytest.mark.parametrize("argv, environ, expected", [
-    ([], {}, True),                                      # default: on
-    ([], {"UPDATE_CHECK": "off"}, False),
-    ([], {"UPDATE_CHECK": " OFF "}, False),
-    ([], {"UPDATE_CHECK": "false"}, False),
-    ([], {"UPDATE_CHECK": "on"}, True),
-    ([], {"UPDATE_CHECK": "yes"}, True),
-    ([], {"UPDATE_CHECK": ""}, True),
-    (["--no-update-check"], {}, False),
-    (["--no-update-check"], {"UPDATE_CHECK": "on"}, False),  # the flag wins
-])
+@pytest.mark.parametrize(
+    "argv, environ, expected",
+    [
+        ([], {}, True),  # default: on
+        ([], {"UPDATE_CHECK": "off"}, False),
+        ([], {"UPDATE_CHECK": " OFF "}, False),
+        ([], {"UPDATE_CHECK": "false"}, False),
+        ([], {"UPDATE_CHECK": "on"}, True),
+        ([], {"UPDATE_CHECK": "yes"}, True),
+        ([], {"UPDATE_CHECK": ""}, True),
+        (["--no-update-check"], {}, False),
+        (["--no-update-check"], {"UPDATE_CHECK": "on"}, False),  # the flag wins
+    ],
+)
 def test_update_check_enabled(argv, environ, expected):
     assert update_check_enabled(argv, environ) is expected
 
@@ -50,17 +54,20 @@ async def test_app_asks_github_only_when_enabled(monkeypatch, update_check, expe
     assert len(github) == expected_calls
 
 
-@pytest.mark.parametrize("writer, args", [
-    (write_env, ("Endpoint=sb://ns.servicebus.windows.net/;SharedAccessKeyName=k;SharedAccessKey=x;EntityPath=h",)),
-    (write_env_entra, ("ns.servicebus.windows.net", "hub")),
-])
+@pytest.mark.parametrize(
+    "writer, args",
+    [
+        (write_env, ("Endpoint=sb://ns.servicebus.windows.net/;SharedAccessKeyName=k;SharedAccessKey=x;EntityPath=h",)),
+        (write_env_entra, ("ns.servicebus.windows.net", "hub")),
+    ],
+)
 def test_wizard_env_documents_the_switch(tmp_path: Path, writer, args):
     env = tmp_path / ".env"
     writer(env, *args)
     text = env.read_text(encoding="utf-8")
     assert _GITHUB_HOST.search(text)
-    assert "# UPDATE_CHECK=off\n" in text           # offered, commented out
-    assert "\nUPDATE_CHECK=" not in text            # not set: the default stays on
+    assert "# UPDATE_CHECK=off\n" in text  # offered, commented out
+    assert "\nUPDATE_CHECK=" not in text  # not set: the default stays on
 
 
 async def test_wizard_welcome_mentions_the_update_check(tmp_path: Path):
@@ -73,10 +80,13 @@ async def test_wizard_welcome_mentions_the_update_check(tmp_path: Path):
 
 
 @pytest.mark.parametrize("value", ["off", "on"])
-@pytest.mark.parametrize("writer, args", [
-    (write_env, ("Endpoint=sb://ns.servicebus.windows.net/;SharedAccessKeyName=k;SharedAccessKey=x;EntityPath=h",)),
-    (write_env_entra, ("ns.servicebus.windows.net", "hub")),
-])
+@pytest.mark.parametrize(
+    "writer, args",
+    [
+        (write_env, ("Endpoint=sb://ns.servicebus.windows.net/;SharedAccessKeyName=k;SharedAccessKey=x;EntityPath=h",)),
+        (write_env_entra, ("ns.servicebus.windows.net", "hub")),
+    ],
+)
 def test_reconfigure_keeps_an_update_check_choice(tmp_path: Path, writer, args, value):
     """--reconfigure rewrites .env; a set UPDATE_CHECK must survive it."""
     env = tmp_path / ".env"

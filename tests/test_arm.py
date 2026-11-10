@@ -1,4 +1,5 @@
 """Minimal ARM client (viewer/arm.py) with a fake aiohttp session."""
+
 from __future__ import annotations
 
 import json
@@ -59,6 +60,7 @@ class FakeCredential:
         class _T:
             token = self.token
             expires_on = time.time() + self.ttl
+
         return _T()
 
 
@@ -70,55 +72,65 @@ LIST = "/subscriptions/s/list"
 
 # ── URL building / errors ────────────────────────────────────────────────────
 
+
 def test_url_forms():
     assert ArmClient._url(FW) == ARM + FW
     assert ArmClient._url(FW.lstrip("/")) == ARM + FW
     assert ArmClient._url(FW.upper()) == ARM + FW.upper()
-    assert ArmClient._url("/providers/Microsoft.ResourceGraph/resources") == ARM + "/providers/Microsoft.ResourceGraph/resources"
+    assert (
+        ArmClient._url("/providers/Microsoft.ResourceGraph/resources")
+        == ARM + "/providers/Microsoft.ResourceGraph/resources"
+    )
     # an absolute URL is only accepted on the ARM host itself (nextLink)
     assert ArmClient._url(ARM + LIST + "?api-version=1&$skipToken=a") == ARM + LIST + "?api-version=1&$skipToken=a"
     assert ArmClient._url("HTTPS://MANAGEMENT.AZURE.COM" + LIST) == ARM + LIST
     assert ArmClient._url("https://management.azure.com:443" + LIST) == ARM + LIST
 
 
-@pytest.mark.parametrize("target", [
-    "https://attacker.example/x/AZUREFIREWALLS/y",
-    "https://attacker.example" + FW,
-    "http://management.azure.com" + FW,
-    "https://management.azure.com@attacker.example" + FW,
-    "https://user:pw@management.azure.com" + FW,
-    "https://management.azure.com.attacker.example" + FW,
-    "https://management.azure.com:8443" + FW,
-    "https://management.azure.com" + FW + "#frag",
-    "ftp://management.azure.com" + FW,
-    "//attacker.example" + FW,
-    "/x",
-    "/",
-    "",
-    FW + "/../../evil",
-    FW + "/%2e%2e/evil",
-    "/subscriptions/s/./x",
-    "/subscriptions//x",
-    "/subscriptions/s/x?api-version=1",
-    "/subscriptions/s/x#y",
-    "/subscriptions/s/x\\y",
-    "/subscriptions/s/x y",
-    "/subscriptions/s/x\ny",
-    "https://management.azure.com/x",
-    "https://management.azure.com/subscriptions/s/../../x",
-])
+@pytest.mark.parametrize(
+    "target",
+    [
+        "https://attacker.example/x/AZUREFIREWALLS/y",
+        "https://attacker.example" + FW,
+        "http://management.azure.com" + FW,
+        "https://management.azure.com@attacker.example" + FW,
+        "https://user:pw@management.azure.com" + FW,
+        "https://management.azure.com.attacker.example" + FW,
+        "https://management.azure.com:8443" + FW,
+        "https://management.azure.com" + FW + "#frag",
+        "ftp://management.azure.com" + FW,
+        "//attacker.example" + FW,
+        "/x",
+        "/",
+        "",
+        FW + "/../../evil",
+        FW + "/%2e%2e/evil",
+        "/subscriptions/s/./x",
+        "/subscriptions//x",
+        "/subscriptions/s/x?api-version=1",
+        "/subscriptions/s/x#y",
+        "/subscriptions/s/x\\y",
+        "/subscriptions/s/x y",
+        "/subscriptions/s/x\ny",
+        "https://management.azure.com/x",
+        "https://management.azure.com/subscriptions/s/../../x",
+    ],
+)
 def test_url_rejects_anything_but_arm_paths_and_the_arm_host(target):
     with pytest.raises(ArmError) as exc:
         ArmClient._url(target)
     assert exc.value.code == "UntrustedUrl"
 
 
-@pytest.mark.parametrize("target", [
-    "https://attacker.example/x/AZUREFIREWALLS/y",
-    "http://management.azure.com" + FW,
-    "https://management.azure.com@attacker.example" + FW,
-    "//attacker.example" + FW,
-])
+@pytest.mark.parametrize(
+    "target",
+    [
+        "https://attacker.example/x/AZUREFIREWALLS/y",
+        "http://management.azure.com" + FW,
+        "https://management.azure.com@attacker.example" + FW,
+        "//attacker.example" + FW,
+    ],
+)
 async def test_get_with_foreign_target_never_requests_a_token(target):
     cred = FakeCredential()
     session = FakeSession({})
@@ -130,13 +142,19 @@ async def test_get_with_foreign_target_never_requests_a_token(target):
 
 
 def test_extract_error_variants():
-    assert _extract_error(json.dumps({"error": {"code": "AuthorizationFailed", "message": "nope"}})) == ("AuthorizationFailed", "nope")
+    assert _extract_error(json.dumps({"error": {"code": "AuthorizationFailed", "message": "nope"}})) == (
+        "AuthorizationFailed",
+        "nope",
+    )
     assert _extract_error(json.dumps({"code": "X", "message": "flat"})) == ("X", "flat")
     assert _extract_error("<html>gateway</html>") == ("Unknown", "<html>gateway</html>")
     # valid JSON that is not dict-shaped (gateways, proxies) must not raise
     assert _extract_error("[]") == ("Unknown", "[]")
     assert _extract_error("42") == ("Unknown", "42")
-    assert _extract_error(json.dumps({"error": "string, not an object"})) == ("Unknown", '{"error": "string, not an object"}')
+    assert _extract_error(json.dumps({"error": "string, not an object"})) == (
+        "Unknown",
+        '{"error": "string, not an object"}',
+    )
     assert _extract_error(json.dumps({})) == ("Unknown", "{}")
 
 
@@ -147,6 +165,7 @@ def test_arm_error_str():
 
 
 # ── GET / pagination ─────────────────────────────────────────────────────────
+
 
 async def test_get_sends_bearer_and_api_version():
     session = FakeSession({ARM + FW: (200, {"name": "fw"})})
@@ -160,23 +179,28 @@ async def test_get_sends_bearer_and_api_version():
 
 
 async def test_get_all_follows_next_link():
-    session = FakeSession({
-        ARM + LIST: (200, {"value": [1, 2], "nextLink": ARM + LIST + "?page=2"}),
-        ARM + LIST + "?page=2": (200, {"value": [3]}),
-    })
+    session = FakeSession(
+        {
+            ARM + LIST: (200, {"value": [1, 2], "nextLink": ARM + LIST + "?page=2"}),
+            ARM + LIST + "?page=2": (200, {"value": [3]}),
+        }
+    )
     client = ArmClient(FakeCredential(), session)
     assert await client.get_all(LIST, "2024-01-01") == [1, 2, 3]
     assert session.calls[1]["url"] == ARM + LIST + "?page=2"
     assert session.calls[1]["params"] is None  # next links carry their own query string
 
 
-@pytest.mark.parametrize("next_link", [
-    "https://attacker.example" + LIST + "?page=2",
-    "http://management.azure.com" + LIST + "?page=2",
-    "https://management.azure.com@attacker.example" + LIST,
-    "//attacker.example" + LIST,
-    {"url": "https://attacker.example"},
-])
+@pytest.mark.parametrize(
+    "next_link",
+    [
+        "https://attacker.example" + LIST + "?page=2",
+        "http://management.azure.com" + LIST + "?page=2",
+        "https://management.azure.com@attacker.example" + LIST,
+        "//attacker.example" + LIST,
+        {"url": "https://attacker.example"},
+    ],
+)
 async def test_get_all_refuses_a_foreign_next_link(next_link):
     """A forged nextLink must not take the token anywhere: nothing is sent for it."""
     session = FakeSession({ARM + LIST: (200, {"value": [1], "nextLink": next_link})})
@@ -187,10 +211,12 @@ async def test_get_all_refuses_a_foreign_next_link(next_link):
 
 
 async def test_get_all_accepts_a_relative_next_link_below_subscriptions():
-    session = FakeSession({
-        ARM + LIST: (200, {"value": [1], "nextLink": LIST + "/page2"}),
-        ARM + LIST + "/page2": (200, {"value": [2]}),
-    })
+    session = FakeSession(
+        {
+            ARM + LIST: (200, {"value": [1], "nextLink": LIST + "/page2"}),
+            ARM + LIST + "/page2": (200, {"value": [2]}),
+        }
+    )
     assert await ArmClient(FakeCredential(), session).get_all(LIST, "v") == [1, 2]
 
 
@@ -228,6 +254,7 @@ async def test_transport_error_raises_arm_error():
 
 
 # ── tokens ───────────────────────────────────────────────────────────────────
+
 
 async def test_token_is_cached_until_close_to_expiry():
     session = FakeSession({ARM + X: (200, {})})
@@ -269,10 +296,12 @@ async def test_no_credential_at_all_raises(monkeypatch):
 def _fake_cli_token(value: str):
     async def _tok():
         return arm_mod._Token(value=value, expires_at=time.time() + 600)
+
     return _tok
 
 
 # ── az CLI token acquisition ─────────────────────────────────────────────────
+
 
 async def test_cli_token_without_az_installed(monkeypatch):
     monkeypatch.setattr(arm_mod.shutil, "which", lambda _n: None)
@@ -281,8 +310,13 @@ async def test_cli_token_without_az_installed(monkeypatch):
 
 async def test_cli_token_parses_output(monkeypatch):
     monkeypatch.setattr(arm_mod.shutil, "which", lambda _n: "/usr/bin/az")
-    monkeypatch.setattr(arm_mod.subprocess, "run", lambda *a, **k: subprocess.CompletedProcess(
-        a[0], 0, stdout=json.dumps({"accessToken": "abc", "expires_on": 1_900_000_000}), stderr=""))
+    monkeypatch.setattr(
+        arm_mod.subprocess,
+        "run",
+        lambda *a, **k: subprocess.CompletedProcess(
+            a[0], 0, stdout=json.dumps({"accessToken": "abc", "expires_on": 1_900_000_000}), stderr=""
+        ),
+    )
     tok = await _token_from_az_cli()
     assert tok is not None and tok.value == "abc" and tok.expires_at == 1_900_000_000
 
@@ -327,7 +361,10 @@ async def test_cli_token_timeout(monkeypatch):
 
 async def test_cli_token_without_expiry_defaults_to_five_minutes(monkeypatch):
     monkeypatch.setattr(arm_mod.shutil, "which", lambda _n: "/usr/bin/az")
-    monkeypatch.setattr(arm_mod.subprocess, "run", lambda *a, **k: subprocess.CompletedProcess(
-        a[0], 0, stdout=json.dumps({"accessToken": "abc"}), stderr=""))
+    monkeypatch.setattr(
+        arm_mod.subprocess,
+        "run",
+        lambda *a, **k: subprocess.CompletedProcess(a[0], 0, stdout=json.dumps({"accessToken": "abc"}), stderr=""),
+    )
     tok = await _token_from_az_cli()
     assert tok is not None and 250 < tok.expires_at - time.time() <= 300

@@ -3,6 +3,7 @@
 The texts name the tools instead of describing the data, so the agent works
 from the live answers and not from what the prompt guesses.
 """
+
 from __future__ import annotations
 
 import time
@@ -105,7 +106,8 @@ def register(server: MCPServer) -> None:
         name="investigate_denies",
         title="Investigate denied traffic",
         description="Summarise what the firewall denied, group it by destination and rule, name default-action "
-                    "denies, propose the narrowest rule for legitimate traffic and flag scanning.")
+        "denies, propose the narrowest rule for legitimate traffic and flag scanning.",
+    )
     def investigate_denies(since: str = DEFAULT_SINCE) -> str:
         return investigate_denies_text(_check_since(since))
 
@@ -113,7 +115,8 @@ def register(server: MCPServer) -> None:
         name="explain_entry",
         title="Explain one log row",
         description="Explain a buffered log row in plain words from explain_log_entry and name the criterion "
-                    "that decided it.")
+        "that decided it.",
+    )
     def explain_entry(id: str) -> str:
         try:
             row_id = int(str(id).strip())
@@ -125,7 +128,8 @@ def register(server: MCPServer) -> None:
         name="firewall_health_check",
         title="Firewall and log pipeline health check",
         description="Check the stream, the log coverage and the policy summary; report connection state, missing "
-                    "categories, auto-learn without a route server, fixed capacity and expired maintenance windows.")
+        "categories, auto-learn without a route server, fixed capacity and expired maintenance windows.",
+    )
     def firewall_health_check() -> str:
         return FIREWALL_HEALTH_CHECK_TEXT
 

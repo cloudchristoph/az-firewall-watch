@@ -5,6 +5,7 @@ raise out of the callback (that stops the partition receiver), and a
 resourceId that is not a firewall id must never reach the policy context load,
 which would send the ARM token to it.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -74,6 +75,7 @@ class Client:
 def client(monkeypatch):
     Client.events, Client.errors = [], []
     import azure.eventhub.aio as eh_aio
+
     monkeypatch.setattr(eh_aio, "EventHubConsumerClient", Client)
 
     async def _noop(*_a: Any, **_kw: Any) -> None:
@@ -98,10 +100,17 @@ def arm_loads(monkeypatch) -> list[str]:
 
 def _record(resource_id: Any, i: int = 0) -> dict:
     return {
-        "resourceId": resource_id, "category": "AZFWNetworkRule",
+        "resourceId": resource_id,
+        "category": "AZFWNetworkRule",
         "time": f"2026-09-05T08:00:0{i}Z",
-        "properties": {"Protocol": "TCP", "SourceIp": f"10.0.0.{i}", "SourcePort": 1,
-                       "DestinationIp": "10.1.0.1", "DestinationPort": 443, "Action": "Allow"},
+        "properties": {
+            "Protocol": "TCP",
+            "SourceIp": f"10.0.0.{i}",
+            "SourcePort": 1,
+            "DestinationIp": "10.1.0.1",
+            "DestinationPort": 443,
+            "Action": "Allow",
+        },
     }
 
 
@@ -159,8 +168,10 @@ async def test_request_mgmt_load_ignores_non_firewall_ids(client, arm_loads, fir
 
 
 async def test_rejected_id_never_becomes_the_subtitle(client, arm_loads, firewall_id):
-    evil = ("/SUBSCRIPTIONS/00000000-0000-0000-0000-000000000000/RESOURCEGROUPS/rg"
-            "/PROVIDERS/MICROSOFT.NETWORK/AZUREFIREWALLS/fw\x1b]8;;https://evil\x07x")
+    evil = (
+        "/SUBSCRIPTIONS/00000000-0000-0000-0000-000000000000/RESOURCEGROUPS/rg"
+        "/PROVIDERS/MICROSOFT.NETWORK/AZUREFIREWALLS/fw\x1b]8;;https://evil\x07x"
+    )
     client.events = [Event({"records": [_record(evil, 0)]})]
     app = FirewallLogApp()
     async with app.run_test(size=(140, 40)) as pilot:
@@ -193,6 +204,7 @@ async def test_connection_error_toast_is_not_parsed_as_markup(monkeypatch, clien
             raise OSError("broken [/] reply [link=https://evil]x[/link]")
 
     import azure.eventhub.aio as eh_aio
+
     monkeypatch.setattr(eh_aio, "EventHubConsumerClient", Failing)
     monkeypatch.setattr(streaming, "_BACKOFF", [0, 0, 0])
     app = FirewallLogApp()
@@ -204,19 +216,22 @@ async def test_connection_error_toast_is_not_parsed_as_markup(monkeypatch, clien
         await pilot.pause()
 
 
-@pytest.mark.parametrize("body", [
-    [],
-    {"records": 5},
-    {"records": [1]},
-    "str",
-    {"records": "abc"},
-    {"records": None},
-    {"records": [None, "x", [1]]},
-    {"records": [{"resourceId": 5, "category": []}]},
-    {"records": [{"resourceId": ["x"], "category": "AZFWNetworkRule", "properties": 3}]},
-    42,
-    None,
-])
+@pytest.mark.parametrize(
+    "body",
+    [
+        [],
+        {"records": 5},
+        {"records": [1]},
+        "str",
+        {"records": "abc"},
+        {"records": None},
+        {"records": [None, "x", [1]]},
+        {"records": [{"resourceId": 5, "category": []}]},
+        {"records": [{"resourceId": ["x"], "category": "AZFWNetworkRule", "properties": 3}]},
+        42,
+        None,
+    ],
+)
 async def test_malformed_body_does_not_stop_the_receiver(client, arm_loads, firewall_id, body):
     encoded = Event(json.dumps(body) if body == "str" else body)
     client.events = [
@@ -235,8 +250,13 @@ async def test_malformed_body_does_not_stop_the_receiver(client, arm_loads, fire
 
 
 async def test_malformed_bodies_are_counted_as_skipped(client, arm_loads, firewall_id):
-    client.events = [Event("{not json"), Event([]), Event({"records": 5}), Event({"records": [1]}),
-                     Event({"records": [_record(firewall_id, 0)]})]
+    client.events = [
+        Event("{not json"),
+        Event([]),
+        Event({"records": 5}),
+        Event({"records": [1]}),
+        Event({"records": [_record(firewall_id, 0)]}),
+    ]
     app = FirewallLogApp()
     async with app.run_test(size=(140, 40)) as pilot:
         status = app.query_one("#status", StatusBar)
@@ -253,6 +273,7 @@ async def test_connection_error_text_loses_control_chars_but_keeps_lines(monkeyp
             raise OSError("bad reply \x1b]52;c;QUJD\x07 here\nsecond \x9b31m line")
 
     import azure.eventhub.aio as eh_aio
+
     monkeypatch.setattr(eh_aio, "EventHubConsumerClient", Failing)
     monkeypatch.setattr(streaming, "_BACKOFF", [0, 0, 0])
     app = FirewallLogApp()

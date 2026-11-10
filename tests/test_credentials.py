@@ -1,4 +1,5 @@
 """Token reuse and cancellation without network access or Azure accounts."""
+
 from __future__ import annotations
 
 import asyncio

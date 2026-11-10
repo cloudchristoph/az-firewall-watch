@@ -3,6 +3,7 @@
 The real ``EventHubConsumerClient`` is replaced by ``FakeClient`` so the
 connect / probe / receive / retry / error paths run without Azure.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -33,6 +34,7 @@ SAS_CONN = (
 
 
 # ── fixtures ─────────────────────────────────────────────────────────────────
+
 
 @pytest.fixture
 def no_update_check(monkeypatch):
@@ -113,6 +115,7 @@ def fake_client(monkeypatch):
     FakeClient.instances = []
     FakeClient.script = []
     import azure.eventhub.aio as eh_aio
+
     monkeypatch.setattr(eh_aio, "EventHubConsumerClient", FakeClient)
     return FakeClient
 
@@ -127,6 +130,7 @@ class FakeCredential:
     async def get_token(self, *_scopes: str):
         class _T:
             token = "tok"
+
         return _T()
 
     async def close(self) -> None:
@@ -168,10 +172,17 @@ async def wait_for_dialog(pilot, app, cls, timeout: float = 5.0) -> None:
 def _records(firewall_id: str, n: int = 2) -> list[dict]:
     return [
         {
-            "resourceId": firewall_id, "category": "AZFWNetworkRule",
+            "resourceId": firewall_id,
+            "category": "AZFWNetworkRule",
             "time": f"2026-09-05T08:00:0{i}Z",
-            "properties": {"Protocol": "TCP", "SourceIp": f"10.0.0.{i}", "SourcePort": 1,
-                           "DestinationIp": "10.1.0.1", "DestinationPort": 443, "Action": "Allow"},
+            "properties": {
+                "Protocol": "TCP",
+                "SourceIp": f"10.0.0.{i}",
+                "SourcePort": 1,
+                "DestinationIp": "10.1.0.1",
+                "DestinationPort": 443,
+                "Action": "Allow",
+            },
         }
         for i in range(n)
     ]
@@ -182,6 +193,7 @@ def _dialog_text(screen) -> str:
 
 
 # ── no configuration ─────────────────────────────────────────────────────────
+
 
 async def test_no_credentials_sets_error_status_without_dialog(fake_client):
     app = FirewallLogApp()
@@ -199,6 +211,7 @@ async def test_no_credentials_sets_error_status_without_dialog(fake_client):
 
 
 # ── SAS happy path ───────────────────────────────────────────────────────────
+
 
 async def test_sas_connect_shows_splash_then_streams_rows(monkeypatch, fake_client, firewall_id):
     monkeypatch.setenv("EVENT_HUB_CONNECTION_STRING", SAS_CONN)
@@ -238,7 +251,9 @@ async def test_consumer_group_and_start_position_from_env(monkeypatch, fake_clie
     fake_client.script = [{"events": []}]
     app = FirewallLogApp()
     async with app.run_test(size=(140, 40)) as pilot:
-        await wait_until(pilot, lambda: bool(fake_client.instances) and fake_client.instances[0].received_position is not None)
+        await wait_until(
+            pilot, lambda: bool(fake_client.instances) and fake_client.instances[0].received_position is not None
+        )
         client = fake_client.instances[0]
         assert client.kwargs["consumer_group"] == "watchers"
         assert client.received_position == "-1"  # SDK value for "beginning of stream"
@@ -246,14 +261,22 @@ async def test_consumer_group_and_start_position_from_env(monkeypatch, fake_clie
 
 async def test_skipped_and_malformed_events_are_counted_not_displayed(monkeypatch, fake_client, firewall_id):
     monkeypatch.setenv("EVENT_HUB_CONNECTION_STRING", SAS_CONN)
-    other = {"resourceId": "/SUBSCRIPTIONS/x/PROVIDERS/MICROSOFT.NETWORK/VIRTUALNETWORKS/v",
-             "category": "AZFWNetworkRule", "time": "t", "properties": {}}
-    fake_client.script = [{"events": [
-        FakeEvent("this is not json"),
-        None,
-        FakeEvent([other, other]),
-        FakeEvent(_records(firewall_id, 1)),
-    ]}]
+    other = {
+        "resourceId": "/SUBSCRIPTIONS/x/PROVIDERS/MICROSOFT.NETWORK/VIRTUALNETWORKS/v",
+        "category": "AZFWNetworkRule",
+        "time": "t",
+        "properties": {},
+    }
+    fake_client.script = [
+        {
+            "events": [
+                FakeEvent("this is not json"),
+                None,
+                FakeEvent([other, other]),
+                FakeEvent(_records(firewall_id, 1)),
+            ]
+        }
+    ]
     app = FirewallLogApp()
     async with app.run_test(size=(140, 40)) as pilot:
         await wait_until(pilot, lambda: len(app._all_rows) == 1)
@@ -264,8 +287,12 @@ async def test_skipped_and_malformed_events_are_counted_not_displayed(monkeypatc
 
 async def test_splash_stays_until_a_real_firewall_event(monkeypatch, fake_client):
     monkeypatch.setenv("EVENT_HUB_CONNECTION_STRING", SAS_CONN)
-    other = {"resourceId": "/SUBSCRIPTIONS/x/PROVIDERS/MICROSOFT.NETWORK/VIRTUALNETWORKS/v",
-             "category": "AZFWNetworkRule", "time": "t", "properties": {}}
+    other = {
+        "resourceId": "/SUBSCRIPTIONS/x/PROVIDERS/MICROSOFT.NETWORK/VIRTUALNETWORKS/v",
+        "category": "AZFWNetworkRule",
+        "time": "t",
+        "properties": {},
+    }
     fake_client.script = [{"events": [FakeEvent([other])]}]
     app = FirewallLogApp()
     async with app.run_test(size=(140, 40)) as pilot:
@@ -279,7 +306,9 @@ async def test_paused_app_drops_incoming_events(monkeypatch, fake_client, firewa
     app = FirewallLogApp()
     app._paused = True
     async with app.run_test(size=(140, 40)) as pilot:
-        await wait_until(pilot, lambda: fake_client.instances and fake_client.instances[0].received_position is not None)
+        await wait_until(
+            pilot, lambda: fake_client.instances and fake_client.instances[0].received_position is not None
+        )
         await pilot.pause(0.3)
         assert app._pending == []
         assert app._all_rows == []
@@ -321,7 +350,11 @@ async def test_policy_context_notice_survives_first_event(monkeypatch, fake_clie
     async with app.run_test(size=(140, 40)) as pilot:
         await wait_until(pilot, lambda: _connected(app))
         # the splash is pushed *beneath* the notice, so the question is visible at once
-        assert [type(s).__name__ for s in app.screen_stack] == ["Screen", "ConnectingDialog", "PolicyContextNoticeDialog"]
+        assert [type(s).__name__ for s in app.screen_stack] == [
+            "Screen",
+            "ConnectingDialog",
+            "PolicyContextNoticeDialog",
+        ]
 
         client = fake_client.instances[0]
         await client.on_event(None, FakeEvent(_records(firewall_id, 1)))
@@ -367,6 +400,7 @@ async def test_splash_lifting_the_notice_is_not_a_decline(monkeypatch, fake_clie
 
 # ── retries and errors ───────────────────────────────────────────────────────
 
+
 async def test_transient_errors_retry_three_times_then_error_dialog(monkeypatch, fake_client):
     monkeypatch.setenv("EVENT_HUB_CONNECTION_STRING", SAS_CONN)
     fake_client.script = [{"probe": ConnectionError("name resolution failed")}] * 3
@@ -395,6 +429,7 @@ async def test_probe_timeout_is_reported_as_timeout(monkeypatch, fake_client):
             await asyncio.sleep(60)
 
     import azure.eventhub.aio as eh_aio
+
     monkeypatch.setattr(eh_aio, "EventHubConsumerClient", SlowClient)
 
     real_wait_for = asyncio.wait_for
@@ -422,7 +457,7 @@ async def test_auth_errors_do_not_retry_and_show_sas_hint(monkeypatch, fake_clie
         assert message in text
         assert "--reconfigure" in text
         status = app.query_one("#status", StatusBar)
-        assert status.eh_error == message                          # the tooltip carries the terminal error too
+        assert status.eh_error == message  # the tooltip carries the terminal error too
         assert status.eh_detail == "configuration error, see dialog"  # one try, not three
 
 
@@ -530,7 +565,10 @@ async def test_worker_cancellation_pops_splash_and_stops(monkeypatch, fake_clien
 
 # ── Entra ID path ────────────────────────────────────────────────────────────
 
-async def test_entra_connect_uses_credential_and_verifies_access(monkeypatch, fake_client, fake_credential, firewall_id):
+
+async def test_entra_connect_uses_credential_and_verifies_access(
+    monkeypatch, fake_client, fake_credential, firewall_id
+):
     monkeypatch.setenv("EVENT_HUB_NAMESPACE", "lab-ns.servicebus.windows.net")
     monkeypatch.setenv("EVENT_HUB_NAME", "firewall-logs")
     verified: list[str] = []
@@ -602,7 +640,9 @@ async def test_entra_arm_check_failure_is_ignored(monkeypatch, fake_client, fake
         assert app.query_one("#status", StatusBar).eh_state == "connected"
 
 
-async def test_entra_auth_error_shows_entra_hint_and_closes_credential_on_shutdown(monkeypatch, fake_client, fake_credential):
+async def test_entra_auth_error_shows_entra_hint_and_closes_credential_on_shutdown(
+    monkeypatch, fake_client, fake_credential
+):
     monkeypatch.setenv("EVENT_HUB_NAMESPACE", "lab-ns.servicebus.windows.net")
     monkeypatch.setenv("EVENT_HUB_NAME", "firewall-logs")
     fake_client.script = [{"probe": RuntimeError("403 Forbidden")}]
@@ -630,6 +670,7 @@ async def test_one_credential_survives_transient_failures_until_shutdown(monkeyp
 
 # ── start position ───────────────────────────────────────────────────────────
 
+
 @pytest.mark.parametrize(
     "value, expected",
     [
@@ -639,10 +680,10 @@ async def test_one_credential_survives_transient_failures_until_shutdown(monkeyp
         ("@latest", "@latest"),
         ("earliest", "-1"),
         ("Earliest ", "-1"),
-        ("@earliest", "-1"),          # SDK-style spelling; previously matched nothing
+        ("@earliest", "-1"),  # SDK-style spelling; previously matched nothing
         ("-1", "-1"),
         (None, "@latest"),
-        ("12345", "12345"),           # raw offset passed through
+        ("12345", "12345"),  # raw offset passed through
         ("2026-09-05T08:00:00Z", "2026-09-05T08:00:00Z"),
     ],
 )
@@ -652,6 +693,7 @@ def test_resolve_start_position(value, expected):
 
 # ── _error_hint ──────────────────────────────────────────────────────────────
 
+
 def test_error_hint_variants():
     assert "az role assignment create" in streaming._error_hint(PermissionError("x"), use_entra=True)
     assert "Entra ID authentication was rejected" in streaming._error_hint(RuntimeError("401"), use_entra=True)
@@ -659,6 +701,7 @@ def test_error_hint_variants():
 
 
 # ── _verify_data_plane_access ────────────────────────────────────────────────
+
 
 class _Resp(io.BytesIO):
     def __enter__(self):
@@ -679,8 +722,9 @@ def _arm_urlopen(rg_payload: Any, perm_payload: Any):
             assert "'lab-ns'" in body["query"]
             return _Resp(json.dumps(rg_payload).encode())
         # The permissions are read at the hub's scope, where a hub-only assignment is visible too.
-        assert req.full_url.endswith(f"{NS_ID}/eventhubs/firewall-logs/providers/Microsoft.Authorization/permissions"
-                                     "?api-version=2022-04-01"), req.full_url
+        assert req.full_url.endswith(
+            f"{NS_ID}/eventhubs/firewall-logs/providers/Microsoft.Authorization/permissions?api-version=2022-04-01"
+        ), req.full_url
         return _Resp(json.dumps(perm_payload).encode())
 
     _urlopen.calls = calls  # type: ignore[attr-defined]
@@ -784,7 +828,10 @@ async def test_late_missing_role_stops_active_receiver_without_retries(monkeypat
 
 
 async def test_reconnect_drains_old_access_check_and_shares_identity_with_arm(
-    monkeypatch, fake_client, fake_credential, firewall_id,
+    monkeypatch,
+    fake_client,
+    fake_credential,
+    firewall_id,
 ):
     monkeypatch.setenv("EVENT_HUB_NAMESPACE", "lab-ns.servicebus.windows.net")
     monkeypatch.setenv("EVENT_HUB_NAME", "firewall-logs")
@@ -857,6 +904,7 @@ async def test_shutdown_drains_eh_and_arm_token_borrowers_before_closing(monkeyp
             await self.kwargs["credential"].get_token("https://eventhubs.azure.net/.default")
 
     import azure.eventhub.aio as eh_aio
+
     monkeypatch.setattr(eh_aio, "EventHubConsumerClient", TokenClient)
 
     async def load(firewall_id, *, credential, **kwargs):
@@ -874,7 +922,10 @@ async def test_shutdown_drains_eh_and_arm_token_borrowers_before_closing(monkeyp
 
 @pytest.mark.parametrize("decision", ["keep", "disable", "escape", "q", "none", "off"])
 async def test_entra_arm_token_and_http_wait_for_explicit_consent(
-    monkeypatch, fake_client, firewall_id, decision,
+    monkeypatch,
+    fake_client,
+    firewall_id,
+    decision,
 ):
     monkeypatch.setenv("EVENT_HUB_NAMESPACE", "lab-ns.servicebus.windows.net")
     monkeypatch.setenv("EVENT_HUB_NAME", "firewall-logs")
@@ -897,6 +948,7 @@ async def test_entra_arm_token_and_http_wait_for_explicit_consent(
             return ["0"]
 
     import azure.eventhub.aio as eh_aio
+
     monkeypatch.setattr(eh_aio, "EventHubConsumerClient", TokenClient)
 
     async def load(firewall_id, *, credential, **kwargs):
@@ -1052,7 +1104,10 @@ async def test_revoking_arm_access_after_namespace_lookup_skips_permissions_http
 
     monkeypatch.setattr("urllib.request.urlopen", urlopen)
     await streaming._verify_data_plane_access(
-        FakeCredential(), "lab-ns.servicebus.windows.net", "firewall-logs", allowed=lambda: permitted,
+        FakeCredential(),
+        "lab-ns.servicebus.windows.net",
+        "firewall-logs",
+        allowed=lambda: permitted,
     )
     assert len(calls) == 1
     assert "Microsoft.ResourceGraph" in calls[0]
@@ -1073,7 +1128,10 @@ async def test_queued_arm_http_rechecks_revocation_before_start(monkeypatch):
     monkeypatch.setattr(streaming, "_run_in_daemon_thread", run_in_daemon_thread)
     monkeypatch.setattr("urllib.request.urlopen", lambda *args, **kwargs: calls.append(True))
     await streaming._verify_data_plane_access(
-        FakeCredential(), "lab-ns.servicebus.windows.net", "firewall-logs", allowed=lambda: permitted,
+        FakeCredential(),
+        "lab-ns.servicebus.windows.net",
+        "firewall-logs",
+        allowed=lambda: permitted,
     )
     assert calls == []
 
@@ -1089,8 +1147,9 @@ def test_abandoned_arm_request_does_not_hold_up_quitting(monkeypatch):
         return _Resp(b"{}")
 
     async def main():
-        check = asyncio.create_task(streaming._verify_data_plane_access(
-            FakeCredential(), "lab-ns.servicebus.windows.net", "firewall-logs"))
+        check = asyncio.create_task(
+            streaming._verify_data_plane_access(FakeCredential(), "lab-ns.servicebus.windows.net", "firewall-logs")
+        )
         while not started.is_set():
             await asyncio.sleep(0.01)
         check.cancel()
@@ -1135,4 +1194,3 @@ async def test_mgmt_load_builds_the_credential_only_when_arm_is_needed(monkeypat
         await wait_until(pilot, lambda: len(loads) >= 1)
     assert bool(created) is built
     assert loads[-1] == ("credential" if built else None)
-

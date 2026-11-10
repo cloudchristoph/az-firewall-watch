@@ -1,4 +1,5 @@
 """NAT gateway on the firewall subnet: fetch, orchestration, cache, rendering."""
+
 from __future__ import annotations
 
 import time
@@ -31,6 +32,7 @@ PREFIX = f"{SUB}/resourceGroups/rg-hub-network-gwc/providers/Microsoft.Network/p
 
 # ── fetch_subnet: properties.natGateway ─────────────────────────────────────
 
+
 async def test_fetch_subnet_reads_nat_gateway_id_when_present():
     arm = FakeArm({SUBNET: {"properties": {"addressPrefix": "10.2.0.0/26", "natGateway": {"id": NATGW}}}})
     subnet = await fetch_subnet(arm, SUBNET)
@@ -51,18 +53,27 @@ async def test_fetch_subnet_nat_gateway_null():
 
 # ── fetch_nat_gateway ────────────────────────────────────────────────────────
 
-@pytest.mark.parametrize("ip_key,prefix_key", [
-    ("publicIpAddresses", "publicIpPrefixes"),   # the documented NatGatewayPropertiesFormat keys
-    ("publicIPAddresses", "publicIPPrefixes"),   # the resource-type spelling, tolerated
-])
+
+@pytest.mark.parametrize(
+    "ip_key,prefix_key",
+    [
+        ("publicIpAddresses", "publicIpPrefixes"),  # the documented NatGatewayPropertiesFormat keys
+        ("publicIPAddresses", "publicIPPrefixes"),  # the resource-type spelling, tolerated
+    ],
+)
 async def test_fetch_nat_gateway_readable(ip_key, prefix_key):
-    arm = FakeArm({NATGW: {
-        "id": NATGW, "name": "natgw-hub",
-        "properties": {
-            ip_key: [{"id": PIP1}, {"id": PIP2}],
-            prefix_key: [{"id": PREFIX}],
-        },
-    }})
+    arm = FakeArm(
+        {
+            NATGW: {
+                "id": NATGW,
+                "name": "natgw-hub",
+                "properties": {
+                    ip_key: [{"id": PIP1}, {"id": PIP2}],
+                    prefix_key: [{"id": PREFIX}],
+                },
+            }
+        }
+    )
     gw = await fetch_nat_gateway(arm, NATGW, subnet_name="AzureFirewallSubnet")
     assert gw.readable is True
     assert gw.id == NATGW and gw.name == "natgw-hub" and gw.subnet_name == "AzureFirewallSubnet"
@@ -112,6 +123,7 @@ async def test_fetch_nat_gateway_unreadable_never_raises():
 
 # ── fetch_nat_gateways ───────────────────────────────────────────────────────
 
+
 async def test_fetch_nat_gateways_only_for_subnets_with_a_gateway_and_keeps_order():
     other_natgw = f"{SUB}/resourceGroups/rg-hub-network-gwc/providers/Microsoft.Network/natGateways/natgw-other"
     subnets = [
@@ -119,10 +131,12 @@ async def test_fetch_nat_gateways_only_for_subnets_with_a_gateway_and_keeps_orde
         SubnetInfo(id="/sn2", name="sn2", nat_gateway_id=other_natgw),
         SubnetInfo(id="/sn3", name="sn3", nat_gateway_id=NATGW),
     ]
-    arm = FakeArm({
-        other_natgw: {"id": other_natgw, "name": "natgw-other", "properties": {}},
-        NATGW: {"id": NATGW, "name": "natgw-hub", "properties": {}},
-    })
+    arm = FakeArm(
+        {
+            other_natgw: {"id": other_natgw, "name": "natgw-other", "properties": {}},
+            NATGW: {"id": NATGW, "name": "natgw-hub", "properties": {}},
+        }
+    )
     gateways = await fetch_nat_gateways(arm, subnets)
     assert [(g.name, g.subnet_name) for g in gateways] == [("natgw-other", "sn2"), ("natgw-hub", "sn3")]
 
@@ -136,13 +150,14 @@ async def test_fetch_nat_gateways_empty_when_no_subnet_has_a_gateway():
 # ── management orchestration ────────────────────────────────────────────────
 
 FW_ID = "/subscriptions/s/resourceGroups/rg/providers/Microsoft.Network/azureFirewalls/fw"
-FW = FirewallInfo(id=FW_ID, name="fw", subscription_id="s", resource_group="rg", location="gwc",
-                  subnet_ids=["/sn1"], policy_id="")
+FW = FirewallInfo(
+    id=FW_ID, name="fw", subscription_id="s", resource_group="rg", location="gwc", subnet_ids=["/sn1"], policy_id=""
+)
 
 
 class FakeSession:
     def __init__(self, **kw) -> None:
-        self.kw = kw   # the real session gets a connector with certifi's TLS context
+        self.kw = kw  # the real session gets a connector with certifi's TLS context
 
     async def __aenter__(self):
         return self
@@ -168,9 +183,17 @@ class FakeCredential:
 @pytest.fixture
 def world(monkeypatch):
     state: dict = {
-        "cached": None, "saved": [], "invalidated": [], "calls": [],
-        "firewall": FW, "policy": None, "groups": {}, "cidrs": ["10.2.0.0/26"],
-        "nat_gateways": [], "pips": {}, "monkeypatch": monkeypatch,
+        "cached": None,
+        "saved": [],
+        "invalidated": [],
+        "calls": [],
+        "firewall": FW,
+        "policy": None,
+        "groups": {},
+        "cidrs": ["10.2.0.0/26"],
+        "nat_gateways": [],
+        "pips": {},
+        "monkeypatch": monkeypatch,
     }
     FakeCredential.instances = []
 
@@ -209,24 +232,36 @@ def world(monkeypatch):
         return {}
 
     for name, fn in (
-        ("load", load), ("save", save), ("invalidate", invalidate),
-        ("fetch_firewall", fetch_firewall), ("fetch_subnets", fetch_subnets),
-        ("fetch_nat_gateways", fetch_nat_gateways), ("fetch_public_ips", fetch_public_ips),
-        ("fetch_diagnostic_settings", fetch_diagnostic_settings), ("fetch_maintenance", fetch_maintenance),
+        ("load", load),
+        ("save", save),
+        ("invalidate", invalidate),
+        ("fetch_firewall", fetch_firewall),
+        ("fetch_subnets", fetch_subnets),
+        ("fetch_nat_gateways", fetch_nat_gateways),
+        ("fetch_public_ips", fetch_public_ips),
+        ("fetch_diagnostic_settings", fetch_diagnostic_settings),
+        ("fetch_maintenance", fetch_maintenance),
         ("fetch_ip_groups", fetch_ip_groups),
     ):
         monkeypatch.setattr(mgmt, name, fn)
     monkeypatch.setattr(mgmt, "collect_ip_group_ids", lambda policy: [])
     monkeypatch.setattr(mgmt.aiohttp, "ClientSession", FakeSession)
     import azure.identity.aio as ident
+
     monkeypatch.setattr(ident, "DefaultAzureCredential", FakeCredential)
     return state
 
 
 async def test_management_resolves_nat_gateway_public_ips(world):
     subnet = SubnetInfo(id="/sn1", name="AzureFirewallSubnet", nat_gateway_id=NATGW)
-    gw = NatGatewayInfo(id=NATGW, name="natgw-hub", subnet_name="AzureFirewallSubnet", readable=True,
-                        public_ip_ids=[PIP1, PIP2], public_ip_names=["pip-natgw-1", "pip-natgw-2"])
+    gw = NatGatewayInfo(
+        id=NATGW,
+        name="natgw-hub",
+        subnet_name="AzureFirewallSubnet",
+        readable=True,
+        public_ip_ids=[PIP1, PIP2],
+        public_ip_names=["pip-natgw-1", "pip-natgw-2"],
+    )
     world["subnets"] = [subnet]
     world["nat_gateways"] = [gw]
     world["pips"] = {PIP1: "20.1.2.3", PIP2: "20.1.2.4"}
@@ -245,12 +280,25 @@ async def test_gateway_pip_failure_keeps_the_firewall_addresses(world):
     """The NAT gateway lookup is optional; when it raises, the firewall's own
     public IP addresses, already read, must stay on the tab."""
     from viewer.azure_resources import IpConfig
-    fw = FirewallInfo(id=FW_ID, name="fw", subscription_id="s", resource_group="rg", location="gwc",
-                      subnet_ids=["/sn1"],  # no policy: this fixture fakes no policy fetch
-                      ip_configs=[IpConfig(name="c0", public_ip_id="/fwpip", public_ip_name="pip-fw")])
+
+    fw = FirewallInfo(
+        id=FW_ID,
+        name="fw",
+        subscription_id="s",
+        resource_group="rg",
+        location="gwc",
+        subnet_ids=["/sn1"],  # no policy: this fixture fakes no policy fetch
+        ip_configs=[IpConfig(name="c0", public_ip_id="/fwpip", public_ip_name="pip-fw")],
+    )
     subnet = SubnetInfo(id="/sn1", name="AzureFirewallSubnet", nat_gateway_id=NATGW)
-    gw = NatGatewayInfo(id=NATGW, name="natgw-hub", subnet_name="AzureFirewallSubnet", readable=True,
-                        public_ip_ids=[PIP1], public_ip_names=["pip-natgw-1"])
+    gw = NatGatewayInfo(
+        id=NATGW,
+        name="natgw-hub",
+        subnet_name="AzureFirewallSubnet",
+        readable=True,
+        public_ip_ids=[PIP1],
+        public_ip_names=["pip-natgw-1"],
+    )
     world["firewall"] = fw
     world["subnets"] = [subnet]
     world["nat_gateways"] = [gw]
@@ -276,8 +324,14 @@ async def test_management_keeps_a_slot_for_every_gateway_pip(world):
     """An unreadable public IP stays as "" in its position: a partly resolved
     list must never look like the complete one."""
     subnet = SubnetInfo(id="/sn1", name="AzureFirewallSubnet", nat_gateway_id=NATGW)
-    gw = NatGatewayInfo(id=NATGW, name="natgw-hub", subnet_name="AzureFirewallSubnet", readable=True,
-                        public_ip_ids=[PIP1, PIP2], public_ip_names=["pip-natgw-1", "pip-natgw-2"])
+    gw = NatGatewayInfo(
+        id=NATGW,
+        name="natgw-hub",
+        subnet_name="AzureFirewallSubnet",
+        readable=True,
+        public_ip_ids=[PIP1, PIP2],
+        public_ip_names=["pip-natgw-1", "pip-natgw-2"],
+    )
     world["subnets"] = [subnet]
     world["nat_gateways"] = [gw]
     world["pips"] = {PIP2: "20.1.2.4"}  # only the second one is readable
@@ -293,13 +347,31 @@ async def test_management_keeps_a_slot_for_every_gateway_pip(world):
 async def test_management_asks_for_each_gateway_pip_once(world):
     """Duplicate ids across gateways, and ids the firewall lookup already covers, cost no extra GET."""
     from viewer.azure_resources import IpConfig
-    fw = FirewallInfo(id=FW_ID, name="fw", subscription_id="s", resource_group="rg", location="gwc",
-                      subnet_ids=["/sn1", "/sn2"],
-                      ip_configs=[IpConfig(name="c0", public_ip_id=PIP1, public_ip_name="pip-natgw-1")])
-    subnets = [SubnetInfo(id="/sn1", name="AzureFirewallSubnet", nat_gateway_id=NATGW),
-               SubnetInfo(id="/sn2", name="AzureFirewallManagementSubnet", nat_gateway_id=NATGW)]
-    gws = [NatGatewayInfo(id=NATGW, name="natgw-hub", subnet_name=s.name, readable=True,
-                          public_ip_ids=[PIP1, PIP2], public_ip_names=["pip-natgw-1", "pip-natgw-2"]) for s in subnets]
+
+    fw = FirewallInfo(
+        id=FW_ID,
+        name="fw",
+        subscription_id="s",
+        resource_group="rg",
+        location="gwc",
+        subnet_ids=["/sn1", "/sn2"],
+        ip_configs=[IpConfig(name="c0", public_ip_id=PIP1, public_ip_name="pip-natgw-1")],
+    )
+    subnets = [
+        SubnetInfo(id="/sn1", name="AzureFirewallSubnet", nat_gateway_id=NATGW),
+        SubnetInfo(id="/sn2", name="AzureFirewallManagementSubnet", nat_gateway_id=NATGW),
+    ]
+    gws = [
+        NatGatewayInfo(
+            id=NATGW,
+            name="natgw-hub",
+            subnet_name=s.name,
+            readable=True,
+            public_ip_ids=[PIP1, PIP2],
+            public_ip_names=["pip-natgw-1", "pip-natgw-2"],
+        )
+        for s in subnets
+    ]
     world["firewall"] = fw
     world["subnets"] = subnets
     world["nat_gateways"] = gws
@@ -315,6 +387,7 @@ async def test_management_asks_for_each_gateway_pip_once(world):
 
 # ── cache round trip (same cache_file fixture pattern as tests/test_cache.py) ─
 
+
 @pytest.fixture
 def cache_file(tmp_path: Path, monkeypatch) -> Path:
     path = tmp_path / "cache.json"
@@ -324,9 +397,16 @@ def cache_file(tmp_path: Path, monkeypatch) -> Path:
 
 def test_cache_round_trip_subnets_and_nat_gateways(cache_file):
     subnet = SubnetInfo(id="/sn1", name="AzureFirewallSubnet", cidrs=["10.2.0.0/26"], nat_gateway_id=NATGW)
-    gw = NatGatewayInfo(id=NATGW, name="natgw-hub", subnet_name="AzureFirewallSubnet", readable=True,
-                        public_ip_ids=[PIP1], public_ip_names=["pip-natgw-1"],
-                        public_ip_addresses=["20.1.2.3"], public_ip_prefix_names=["pfx-natgw"])
+    gw = NatGatewayInfo(
+        id=NATGW,
+        name="natgw-hub",
+        subnet_name="AzureFirewallSubnet",
+        readable=True,
+        public_ip_ids=[PIP1],
+        public_ip_names=["pip-natgw-1"],
+        public_ip_addresses=["20.1.2.3"],
+        public_ip_prefix_names=["pfx-natgw"],
+    )
     snap = CachedSnapshot(firewall=FW, policy=None, subnets=[subnet], nat_gateways=[gw], fetched_at=time.time())
     cache.save(FW_ID, snap)
     loaded = cache.load(FW_ID)
@@ -346,12 +426,21 @@ def test_cache_round_trip_unreadable_nat_gateway(cache_file):
 
 # ── _nat_gateway_rows rendering ──────────────────────────────────────────────
 
-HUB_FW = FirewallInfo(id="/fw", name="fw", subscription_id="s", resource_group="rg", location="gwc",
-                      sku_name="AZFW_Hub")
-VNET_FW = FirewallInfo(id="/fw", name="fw", subscription_id="s", resource_group="rg", location="gwc",
-                       sku_name="AZFW_VNet", subnet_ids=["/sn1"])
-VNET_FW_NO_SUBNET_IDS = FirewallInfo(id="/fw", name="fw", subscription_id="s", resource_group="rg", location="gwc",
-                                     sku_name="AZFW_VNet")
+HUB_FW = FirewallInfo(
+    id="/fw", name="fw", subscription_id="s", resource_group="rg", location="gwc", sku_name="AZFW_Hub"
+)
+VNET_FW = FirewallInfo(
+    id="/fw",
+    name="fw",
+    subscription_id="s",
+    resource_group="rg",
+    location="gwc",
+    sku_name="AZFW_VNet",
+    subnet_ids=["/sn1"],
+)
+VNET_FW_NO_SUBNET_IDS = FirewallInfo(
+    id="/fw", name="fw", subscription_id="s", resource_group="rg", location="gwc", sku_name="AZFW_VNet"
+)
 
 
 def test_nat_gateway_rows_hub_firewall():
@@ -368,18 +457,41 @@ def test_nat_gateway_rows_subnet_not_readable():
 
 def _vnet_fw(*, data_public: bool, forced_tunneling: bool, subnet_ids=("/sn1",)) -> FirewallInfo:
     from viewer.azure_resources import IpConfig
-    data = IpConfig(name="AzureFirewallIpConfiguration0", private_ip="10.2.0.4", subnet_id="/sn1",
-                    public_ip_id="/pip-fw" if data_public else "", public_ip_name="pip-fw" if data_public else "")
-    mgmt = IpConfig(name="AzureFirewallMgmtIpConfiguration", subnet_id="/sn2", public_ip_id="/pip-mgmt",
-                    public_ip_name="pip-mgmt") if forced_tunneling else None
-    return FirewallInfo(id="/fw", name="fw", subscription_id="s", resource_group="rg", location="gwc",
-                        sku_name="AZFW_VNet", subnet_ids=list(subnet_ids), ip_configs=[data], management_ip=mgmt)
+
+    data = IpConfig(
+        name="AzureFirewallIpConfiguration0",
+        private_ip="10.2.0.4",
+        subnet_id="/sn1",
+        public_ip_id="/pip-fw" if data_public else "",
+        public_ip_name="pip-fw" if data_public else "",
+    )
+    mgmt = (
+        IpConfig(
+            name="AzureFirewallMgmtIpConfiguration",
+            subnet_id="/sn2",
+            public_ip_id="/pip-mgmt",
+            public_ip_name="pip-mgmt",
+        )
+        if forced_tunneling
+        else None
+    )
+    return FirewallInfo(
+        id="/fw",
+        name="fw",
+        subscription_id="s",
+        resource_group="rg",
+        location="gwc",
+        sku_name="AZFW_VNet",
+        subnet_ids=list(subnet_ids),
+        ip_configs=[data],
+        management_ip=mgmt,
+    )
 
 
 def test_nat_gateway_rows_no_subnet_ids_treated_as_no_gateway():
     rows = _nat_gateway_rows(VNET_FW_NO_SUBNET_IDS, [], [])
     assert rows[0] == _row("NAT gateway", "none")
-    assert all(r.startswith(" ") for r in rows[1:])   # the qualifier as notes, no second row
+    assert all(r.startswith(" ") for r in rows[1:])  # the qualifier as notes, no second row
 
 
 def test_nat_gateway_rows_no_gateway_with_a_public_data_plane_qualifies_the_egress():
@@ -387,20 +499,26 @@ def test_nat_gateway_rows_no_gateway_with_a_public_data_plane_qualifies_the_egre
     for traffic that goes straight to the internet."""
     subnet = SubnetInfo(id="/sn1", name="AzureFirewallSubnet")
     rows = _nat_gateway_rows(_vnet_fw(data_public=True, forced_tunneling=False), [subnet], [])
-    assert rows == [_row("NAT gateway", "none"),
-                    _note("traffic routed straight to the internet leaves with the firewall's public IPs"),
-                    _note("routes to an NVA or gateway (forced tunneling) are not read here")]
+    assert rows == [
+        _row("NAT gateway", "none"),
+        _note("traffic routed straight to the internet leaves with the firewall's public IPs"),
+        _note("routes to an NVA or gateway (forced tunneling) are not read here"),
+    ]
 
 
 def test_nat_gateway_rows_private_data_plane_with_management_nic_never_names_a_firewall_public_ip():
     """Regression for the Codex finding: a private-only data NIC and a public
     management NIC (the forced-tunneling layout) must not claim egress via a firewall PIP."""
-    subnets = [SubnetInfo(id="/sn1", name="AzureFirewallSubnet"),
-               SubnetInfo(id="/sn2", name="AzureFirewallManagementSubnet")]
+    subnets = [
+        SubnetInfo(id="/sn1", name="AzureFirewallSubnet"),
+        SubnetInfo(id="/sn2", name="AzureFirewallManagementSubnet"),
+    ]
     fw = _vnet_fw(data_public=False, forced_tunneling=True, subnet_ids=("/sn1", "/sn2"))
     rows = _nat_gateway_rows(fw, subnets, [])
-    assert rows == [_row("NAT gateway", "none"),
-                    _note("the data-plane IP configurations have no public IP; egress depends on your routes")]
+    assert rows == [
+        _row("NAT gateway", "none"),
+        _note("the data-plane IP configurations have no public IP; egress depends on your routes"),
+    ]
     assert "leaves with the firewall's public IPs" not in rows[0]
 
 
@@ -418,26 +536,41 @@ def test_nat_gateway_rows_management_nic_alone_does_not_mean_forced_tunneling():
 def test_nat_gateway_rows_private_only_data_plane_without_forced_tunneling():
     subnet = SubnetInfo(id="/sn1", name="AzureFirewallSubnet")
     rows = _nat_gateway_rows(_vnet_fw(data_public=False, forced_tunneling=False), [subnet], [])
-    assert rows == [_row("NAT gateway", "none"),
-                    _note("the data-plane IP configurations have no public IP; egress depends on your routes")]
+    assert rows == [
+        _row("NAT gateway", "none"),
+        _note("the data-plane IP configurations have no public IP; egress depends on your routes"),
+    ]
 
 
-TWO_SUBNET_FW = FirewallInfo(id="/fw", name="fw", subscription_id="s", resource_group="rg", location="gwc",
-                             sku_name="AZFW_VNet", subnet_ids=["/sn1", "/sn2"])
+TWO_SUBNET_FW = FirewallInfo(
+    id="/fw",
+    name="fw",
+    subscription_id="s",
+    resource_group="rg",
+    location="gwc",
+    sku_name="AZFW_VNet",
+    subnet_ids=["/sn1", "/sn2"],
+)
 
 
 def test_nat_gateway_rows_partial_subnet_read_never_claims_none():
     """A gateway could sit on the subnet that was not readable."""
     readable = [SubnetInfo(id="/sn1", name="AzureFirewallSubnet")]
     rows = _nat_gateway_rows(TWO_SUBNET_FW, readable, [])
-    assert rows == [_row("NAT gateway", "none on the readable subnets", "1 of 2 firewall subnets not readable, "
-                         "so a gateway there would not show")]
+    assert rows == [
+        _row(
+            "NAT gateway",
+            "none on the readable subnets",
+            "1 of 2 firewall subnets not readable, so a gateway there would not show",
+        )
+    ]
 
 
 def test_nat_gateway_rows_partial_subnet_read_marks_the_list_as_possibly_incomplete():
     readable = [SubnetInfo(id="/sn1", name="AzureFirewallSubnet", nat_gateway_id=NATGW)]
-    gw = NatGatewayInfo(id=NATGW, name="natgw-hub", subnet_name="AzureFirewallSubnet", readable=True,
-                        public_ip_addresses=["20.1.2.3"])
+    gw = NatGatewayInfo(
+        id=NATGW, name="natgw-hub", subnet_name="AzureFirewallSubnet", readable=True, public_ip_addresses=["20.1.2.3"]
+    )
     rows = _nat_gateway_rows(TWO_SUBNET_FW, readable, [gw])
     assert rows[0] == _note("1 of 2 firewall subnets not readable; the list below may be incomplete")
     assert rows[1] == _row("NAT gateway", "natgw-hub on AzureFirewallSubnet")
@@ -445,29 +578,49 @@ def test_nat_gateway_rows_partial_subnet_read_marks_the_list_as_possibly_incompl
 
 def test_nat_gateway_rows_readable_with_resolved_addresses():
     subnet = SubnetInfo(id="/sn1", name="AzureFirewallSubnet", nat_gateway_id=NATGW)
-    gw = NatGatewayInfo(id=NATGW, name="natgw-hub", subnet_name="AzureFirewallSubnet", readable=True,
-                        public_ip_ids=[PIP1, PIP2], public_ip_names=["pip-natgw-1", "pip-natgw-2"],
-                        public_ip_addresses=["20.1.2.3", "20.1.2.4"])
+    gw = NatGatewayInfo(
+        id=NATGW,
+        name="natgw-hub",
+        subnet_name="AzureFirewallSubnet",
+        readable=True,
+        public_ip_ids=[PIP1, PIP2],
+        public_ip_names=["pip-natgw-1", "pip-natgw-2"],
+        public_ip_addresses=["20.1.2.3", "20.1.2.4"],
+    )
     rows = _nat_gateway_rows(VNET_FW, [subnet], [gw])
     assert len(rows) == 2
     assert "natgw-hub on AzureFirewallSubnet" in rows[0]
-    assert rows[1] == _note("traffic routed straight to the internet leaves with 20.1.2.3, 20.1.2.4; "
-                            "routes to an NVA or virtual network gateway bypass the gateway; "
-                            "DNAT and management traffic stay on the firewall's public IPs")
+    assert rows[1] == _note(
+        "traffic routed straight to the internet leaves with 20.1.2.3, 20.1.2.4; "
+        "routes to an NVA or virtual network gateway bypass the gateway; "
+        "DNAT and management traffic stay on the firewall's public IPs"
+    )
 
 
 def test_nat_gateway_rows_readable_unresolved_addresses_use_names():
     subnet = SubnetInfo(id="/sn1", name="AzureFirewallSubnet", nat_gateway_id=NATGW)
-    gw = NatGatewayInfo(id=NATGW, name="natgw-hub", subnet_name="AzureFirewallSubnet", readable=True,
-                        public_ip_ids=[PIP1], public_ip_names=["pip-natgw-1"])
+    gw = NatGatewayInfo(
+        id=NATGW,
+        name="natgw-hub",
+        subnet_name="AzureFirewallSubnet",
+        readable=True,
+        public_ip_ids=[PIP1],
+        public_ip_names=["pip-natgw-1"],
+    )
     rows = _nat_gateway_rows(VNET_FW, [subnet], [gw])
     assert "leaves with pip-natgw-1 (address not readable);" in rows[1]
 
 
 def test_nat_gateway_rows_readable_with_prefix():
     subnet = SubnetInfo(id="/sn1", name="AzureFirewallSubnet", nat_gateway_id=NATGW)
-    gw = NatGatewayInfo(id=NATGW, name="natgw-hub", subnet_name="AzureFirewallSubnet", readable=True,
-                        public_ip_addresses=["20.1.2.3"], public_ip_prefix_names=["pfx-natgw"])
+    gw = NatGatewayInfo(
+        id=NATGW,
+        name="natgw-hub",
+        subnet_name="AzureFirewallSubnet",
+        readable=True,
+        public_ip_addresses=["20.1.2.3"],
+        public_ip_prefix_names=["pfx-natgw"],
+    )
     rows = _nat_gateway_rows(VNET_FW, [subnet], [gw])
     assert "leaves with 20.1.2.3, prefix pfx-natgw;" in rows[1]
 
@@ -492,8 +645,9 @@ def test_nat_gateway_rows_not_readable():
 def test_nat_gateway_rows_several_gateways_one_row_each():
     subnet1 = SubnetInfo(id="/sn1", name="AzureFirewallSubnet", nat_gateway_id=NATGW)
     subnet2 = SubnetInfo(id="/sn2", name="AzureFirewallSubnet2", nat_gateway_id=NATGW + "2")
-    gw1 = NatGatewayInfo(id=NATGW, name="natgw-hub", subnet_name="AzureFirewallSubnet", readable=True,
-                         public_ip_addresses=["20.1.2.3"])
+    gw1 = NatGatewayInfo(
+        id=NATGW, name="natgw-hub", subnet_name="AzureFirewallSubnet", readable=True, public_ip_addresses=["20.1.2.3"]
+    )
     gw2 = NatGatewayInfo(id=NATGW + "2", name="natgw-hub2", subnet_name="AzureFirewallSubnet2", readable=False)
     rows = _nat_gateway_rows(VNET_FW, [subnet1, subnet2], [gw1, gw2])
     assert len(rows) == 4
@@ -504,8 +658,9 @@ def test_nat_gateway_rows_several_gateways_one_row_each():
 
 def test_nat_gateway_rows_names_are_escaped():
     subnet = SubnetInfo(id="/sn1", name="AzureFirewallSubnet", nat_gateway_id=NATGW)
-    gw = NatGatewayInfo(id=NATGW, name="natgw[hub]", subnet_name="AzureFirewallSubnet", readable=True,
-                        public_ip_names=["pip[red]"])
+    gw = NatGatewayInfo(
+        id=NATGW, name="natgw[hub]", subnet_name="AzureFirewallSubnet", readable=True, public_ip_names=["pip[red]"]
+    )
     rows = _nat_gateway_rows(VNET_FW, [subnet], [gw])
     assert "natgw\\[hub] on AzureFirewallSubnet" in rows[0]
     assert "pip\\[red] (address not readable)" in rows[1]

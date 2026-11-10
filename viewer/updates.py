@@ -1,4 +1,5 @@
 """GitHub release update check for the viewer TUI."""
+
 from __future__ import annotations
 
 import asyncio

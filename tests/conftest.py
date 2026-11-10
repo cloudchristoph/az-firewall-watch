@@ -1,4 +1,5 @@
 """Shared fixtures for the az-firewall-watch test suite."""
+
 from __future__ import annotations
 
 import sys

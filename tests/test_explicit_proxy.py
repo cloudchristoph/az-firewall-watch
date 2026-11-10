@@ -2,6 +2,7 @@
 
 the evaluation trace's refusal to guess a proxy port, and the detail dialog.
 """
+
 from __future__ import annotations
 
 import pytest
@@ -54,15 +55,18 @@ FW = FirewallInfo(id="/fw", name="fw-hub", subscription_id="s", resource_group="
 
 # ── policy parsing (viewer/azure_resources.py fetch_policy) ──────────────────
 
+
 async def test_explicit_proxy_all_fields_present():
-    routes = _policy_routes({
-        "enableExplicitProxy": True,
-        "httpPort": 8080,
-        "httpsPort": 8443,
-        "enablePacFile": True,
-        "pacFilePort": 8090,
-        "pacFile": "https://acct.blob.core.windows.net/c/proxy.pac?sv=2021-01-01&sig=abc123",
-    })
+    routes = _policy_routes(
+        {
+            "enableExplicitProxy": True,
+            "httpPort": 8080,
+            "httpsPort": 8443,
+            "enablePacFile": True,
+            "pacFilePort": 8090,
+            "pacFile": "https://acct.blob.core.windows.net/c/proxy.pac?sv=2021-01-01&sig=abc123",
+        }
+    )
     pol = await fetch_policy(FakeArm(routes), POLICY_ID)
     assert pol.explicit_proxy is True
     assert pol.explicit_proxy_http_port == 8080
@@ -84,13 +88,15 @@ async def test_explicit_proxy_all_fields_absent():
 
 
 async def test_explicit_proxy_ports_as_strings_or_null():
-    routes = _policy_routes({
-        "enableExplicitProxy": True,
-        "httpPort": "8080",
-        "httpsPort": None,
-        "pacFilePort": "8090",
-        "pacFile": None,
-    })
+    routes = _policy_routes(
+        {
+            "enableExplicitProxy": True,
+            "httpPort": "8080",
+            "httpsPort": None,
+            "pacFilePort": "8090",
+            "pacFile": None,
+        }
+    )
     pol = await fetch_policy(FakeArm(routes), POLICY_ID)
     assert pol.explicit_proxy_http_port == 8080
     assert pol.explicit_proxy_https_port == 0
@@ -106,6 +112,7 @@ async def test_explicit_proxy_pac_file_without_query_string_is_kept_as_is():
 
 # ── Firewall tab rows (_explicit_proxy_rows) ──────────────────────────────────
 
+
 def _policy(**kw) -> FirewallPolicyInfo:
     base = dict(id=POLICY_ID, name="fwp-hub")
     base.update(kw)
@@ -119,9 +126,13 @@ def test_proxy_off():
 
 
 def test_proxy_on_both_ports():
-    rows = _explicit_proxy_rows(_policy(
-        explicit_proxy=True, explicit_proxy_http_port=8080, explicit_proxy_https_port=8443,
-    ))
+    rows = _explicit_proxy_rows(
+        _policy(
+            explicit_proxy=True,
+            explicit_proxy_http_port=8080,
+            explicit_proxy_https_port=8443,
+        )
+    )
     assert rows[0] == _row("Explicit proxy", "on", "HTTP port 8080 · HTTPS port 8443")
     assert rows[1] == "[dim]PAC file          [/]  off"
     assert "IsExplicitProxyRequest" in rows[2]
@@ -143,18 +154,25 @@ def test_proxy_on_no_port_at_all():
 
 
 def test_pac_enabled_with_port_and_file():
-    rows = _explicit_proxy_rows(_policy(
-        explicit_proxy=True, explicit_proxy_pac=True, explicit_proxy_pac_port=8090,
-        explicit_proxy_pac_file="https://acct.blob.core.windows.net/c/proxy.pac",
-    ))
+    rows = _explicit_proxy_rows(
+        _policy(
+            explicit_proxy=True,
+            explicit_proxy_pac=True,
+            explicit_proxy_pac_port=8090,
+            explicit_proxy_pac_file="https://acct.blob.core.windows.net/c/proxy.pac",
+        )
+    )
     assert rows[1] == _row("PAC file", "on", "port 8090 · https://acct.blob.core.windows.net/c/proxy.pac")
 
 
 def test_pac_enabled_no_port():
-    rows = _explicit_proxy_rows(_policy(
-        explicit_proxy=True, explicit_proxy_pac=True,
-        explicit_proxy_pac_file="https://acct.blob.core.windows.net/c/proxy.pac",
-    ))
+    rows = _explicit_proxy_rows(
+        _policy(
+            explicit_proxy=True,
+            explicit_proxy_pac=True,
+            explicit_proxy_pac_file="https://acct.blob.core.windows.net/c/proxy.pac",
+        )
+    )
     assert rows[1] == _row("PAC file", "on", "port not set")
 
 
@@ -179,10 +197,14 @@ def test_proxy_off_has_no_note():
 
 
 def test_pac_file_url_is_escaped():
-    rows = _explicit_proxy_rows(_policy(
-        explicit_proxy=True, explicit_proxy_pac=True, explicit_proxy_pac_port=8090,
-        explicit_proxy_pac_file="https://acct.blob.core.windows.net/c/[proxy].pac",
-    ))
+    rows = _explicit_proxy_rows(
+        _policy(
+            explicit_proxy=True,
+            explicit_proxy_pac=True,
+            explicit_proxy_pac_port=8090,
+            explicit_proxy_pac_file="https://acct.blob.core.windows.net/c/[proxy].pac",
+        )
+    )
     assert "\\[proxy]" in rows[1]
     assert "[proxy]" not in rows[1].replace("\\[proxy]", "")
 
@@ -201,85 +223,157 @@ RULE_PROPS = {"Policy": "pol-hub", "RuleCollectionGroup": "rcg-app", "RuleCollec
 
 
 def test_parser_flags_from_json_booleans(structured_record):
-    row = parse_record(structured_record(
-        "AZFWApplicationRule", Protocol="HTTPS", SourceIp="10.0.1.4", DestinationPort=8080,
-        Fqdn="example.com", Action="Allow", IsExplicitProxyRequest=True, IsTlsInspected=False, **RULE_PROPS,
-    ))
+    row = parse_record(
+        structured_record(
+            "AZFWApplicationRule",
+            Protocol="HTTPS",
+            SourceIp="10.0.1.4",
+            DestinationPort=8080,
+            Fqdn="example.com",
+            Action="Allow",
+            IsExplicitProxyRequest=True,
+            IsTlsInspected=False,
+            **RULE_PROPS,
+        )
+    )
     assert row.explicit_proxy == "yes"
     assert row.tls_inspected == "no"
 
 
-@pytest.mark.parametrize("raw,expected", [("true", "yes"), ("True", "yes"), ("TRUE", "yes"),
-                                          ("false", "no"), ("False", "no"), ("FALSE", "no")])
+@pytest.mark.parametrize(
+    "raw,expected",
+    [("true", "yes"), ("True", "yes"), ("TRUE", "yes"), ("false", "no"), ("False", "no"), ("FALSE", "no")],
+)
 def test_parser_flags_from_strings_case_insensitive(structured_record, raw, expected):
-    row = parse_record(structured_record(
-        "AZFWApplicationRule", Protocol="HTTPS", SourceIp="10.0.1.4", DestinationPort=443,
-        Fqdn="example.com", Action="Allow", IsExplicitProxyRequest=raw, **RULE_PROPS,
-    ))
+    row = parse_record(
+        structured_record(
+            "AZFWApplicationRule",
+            Protocol="HTTPS",
+            SourceIp="10.0.1.4",
+            DestinationPort=443,
+            Fqdn="example.com",
+            Action="Allow",
+            IsExplicitProxyRequest=raw,
+            **RULE_PROPS,
+        )
+    )
     assert row.explicit_proxy == expected
 
 
 def test_parser_flags_absent_columns_stay_unknown(structured_record):
-    row = parse_record(structured_record(
-        "AZFWApplicationRule", Protocol="HTTPS", SourceIp="10.0.1.4", DestinationPort=443,
-        Fqdn="example.com", Action="Allow", **RULE_PROPS,
-    ))
+    row = parse_record(
+        structured_record(
+            "AZFWApplicationRule",
+            Protocol="HTTPS",
+            SourceIp="10.0.1.4",
+            DestinationPort=443,
+            Fqdn="example.com",
+            Action="Allow",
+            **RULE_PROPS,
+        )
+    )
     assert row.explicit_proxy == ""
     assert row.tls_inspected == ""
 
 
 def test_parser_flags_unexpected_value_stays_unknown(structured_record):
-    row = parse_record(structured_record(
-        "AZFWApplicationRule", Protocol="HTTPS", SourceIp="10.0.1.4", DestinationPort=443,
-        Fqdn="example.com", Action="Allow", IsExplicitProxyRequest="maybe", **RULE_PROPS,
-    ))
+    row = parse_record(
+        structured_record(
+            "AZFWApplicationRule",
+            Protocol="HTTPS",
+            SourceIp="10.0.1.4",
+            DestinationPort=443,
+            Fqdn="example.com",
+            Action="Allow",
+            IsExplicitProxyRequest="maybe",
+            **RULE_PROPS,
+        )
+    )
     assert row.explicit_proxy == ""
 
 
 def test_apprule_no_rule_matched_uses_action_reason(structured_record):
     """Denied-by-default-action AppRule rows must show the reason, like NetworkRule rows do."""
-    row = parse_record(structured_record(
-        "AZFWApplicationRule", Protocol="HTTPS", SourceIp="10.0.1.4", DestinationPort=443,
-        Fqdn="example.com", Action="Deny", ActionReason="No rule matched. Proceeding with default action.",
-    ))
+    row = parse_record(
+        structured_record(
+            "AZFWApplicationRule",
+            Protocol="HTTPS",
+            SourceIp="10.0.1.4",
+            DestinationPort=443,
+            Fqdn="example.com",
+            Action="Deny",
+            ActionReason="No rule matched. Proceeding with default action.",
+        )
+    )
     assert row.policy == "No rule matched. Proceeding with default action."
     assert row.rule_collection_group == ""
 
 
 def test_apprule_without_rule_and_without_reason_keeps_the_policy_name(structured_record):
     """Before 0.6.0 the cell showed the policy name in this case; the reason must not cost it."""
-    row = parse_record(structured_record(
-        "AZFWApplicationRule", Protocol="HTTPS", SourceIp="10.0.1.4", DestinationPort=443,
-        Fqdn="example.com", Action="Deny", Policy="pol-hub",
-    ))
+    row = parse_record(
+        structured_record(
+            "AZFWApplicationRule",
+            Protocol="HTTPS",
+            SourceIp="10.0.1.4",
+            DestinationPort=443,
+            Fqdn="example.com",
+            Action="Deny",
+            Policy="pol-hub",
+        )
+    )
     assert row.policy == "pol-hub"
 
 
 def test_apprule_with_a_partial_rule_path_keeps_what_the_record_carries(structured_record):
     """RuleCollection and Rule without RuleCollectionGroup are still rule details, not a reason."""
-    row = parse_record(structured_record(
-        "AZFWApplicationRule", Protocol="HTTPS", SourceIp="10.0.1.4", DestinationPort=443,
-        Fqdn="example.com", Action="Allow", Policy="pol-hub", RuleCollection="rc-web", Rule="allow-web",
-        ActionReason="should not replace the rule path",
-    ))
+    row = parse_record(
+        structured_record(
+            "AZFWApplicationRule",
+            Protocol="HTTPS",
+            SourceIp="10.0.1.4",
+            DestinationPort=443,
+            Fqdn="example.com",
+            Action="Allow",
+            Policy="pol-hub",
+            RuleCollection="rc-web",
+            Rule="allow-web",
+            ActionReason="should not replace the rule path",
+        )
+    )
     assert row.policy == "pol-hub»rc-web»allow-web"
 
 
 def test_apprule_with_rule_still_builds_the_usual_policy_path(structured_record):
-    row = parse_record(structured_record(
-        "AZFWApplicationRule", Protocol="HTTPS", SourceIp="10.0.1.4", DestinationPort=443,
-        Fqdn="example.com", Action="Allow", **RULE_PROPS,
-    ))
+    row = parse_record(
+        structured_record(
+            "AZFWApplicationRule",
+            Protocol="HTTPS",
+            SourceIp="10.0.1.4",
+            DestinationPort=443,
+            Fqdn="example.com",
+            Action="Allow",
+            **RULE_PROPS,
+        )
+    )
     assert row.policy == "pol-hub»rcg-app»rc-web»allow-web"
 
 
 # ── evaluation trace: _port_check / evaluate_rule ─────────────────────────────
 
+
 def _app_rule(**kw):
-    base = dict(name="r", rule_type="ApplicationRule", source_addresses=["*"],
-                destination_fqdns=["example.com"], protocols=["Https"], destination_ports=["443"])
+    base = dict(
+        name="r",
+        rule_type="ApplicationRule",
+        source_addresses=["*"],
+        destination_fqdns=["example.com"],
+        protocols=["Https"],
+        destination_ports=["443"],
+    )
     base.update(kw)
     from viewer.azure_resources import Rule
+
     return Rule(**base)
 
 
@@ -288,9 +382,16 @@ def _app_rule(**kw):
 # the log carries the destination port, not the proxy port, and a TLS-inspected
 # request is logged as Protocol "HTTP/1.1" with IsTlsInspected true.
 
+
 def test_proxied_http_row_compares_the_destination_port():
-    flow = Flow(category="AppRule", protocol="HTTP/1.1", src_ip="10.3.8.4", dst_fqdn="httpbin.org",
-                dst_port="80", explicit_proxy=True)
+    flow = Flow(
+        category="AppRule",
+        protocol="HTTP/1.1",
+        src_ip="10.3.8.4",
+        dst_fqdn="httpbin.org",
+        dst_port="80",
+        explicit_proxy=True,
+    )
     rule = _app_rule(destination_fqdns=["httpbin.org"], protocols=["Http", "Https"], destination_ports=["80", "443"])
     r = evaluate_rule(rule, flow, {})
     port_check = next(c for c in r.checks if c.name == "port")
@@ -299,8 +400,15 @@ def test_proxied_http_row_compares_the_destination_port():
 
 
 def test_proxied_connect_row_is_https_for_the_rule():
-    flow = Flow(category="AppRule", protocol="HTTP/1.1", src_ip="10.3.8.4", dst_fqdn="httpbin.org",
-                dst_port="443", explicit_proxy=True, tls_inspected=True)
+    flow = Flow(
+        category="AppRule",
+        protocol="HTTP/1.1",
+        src_ip="10.3.8.4",
+        dst_fqdn="httpbin.org",
+        dst_port="443",
+        explicit_proxy=True,
+        tls_inspected=True,
+    )
     rule = _app_rule(destination_fqdns=["httpbin.org"], protocols=["Https"], destination_ports=["443"])
     r = evaluate_rule(rule, flow, {})
     checks = {c.name: c for c in r.checks}
@@ -311,8 +419,14 @@ def test_proxied_connect_row_is_https_for_the_rule():
 
 
 def test_proxied_row_with_the_wrong_port_is_a_miss_that_names_the_proxy():
-    flow = Flow(category="AppRule", protocol="HTTP/1.1", src_ip="10.3.8.4", dst_fqdn="httpbin.org",
-                dst_port="8080", explicit_proxy=True)
+    flow = Flow(
+        category="AppRule",
+        protocol="HTTP/1.1",
+        src_ip="10.3.8.4",
+        dst_fqdn="httpbin.org",
+        dst_port="8080",
+        explicit_proxy=True,
+    )
     rule = _app_rule(destination_fqdns=["httpbin.org"], protocols=["Http"], destination_ports=["80"])
     port_check = next(c for c in evaluate_rule(rule, flow, {}).checks if c.name == "port")
     assert port_check.result == MISS and port_check.detail == "8080 not in 80 (via explicit proxy)"
@@ -320,8 +434,14 @@ def test_proxied_row_with_the_wrong_port_is_a_miss_that_names_the_proxy():
 
 def test_transparent_tls_inspected_row_matches_an_https_only_rule():
     """Before this fix the inspected row's HTTP/1.1 was a confident miss on a Https rule."""
-    flow = Flow(category="AppRule", protocol="HTTP/1.1", src_ip="10.3.8.4", dst_fqdn="httpbin.org",
-                dst_port="443", tls_inspected=True)
+    flow = Flow(
+        category="AppRule",
+        protocol="HTTP/1.1",
+        src_ip="10.3.8.4",
+        dst_fqdn="httpbin.org",
+        dst_port="443",
+        tls_inspected=True,
+    )
     rule = _app_rule(destination_fqdns=["httpbin.org"], protocols=["Https"], destination_ports=["443"])
     r = evaluate_rule(rule, flow, {})
     assert r.verdict == MATCH
@@ -332,30 +452,51 @@ def test_unknown_tls_flag_is_a_question_mark_where_it_would_decide():
     """The legacy properties.msg format has no IsTlsInspected column: an HTTP
     row there may be an inspected HTTPS request, and a rule that treats the
     two differently gets neither a match nor a miss."""
-    flow = Flow(category="AppRule", protocol="HTTP/1.1", src_ip="10.3.8.4", dst_fqdn="httpbin.org",
-                dst_port="443", tls_inspected=None)
+    flow = Flow(
+        category="AppRule",
+        protocol="HTTP/1.1",
+        src_ip="10.3.8.4",
+        dst_fqdn="httpbin.org",
+        dst_port="443",
+        tls_inspected=None,
+    )
     for protocols in (["Https"], ["Http"]):
         rule = _app_rule(destination_fqdns=["httpbin.org"], protocols=protocols, destination_ports=["443"])
         proto = next(c for c in evaluate_rule(rule, flow, {}).checks if c.name == "protocol")
         assert proto.result == UNKNOWN, protocols
-        assert proto.detail == "HTTP/1.1 logged, IsTlsInspected not in this log: an inspected HTTPS request looks the same"
+        assert (
+            proto.detail == "HTTP/1.1 logged, IsTlsInspected not in this log: an inspected HTTPS request looks the same"
+        )
     # both protocols on the rule: the flag would not change the answer
     rule = _app_rule(destination_fqdns=["httpbin.org"], protocols=["Http", "Https"], destination_ports=["443"])
     proto = next(c for c in evaluate_rule(rule, flow, {}).checks if c.name == "protocol")
     assert proto.result == MATCH and proto.detail == "HTTP"
     # an explicit "no" is still a plain HTTP row
-    plain = Flow(category="AppRule", protocol="HTTP/1.1", src_ip="10.3.8.4", dst_fqdn="httpbin.org",
-                 dst_port="443", tls_inspected=False)
+    plain = Flow(
+        category="AppRule",
+        protocol="HTTP/1.1",
+        src_ip="10.3.8.4",
+        dst_fqdn="httpbin.org",
+        dst_port="443",
+        tls_inspected=False,
+    )
     rule = _app_rule(destination_fqdns=["httpbin.org"], protocols=["Https"], destination_ports=["443"])
     assert next(c for c in evaluate_rule(rule, plain, {}).checks if c.name == "protocol").result == MISS
 
 
 def test_flow_from_row_keeps_the_unknown_tls_flag(structured_record):
     from viewer.app import FirewallLogApp
-    yes = parse_record(structured_record("AZFWApplicationRule", Protocol="HTTP/1.1", Fqdn="a.example",
-                                         IsTlsInspected=True, **RULE_PROPS))
-    no = parse_record(structured_record("AZFWApplicationRule", Protocol="HTTP/1.1", Fqdn="a.example",
-                                        IsTlsInspected=False, **RULE_PROPS))
+
+    yes = parse_record(
+        structured_record(
+            "AZFWApplicationRule", Protocol="HTTP/1.1", Fqdn="a.example", IsTlsInspected=True, **RULE_PROPS
+        )
+    )
+    no = parse_record(
+        structured_record(
+            "AZFWApplicationRule", Protocol="HTTP/1.1", Fqdn="a.example", IsTlsInspected=False, **RULE_PROPS
+        )
+    )
     absent = parse_record(structured_record("AZFWApplicationRule", Protocol="HTTP/1.1", Fqdn="a.example", **RULE_PROPS))
     assert FirewallLogApp._flow_from_row(yes).tls_inspected is True
     assert FirewallLogApp._flow_from_row(no).tls_inspected is False
@@ -363,8 +504,14 @@ def test_flow_from_row_keeps_the_unknown_tls_flag(structured_record):
 
 
 def test_tls_inspected_row_misses_an_http_only_rule():
-    flow = Flow(category="AppRule", protocol="HTTP/1.1", src_ip="10.3.8.4", dst_fqdn="httpbin.org",
-                dst_port="443", tls_inspected=True)
+    flow = Flow(
+        category="AppRule",
+        protocol="HTTP/1.1",
+        src_ip="10.3.8.4",
+        dst_fqdn="httpbin.org",
+        dst_port="443",
+        tls_inspected=True,
+    )
     rule = _app_rule(destination_fqdns=["httpbin.org"], protocols=["Http"], destination_ports=["443"])
     proto = next(c for c in evaluate_rule(rule, flow, {}).checks if c.name == "protocol")
     assert proto.result == MISS and proto.detail == "HTTP/1.1 (TLS inspected, so HTTPS) not in Http"
@@ -378,8 +525,14 @@ def test_plain_http_row_without_inspection_still_misses_an_https_only_rule():
 
 
 def test_port_check_normal_when_proxy_flag_is_off():
-    flow = Flow(category="AppRule", protocol="HTTPS", src_ip="10.3.5.4", dst_fqdn="example.com",
-                dst_port="443", explicit_proxy=False)
+    flow = Flow(
+        category="AppRule",
+        protocol="HTTPS",
+        src_ip="10.3.5.4",
+        dst_fqdn="example.com",
+        dst_port="443",
+        explicit_proxy=False,
+    )
     rule = _app_rule(destination_ports=["443"])
     r = evaluate_rule(rule, flow, {})
     port_check = next(c for c in r.checks if c.name == "port")
@@ -397,8 +550,10 @@ def test_port_check_no_port_in_log_is_still_na_not_the_proxy_message():
 
 # ── app-level: detail dialog shows the explicit-proxy fields ─────────────────
 
+
 def _text(widget) -> str:
     from textual.widgets import Static
+
     return "\n".join(str(s.content) for s in widget.query(Static))
 
 
@@ -410,11 +565,19 @@ async def test_detail_dialog_shows_explicit_proxy_fields(structured_record, fire
     app = FirewallLogApp()
     async with app.run_test(size=(160, 45)) as pilot:
         await pilot.pause()
-        row = parse_record(structured_record(
-            "AZFWApplicationRule", Protocol="HTTPS", SourceIp="10.3.5.4", SourcePort=1,
-            Fqdn="example.com", DestinationPort=8080, Action="Allow",
-            IsExplicitProxyRequest=True, IsTlsInspected=False,
-        ))
+        row = parse_record(
+            structured_record(
+                "AZFWApplicationRule",
+                Protocol="HTTPS",
+                SourceIp="10.3.5.4",
+                SourcePort=1,
+                Fqdn="example.com",
+                DestinationPort=8080,
+                Action="Allow",
+                IsExplicitProxyRequest=True,
+                IsTlsInspected=False,
+            )
+        )
         assert row is not None and row.explicit_proxy == "yes" and row.tls_inspected == "no"
         app._pending.append(row)
         await app._flush_rows()

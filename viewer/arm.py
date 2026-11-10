@@ -6,6 +6,7 @@ credential cannot acquire a token. This keeps the policy context working for use
 who configured the app with a SAS connection string but have the Azure CLI
 logged in locally.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -141,15 +142,17 @@ class ArmClient:
 
             cli_tok = await _token_from_az_cli()
             if cli_tok is None:
-                raise ArmError(401, "NoCredential",
-                               "No ARM credential available "
-                               "(DefaultAzureCredential failed and `az` CLI not logged in).")
+                raise ArmError(
+                    401,
+                    "NoCredential",
+                    "No ARM credential available (DefaultAzureCredential failed and `az` CLI not logged in).",
+                )
             self._token = cli_tok
             return cli_tok.value
 
-    async def _request(self, method: str, url: str, *,
-                       params: dict[str, str] | None = None,
-                       json_body: dict | None = None) -> dict:
+    async def _request(
+        self, method: str, url: str, *, params: dict[str, str] | None = None, json_body: dict | None = None
+    ) -> dict:
         url = self._url(url)  # raises before the token is acquired, for any caller
         token = await self._get_token()
         headers = {"Authorization": f"Bearer {token}", "Accept": "application/json"}
@@ -157,7 +160,11 @@ class ArmClient:
             headers["Content-Type"] = "application/json"
         try:
             async with self._session.request(
-                method, url, headers=headers, params=params, json=json_body,
+                method,
+                url,
+                headers=headers,
+                params=params,
+                json=json_body,
                 timeout=aiohttp.ClientTimeout(total=20),
             ) as resp:
                 text = await resp.text()
@@ -175,8 +182,7 @@ class ArmClient:
         except aiohttp.ClientError as exc:
             raise ArmError(0, "Transport", str(exc)) from exc
 
-    async def get(self, resource_id_or_path: str, api_version: str,
-                  *, params: dict[str, str] | None = None) -> dict:
+    async def get(self, resource_id_or_path: str, api_version: str, *, params: dict[str, str] | None = None) -> dict:
         """GET an ARM resource by resource ID (or absolute path starting with '/')."""
         url = self._url(resource_id_or_path)
         merged: dict[str, str] = {"api-version": api_version}
@@ -184,8 +190,9 @@ class ArmClient:
             merged.update(params)
         return await self._request("GET", url, params=merged)
 
-    async def get_all(self, resource_id_or_path: str, api_version: str,
-                      *, params: dict[str, str] | None = None) -> list[dict]:
+    async def get_all(
+        self, resource_id_or_path: str, api_version: str, *, params: dict[str, str] | None = None
+    ) -> list[dict]:
         """Paginated GET returning the concatenated ``value`` arrays."""
         first = await self.get(resource_id_or_path, api_version, params=params)
         items: list[dict] = list(first.get("value") or [])
@@ -211,8 +218,12 @@ class ArmClient:
             raise _untrusted(resource_id_or_path)
         if "://" in resource_id_or_path:
             parts = urlsplit(resource_id_or_path)
-            if (parts.scheme.lower() != "https" or parts.netloc.lower() not in (_ARM_HOST, f"{_ARM_HOST}:443")
-                    or parts.fragment or "#" in resource_id_or_path):
+            if (
+                parts.scheme.lower() != "https"
+                or parts.netloc.lower() not in (_ARM_HOST, f"{_ARM_HOST}:443")
+                or parts.fragment
+                or "#" in resource_id_or_path
+            ):
                 raise _untrusted(resource_id_or_path)
             path, query = parts.path, parts.query
         else:

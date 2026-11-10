@@ -1,4 +1,5 @@
 """Orchestration of cache + ARM fetches (viewer/management.py) with everything faked."""
+
 from __future__ import annotations
 
 import asyncio
@@ -14,8 +15,15 @@ from viewer.azure_resources import FirewallInfo, FirewallPolicyInfo, IpGroupInfo
 from viewer.cache import CachedSnapshot
 
 FW_ID = "/subscriptions/s/resourceGroups/rg/providers/Microsoft.Network/azureFirewalls/fw"
-FW = FirewallInfo(id=FW_ID, name="fw", subscription_id="s", resource_group="rg", location="gwc",
-                  subnet_ids=["/sn1", "/sn2"], policy_id="/p")
+FW = FirewallInfo(
+    id=FW_ID,
+    name="fw",
+    subscription_id="s",
+    resource_group="rg",
+    location="gwc",
+    subnet_ids=["/sn1", "/sn2"],
+    policy_id="/p",
+)
 POLICY = FirewallPolicyInfo(id="/p", name="pol", sku_tier="Premium")
 GROUPS = {"/g": IpGroupInfo(id="/g", name="grp", location="gwc", ip_addresses=["10.0.0.0/8"])}
 
@@ -24,7 +32,7 @@ class FakeSession:
     instances: list[FakeSession] = []
 
     def __init__(self, **kw: Any) -> None:
-        self.kw = kw   # the real session gets a connector with certifi's TLS context
+        self.kw = kw  # the real session gets a connector with certifi's TLS context
         FakeSession.instances.append(self)
 
     async def __aenter__(self):
@@ -52,8 +60,14 @@ class FakeCredential:
 def world(monkeypatch):
     """Fake every collaborator; returns a dict to tweak behaviour and inspect calls."""
     state: dict[str, Any] = {
-        "cached": None, "saved": [], "invalidated": [], "calls": [],
-        "firewall": FW, "policy": POLICY, "groups": GROUPS, "cidrs": ["10.2.0.0/26"],
+        "cached": None,
+        "saved": [],
+        "invalidated": [],
+        "calls": [],
+        "firewall": FW,
+        "policy": POLICY,
+        "groups": GROUPS,
+        "cidrs": ["10.2.0.0/26"],
     }
     FakeCredential.instances = []
 
@@ -89,8 +103,11 @@ def world(monkeypatch):
 
     async def fetch_subnets(arm, ids):
         state["calls"].append(("cidrs", ids))
-        return [SubnetInfo(id=sid, name=sid.rsplit("/", 1)[-1], cidrs=list(state["cidrs"]))
-                for sid in ids[:1]] if state["cidrs"] else []
+        return (
+            [SubnetInfo(id=sid, name=sid.rsplit("/", 1)[-1], cidrs=list(state["cidrs"])) for sid in ids[:1]]
+            if state["cidrs"]
+            else []
+        )
 
     async def fetch_nat_gateways(arm, subnets):
         state["calls"].append(("natgw", [s.id for s in subnets]))
@@ -114,11 +131,19 @@ def world(monkeypatch):
             raise state["diag"]
         return state.get("diag") or []
 
-    for name, fn in (("load", load), ("save", save), ("invalidate", invalidate),
-                     ("fetch_firewall", fetch_firewall), ("fetch_policy", fetch_policy),
-                     ("fetch_ip_groups", fetch_ip_groups), ("fetch_subnets", fetch_subnets),
-                     ("fetch_nat_gateways", fetch_nat_gateways), ("fetch_maintenance", fetch_maintenance),
-                     ("fetch_public_ips", fetch_public_ips), ("fetch_diagnostic_settings", fetch_diagnostic_settings)):
+    for name, fn in (
+        ("load", load),
+        ("save", save),
+        ("invalidate", invalidate),
+        ("fetch_firewall", fetch_firewall),
+        ("fetch_policy", fetch_policy),
+        ("fetch_ip_groups", fetch_ip_groups),
+        ("fetch_subnets", fetch_subnets),
+        ("fetch_nat_gateways", fetch_nat_gateways),
+        ("fetch_maintenance", fetch_maintenance),
+        ("fetch_public_ips", fetch_public_ips),
+        ("fetch_diagnostic_settings", fetch_diagnostic_settings),
+    ):
         monkeypatch.setattr(mgmt, name, fn)
     monkeypatch.setattr(mgmt, "collect_ip_group_ids", lambda policy: ["/g"])
     monkeypatch.setattr(mgmt.aiohttp, "ClientSession", FakeSession)
@@ -135,7 +160,7 @@ async def test_fresh_cache_hit_skips_arm(world):
 
 
 async def test_stale_cache_triggers_full_fetch_and_save(world):
-    world["cached"] = CachedSnapshot(firewall=FW, policy=POLICY, fetched_at=time.time() - 10 ** 6)
+    world["cached"] = CachedSnapshot(firewall=FW, policy=POLICY, fetched_at=time.time() - 10**6)
     snap = await mgmt.load_management_data(FW_ID)
     assert snap is not world["cached"]
     assert snap.firewall is FW and snap.policy is POLICY
@@ -177,8 +202,12 @@ async def test_firewall_fetch_failure_names_its_reason(world):
     """The caller gets the ArmError text, so the interface can say what failed
     (a TLS verification failure, a 403, an unreachable host) instead of the
     bare "no ARM access" the 0.6.0 binary showed."""
-    world["firewall"] = ArmError(0, "Transport", "Cannot connect to host management.azure.com:443 ssl:True "
-                                 "[SSLCertVerificationError: certificate verify failed]")
+    world["firewall"] = ArmError(
+        0,
+        "Transport",
+        "Cannot connect to host management.azure.com:443 ssl:True "
+        "[SSLCertVerificationError: certificate verify failed]",
+    )
     errors: list[str] = []
     assert await mgmt.load_management_data(FW_ID, errors=errors) is None
     assert len(errors) == 1 and "certificate verify failed" in errors[0] and "Transport" in errors[0]
@@ -219,23 +248,30 @@ async def test_ip_group_failure_is_tolerated(world):
 
 async def test_public_ips_and_diagnostics_are_fetched_and_tolerated(world):
     from viewer.azure_resources import DiagnosticSetting, IpConfig
-    fw = FirewallInfo(id=FW_ID, name="fw", subscription_id="s", resource_group="rg", location="gwc",
-                      ip_configs=[IpConfig(name="c0", private_ip="10.2.0.4", public_ip_id="/pip0")],
-                      management_ip=IpConfig(name="m", public_ip_id="/pipm"))
+
+    fw = FirewallInfo(
+        id=FW_ID,
+        name="fw",
+        subscription_id="s",
+        resource_group="rg",
+        location="gwc",
+        ip_configs=[IpConfig(name="c0", private_ip="10.2.0.4", public_ip_id="/pip0")],
+        management_ip=IpConfig(name="m", public_ip_id="/pipm"),
+    )
     world["firewall"] = fw
     world["pips"] = {"/pip0": "72.144.131.50"}
     world["diag"] = [DiagnosticSetting(name="d", event_hub="ns/hub", categories=["AZFWNetworkRule"])]
     snap = await mgmt.load_management_data(FW_ID)
     assert ("pips", ["/pip0", "/pipm"]) in world["calls"] and ("diag", FW_ID) in world["calls"]
     assert snap.firewall.ip_configs[0].public_ip_address == "72.144.131.50"
-    assert snap.firewall.management_ip.public_ip_address == ""          # not resolvable → empty
+    assert snap.firewall.management_ip.public_ip_address == ""  # not resolvable → empty
     assert snap.diagnostics[0].event_hub == "ns/hub"
 
     world["cached"] = None
     world["pips"] = ArmError(403, "AuthorizationFailed", "no")
     world["diag"] = ArmError(403, "AuthorizationFailed", "no")
     snap = await mgmt.load_management_data(FW_ID, force=True)
-    assert snap is not None and snap.diagnostics == []                   # both are optional extras
+    assert snap is not None and snap.diagnostics == []  # both are optional extras
 
 
 async def test_firewall_without_policy(world):

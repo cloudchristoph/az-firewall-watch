@@ -4,6 +4,7 @@ The Event Hub keys are the ones the setup wizard writes for the TUI, so an
 existing installation needs no second configuration. Command-line options win
 over environment variables, which win over the defaults.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -37,21 +38,31 @@ def build_arg_parser() -> argparse.ArgumentParser:
         prog="az-firewall-watch --mcp",
         description="Serve the Azure Firewall log stream and policy context to MCP clients (read-only).",
     )
-    parser.add_argument("--transport", choices=TRANSPORTS, default=None,
-                        help="stdio (default) or http (streamable HTTP on --host/--port, path /mcp, no authentication)")
+    parser.add_argument(
+        "--transport",
+        choices=TRANSPORTS,
+        default=None,
+        help="stdio (default) or http (streamable HTTP on --host/--port, path /mcp, no authentication)",
+    )
     parser.add_argument("--host", default=None, help=f"HTTP transport only (default {DEFAULT_HOST})")
     parser.add_argument("--port", type=int, default=None, help=f"HTTP transport only (default {DEFAULT_PORT})")
     parser.add_argument("--env-file", default=None, help="read settings from this file instead of .env next to the app")
     group = parser.add_mutually_exclusive_group()
-    group.add_argument("--no-policy-context", action="store_true",
-                       help="no ARM access: logs only, no firewall, policy or trace")
+    group.add_argument(
+        "--no-policy-context", action="store_true", help="no ARM access: logs only, no firewall, policy or trace"
+    )
     group.add_argument("--policy-context", action="store_true", help="force the policy context on")
-    parser.add_argument("--firewall-id", default=None,
-                        help="load the policy context for this firewall at start instead of waiting for the first log")
-    parser.add_argument("--buffer-size", type=int, default=None,
-                        help=f"log rows kept in memory (default {DEFAULT_BUFFER_SIZE})")
-    parser.add_argument("--log-level", type=str.upper, choices=LOG_LEVELS, default=None,
-                        help="stderr log level (default INFO)")
+    parser.add_argument(
+        "--firewall-id",
+        default=None,
+        help="load the policy context for this firewall at start instead of waiting for the first log",
+    )
+    parser.add_argument(
+        "--buffer-size", type=int, default=None, help=f"log rows kept in memory (default {DEFAULT_BUFFER_SIZE})"
+    )
+    parser.add_argument(
+        "--log-level", type=str.upper, choices=LOG_LEVELS, default=None, help="stderr log level (default INFO)"
+    )
     # The TUI's entry point passes its own switch through; accept it silently.
     parser.add_argument("--mcp", action="store_true", help=argparse.SUPPRESS)
     return parser
@@ -93,22 +104,28 @@ class ServerConfig:
         log_level = (args.log_level or environ.get("AZFW_MCP_LOG_LEVEL") or "INFO").strip().upper()
         if log_level not in LOG_LEVELS:
             raise ValueError(f"AZFW_MCP_LOG_LEVEL must be one of {', '.join(LOG_LEVELS)}, got {log_level!r}.")
-        buffer_size = _int_setting("AZFW_MCP_BUFFER_SIZE",
-                                   args.buffer_size if args.buffer_size is not None
-                                   else environ.get("AZFW_MCP_BUFFER_SIZE"), DEFAULT_BUFFER_SIZE)
+        buffer_size = _int_setting(
+            "AZFW_MCP_BUFFER_SIZE",
+            args.buffer_size if args.buffer_size is not None else environ.get("AZFW_MCP_BUFFER_SIZE"),
+            DEFAULT_BUFFER_SIZE,
+        )
         if not MIN_BUFFER_SIZE <= buffer_size <= MAX_BUFFER_SIZE:
-            raise ValueError(f"The buffer size must be between {MIN_BUFFER_SIZE} and {MAX_BUFFER_SIZE}, "
-                             f"got {buffer_size}.")
-        port = _int_setting("AZFW_MCP_PORT", args.port if args.port is not None else environ.get("AZFW_MCP_PORT"),
-                            DEFAULT_PORT)
+            raise ValueError(
+                f"The buffer size must be between {MIN_BUFFER_SIZE} and {MAX_BUFFER_SIZE}, got {buffer_size}."
+            )
+        port = _int_setting(
+            "AZFW_MCP_PORT", args.port if args.port is not None else environ.get("AZFW_MCP_PORT"), DEFAULT_PORT
+        )
         if not 1 <= port <= 65535:
             raise ValueError(f"The HTTP port must be between 1 and 65535, got {port}.")
         host = (args.host or environ.get("AZFW_MCP_HOST") or DEFAULT_HOST).strip()
         firewall_id = (args.firewall_id or environ.get("AZFW_FIREWALL_ID") or "").strip() or None
         if firewall_id is not None and not is_firewall_resource_id(firewall_id):
-            raise ValueError("AZFW_FIREWALL_ID must be an Azure Firewall resource id "
-                             "(/subscriptions/<guid>/resourceGroups/<rg>/providers/Microsoft.Network/"
-                             "azureFirewalls/<name>), nothing else.")
+            raise ValueError(
+                "AZFW_FIREWALL_ID must be an Azure Firewall resource id "
+                "(/subscriptions/<guid>/resourceGroups/<rg>/providers/Microsoft.Network/"
+                "azureFirewalls/<name>), nothing else."
+            )
         return cls(
             eventhub=EventHubSettings.from_env(environ),
             policy_context=enabled,

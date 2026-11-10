@@ -6,6 +6,7 @@ counter also advances for skipped records, and a cursor that an agent holds
 must stay meaningful after the buffer has been trimmed or cleared. Because
 ids are consecutive inside the deque, a lookup by id is an index computation.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -13,7 +14,7 @@ import time
 from collections import Counter, deque
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from fw_parser import FirewallDataRow
@@ -40,7 +41,7 @@ def parse_log_time(ts: str) -> float | None:
     except ValueError:
         return None
     if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=timezone.utc)
+        dt = dt.replace(tzinfo=UTC)
     return dt.timestamp()
 
 
@@ -73,11 +74,11 @@ class LogBuffer:
         self.capacity = capacity
         self._rows: deque[BufferedRow] = deque()
         self._last_id = 0
-        self.received = 0                          # rows accepted since start (cleared rows included)
-        self.skipped: Counter[str] = Counter()     # reason → records not shown (SKIP: categories, bad events)
+        self.received = 0  # rows accepted since start (cleared rows included)
+        self.skipped: Counter[str] = Counter()  # reason → records not shown (SKIP: categories, bad events)
         self.per_category: Counter[str] = Counter()
-        self.last_event_at: float | None = None    # wall clock of the last record of any kind
-        self.last_log_time: float | None = None    # newest log timestamp seen
+        self.last_event_at: float | None = None  # wall clock of the last record of any kind
+        self.last_log_time: float | None = None  # newest log timestamp seen
         # Waiters hold the current event; every append sets it and swaps in a
         # fresh one, so a waiter wakes once per batch and re-checks its filter.
         self._changed = asyncio.Event()
@@ -156,9 +157,13 @@ class LogBuffer:
             return list(self._rows)
         return [self._rows[i] for i in range(start, len(self._rows))]
 
-    async def wait_for(self, after_id: int, timeout: float,
-                       predicate: Callable[[BufferedRow], bool] | None = None,
-                       limit: int | None = None) -> list[BufferedRow]:
+    async def wait_for(
+        self,
+        after_id: int,
+        timeout: float,
+        predicate: Callable[[BufferedRow], bool] | None = None,
+        limit: int | None = None,
+    ) -> list[BufferedRow]:
         """Rows after ``after_id`` that satisfy ``predicate``, waiting up to ``timeout`` seconds for one.
 
         Returns as soon as at least one matching row exists (immediately when
@@ -183,7 +188,7 @@ class LogBuffer:
             changed = self._changed
             try:
                 await asyncio.wait_for(changed.wait(), timeout=remaining)
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 return []
 
     def counters(self) -> dict[str, Any]:

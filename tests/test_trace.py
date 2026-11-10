@@ -1,4 +1,5 @@
 """Evaluation trace (viewer/trace.py): processing order and per-criterion checks."""
+
 from __future__ import annotations
 
 from dataclasses import replace
@@ -24,8 +25,9 @@ GROUPS = {G_SPOKES: IpGroupInfo(id=G_SPOKES, name="ipgroup-all-spokes", location
 G_DMZ, G_JUNK = "/g/dmz", "/g/junk"
 RANGE_GROUPS = {
     **GROUPS,
-    G_DMZ: IpGroupInfo(id=G_DMZ, name="ipgroup-dmz", location="gwc",
-                       ip_addresses=["10.2.0.0-10.2.0.31", "fd00::10-fd00::1f"]),
+    G_DMZ: IpGroupInfo(
+        id=G_DMZ, name="ipgroup-dmz", location="gwc", ip_addresses=["10.2.0.0-10.2.0.31", "fd00::10-fd00::1f"]
+    ),
     G_JUNK: IpGroupInfo(id=G_JUNK, name="ipgroup-junk", location="gwc", ip_addresses=["10.4.0.0-oops"]),
 }
 
@@ -35,27 +37,52 @@ def rc(name, priority, action, *rules, rc_type="FirewallPolicyFilterRuleCollecti
 
 
 def net(name, **kw):
-    base = dict(rule_type="NetworkRule", source_addresses=["*"], destination_addresses=["*"], destination_ports=["*"], protocols=["Any"])
+    base = dict(
+        rule_type="NetworkRule",
+        source_addresses=["*"],
+        destination_addresses=["*"],
+        destination_ports=["*"],
+        protocols=["Any"],
+    )
     base.update(kw)
     return Rule(name=name, **base)
 
 
 def app(name, **kw):
-    base = dict(rule_type="ApplicationRule", source_addresses=["*"], destination_fqdns=[], protocols=["Https"], destination_ports=["443"])
+    base = dict(
+        rule_type="ApplicationRule",
+        source_addresses=["*"],
+        destination_fqdns=[],
+        protocols=["Https"],
+        destination_ports=["443"],
+    )
     base.update(kw)
     return Rule(name=name, **base)
 
 
 def nat(name, **kw):
-    base = dict(rule_type="NatRule", source_addresses=["*"], destination_addresses=["20.1.1.1"], destination_ports=["3389"],
-                protocols=["TCP"], translated_address="10.3.5.4", translated_port="3389")
+    base = dict(
+        rule_type="NatRule",
+        source_addresses=["*"],
+        destination_addresses=["20.1.1.1"],
+        destination_ports=["3389"],
+        protocols=["TCP"],
+        translated_address="10.3.5.4",
+        translated_port="3389",
+    )
     base.update(kw)
     return Rule(name=name, **base)
 
 
 def policy(*groups, name="pol", parent=None, ti="Alert"):
-    return FirewallPolicyInfo(id=f"/{name}", name=name, sku_tier="Premium", threat_intel_mode=ti,
-                              rule_collection_groups=list(groups), parent=parent)
+    return FirewallPolicyInfo(
+        id=f"/{name}",
+        name=name,
+        sku_tier="Premium",
+        threat_intel_mode=ti,
+        rule_collection_groups=list(groups),
+        parent=parent,
+    )
 
 
 def rcg(name, priority, *collections):
@@ -64,11 +91,31 @@ def rcg(name, priority, *collections):
 
 LAB = policy(
     rcg("rcg-app", 100, rc("app-web", 200, "Allow", app("allow-web", destination_fqdns=["*.duckduckgo.com"]))),
-    rcg("rcg-net", 2000,
+    rcg(
+        "rcg-net",
+        2000,
         rc("net-deny", 100, "Deny", net("deny-bad", destination_addresses=["203.0.113.0/24"])),
-        rc("net-allow", 200, "Allow",
-           net("allow-monitor", source_ip_groups=[G_SPOKES], source_addresses=[], destination_addresses=["AzureMonitor"], destination_ports=["443"], protocols=["TCP"]),
-           net("allow-web", source_ip_groups=[G_SPOKES], source_addresses=[], destination_ports=["443"], protocols=["TCP"]))),
+        rc(
+            "net-allow",
+            200,
+            "Allow",
+            net(
+                "allow-monitor",
+                source_ip_groups=[G_SPOKES],
+                source_addresses=[],
+                destination_addresses=["AzureMonitor"],
+                destination_ports=["443"],
+                protocols=["TCP"],
+            ),
+            net(
+                "allow-web",
+                source_ip_groups=[G_SPOKES],
+                source_addresses=[],
+                destination_ports=["443"],
+                protocols=["TCP"],
+            ),
+        ),
+    ),
 )
 TCP443 = Flow(category="NetworkRule", protocol="TCP", src_ip="10.3.5.4", dst_ip="51.116.242.155", dst_port="443")
 
@@ -79,10 +126,20 @@ def collections(trace, kind):
 
 # ── criteria ─────────────────────────────────────────────────────────────────
 
+
 def test_evaluate_rule_all_match():
-    r = evaluate_rule(net("r", source_ip_groups=[G_SPOKES], source_addresses=[], destination_ports=["400-500"], protocols=["TCP"]), TCP443, GROUPS)
+    r = evaluate_rule(
+        net("r", source_ip_groups=[G_SPOKES], source_addresses=[], destination_ports=["400-500"], protocols=["TCP"]),
+        TCP443,
+        GROUPS,
+    )
     assert r.verdict == MATCH
-    assert {c.name: c.result for c in r.checks} == {"source": MATCH, "destination": MATCH, "port": MATCH, "protocol": MATCH}
+    assert {c.name: c.result for c in r.checks} == {
+        "source": MATCH,
+        "destination": MATCH,
+        "port": MATCH,
+        "protocol": MATCH,
+    }
     assert next(c for c in r.checks if c.name == "source").detail == "ipgroup-all-spokes"
 
 
@@ -106,20 +163,27 @@ def test_network_rule_sees_application_flows_as_tcp(l7):
 
 
 def test_service_tag_and_unloaded_group_are_unknown():
-    r = evaluate_rule(net("r", destination_addresses=["AzureMonitor"], source_ip_groups=["/g/missing"], source_addresses=[]), TCP443, GROUPS)
+    r = evaluate_rule(
+        net("r", destination_addresses=["AzureMonitor"], source_ip_groups=["/g/missing"], source_addresses=[]),
+        TCP443,
+        GROUPS,
+    )
     assert r.verdict == UNKNOWN
     checks = {c.name: c for c in r.checks}
     assert checks["destination"].result == UNKNOWN and "AzureMonitor" in checks["destination"].detail
     assert checks["source"].result == UNKNOWN and "missing (not loaded)" in checks["source"].detail
 
 
-@pytest.mark.parametrize("dst_ip, expected, detail", [
-    ("10.2.0.0", MATCH, "ipgroup-dmz"),      # first address of the range
-    ("10.2.0.31", MATCH, "ipgroup-dmz"),     # last address of the range
-    ("10.2.0.32", MISS, "10.2.0.32"),        # one past the end: a definite miss, not a guess
-    ("fd00::1f", MATCH, "ipgroup-dmz"),
-    ("fd00::20", MISS, "fd00::20"),
-])
+@pytest.mark.parametrize(
+    "dst_ip, expected, detail",
+    [
+        ("10.2.0.0", MATCH, "ipgroup-dmz"),  # first address of the range
+        ("10.2.0.31", MATCH, "ipgroup-dmz"),  # last address of the range
+        ("10.2.0.32", MISS, "10.2.0.32"),  # one past the end: a definite miss, not a guess
+        ("fd00::1f", MATCH, "ipgroup-dmz"),
+        ("fd00::20", MISS, "fd00::20"),
+    ],
+)
 def test_ip_group_range_entries_are_evaluated(dst_ip, expected, detail):
     """A range entry was dropped silently, so the trace reported a miss on a rule that had matched."""
     rule = net("r", destination_addresses=[], destination_ip_groups=[G_DMZ])
@@ -138,18 +202,23 @@ def test_unreadable_ip_group_entry_is_unknown_and_names_group_and_entry():
 def test_a_matching_group_wins_over_an_unreadable_one():
     """An entry we cannot read only casts doubt while nothing else answers the question."""
     rule = net("r", destination_addresses=[], destination_ip_groups=[G_JUNK, G_DMZ])
-    c = next(c for c in evaluate_rule(rule, replace(TCP443, dst_ip="10.2.0.7"), RANGE_GROUPS).checks
-             if c.name == "destination")
+    c = next(
+        c
+        for c in evaluate_rule(rule, replace(TCP443, dst_ip="10.2.0.7"), RANGE_GROUPS).checks
+        if c.name == "destination"
+    )
     assert (c.result, c.detail) == (MATCH, "ipgroup-dmz")
 
 
 def test_address_range_in_a_rule_address_list_is_evaluated():
     rule = net("r", destination_addresses=["10.2.0.0-10.2.0.31"])
-    hit = next(c for c in evaluate_rule(rule, replace(TCP443, dst_ip="10.2.0.7"), GROUPS).checks
-               if c.name == "destination")
+    hit = next(
+        c for c in evaluate_rule(rule, replace(TCP443, dst_ip="10.2.0.7"), GROUPS).checks if c.name == "destination"
+    )
     assert (hit.result, hit.detail) == (MATCH, "10.2.0.0-10.2.0.31")
-    miss = next(c for c in evaluate_rule(rule, replace(TCP443, dst_ip="10.2.0.32"), GROUPS).checks
-                if c.name == "destination")
+    miss = next(
+        c for c in evaluate_rule(rule, replace(TCP443, dst_ip="10.2.0.32"), GROUPS).checks if c.name == "destination"
+    )
     assert miss.result == MISS
 
 
@@ -170,13 +239,16 @@ def test_network_rule_fqdn_target_is_never_compared_with_a_logged_fqdn():
         assert r.verdict == UNKNOWN
 
 
-@pytest.mark.parametrize("flow_proto, rule_protos, expected, detail", [
-    ("HTTPS", ["Http", "Https"], MATCH, "HTTPS"),      # reported as the protocol that matched, not the first one
-    ("HTTP/1.1", ["Http", "Https"], MATCH, "HTTP"),
-    ("HTTPS", ["Http"], MISS, "HTTPS not in Http"),   # HTTPS must not match an Http-only rule
-    ("HTTP/1.1", ["Https"], MISS, "HTTP/1.1 not in Https"),
-    ("MSSQL", ["Mssql"], MATCH, "MSSQL"),
-])
+@pytest.mark.parametrize(
+    "flow_proto, rule_protos, expected, detail",
+    [
+        ("HTTPS", ["Http", "Https"], MATCH, "HTTPS"),  # reported as the protocol that matched, not the first one
+        ("HTTP/1.1", ["Http", "Https"], MATCH, "HTTP"),
+        ("HTTPS", ["Http"], MISS, "HTTPS not in Http"),  # HTTPS must not match an Http-only rule
+        ("HTTP/1.1", ["Https"], MISS, "HTTP/1.1 not in Https"),
+        ("MSSQL", ["Mssql"], MATCH, "MSSQL"),
+    ],
+)
 def test_application_protocol_is_matched_exactly(flow_proto, rule_protos, expected, detail):
     rule = app("r", destination_fqdns=["*"], protocols=rule_protos)
     flow = replace(TCP443, category="AppRule", protocol=flow_proto, dst_ip="", dst_fqdn="x.example")
@@ -190,13 +262,18 @@ def test_application_rule_fqdn_and_protocol():
     assert ok.verdict == MATCH
     miss = evaluate_rule(app("r", destination_fqdns=["*.microsoft.com"]), flow, GROUPS)
     assert next(c for c in miss.checks if c.name == "destination").result == MISS
-    http11 = evaluate_rule(app("r", destination_fqdns=["*"], protocols=["Http"], destination_ports=["80"]),
-                           Flow(category="AppRule", protocol="HTTP/1.1", src_ip="10.3.5.4", dst_fqdn="x.example", dst_port="80"), GROUPS)
+    http11 = evaluate_rule(
+        app("r", destination_fqdns=["*"], protocols=["Http"], destination_ports=["80"]),
+        Flow(category="AppRule", protocol="HTTP/1.1", src_ip="10.3.5.4", dst_fqdn="x.example", dst_port="80"),
+        GROUPS,
+    )
     assert http11.verdict == MATCH
 
 
 def test_application_rule_tags_and_categories_are_unknown():
-    flow = Flow(category="AppRule", protocol="HTTPS", src_ip="10.3.5.4", dst_fqdn="update.microsoft.com", dst_port="443")
+    flow = Flow(
+        category="AppRule", protocol="HTTPS", src_ip="10.3.5.4", dst_fqdn="update.microsoft.com", dst_port="443"
+    )
     r = evaluate_rule(app("r", fqdn_tags=["WindowsUpdate"], web_categories=["Business"]), flow, GROUPS)
     dest = next(c for c in r.checks if c.name == "destination")
     assert dest.result == UNKNOWN and "WindowsUpdate" in dest.detail
@@ -205,20 +282,35 @@ def test_application_rule_tags_and_categories_are_unknown():
 def test_application_rule_never_matches_on_the_packet_address():
     """Azure matches an app rule on the Host header or SNI. The packet IP inside
     destinationAddresses used to turn a name miss into a match by accident."""
-    flow = Flow(category="AppRule", protocol="HTTPS", src_ip="10.3.5.4", dst_ip="51.116.242.155",
-                dst_fqdn="html.duckduckgo.com", dst_port="443")
-    r = evaluate_rule(app("r", destination_fqdns=["*.microsoft.com"],
-                          destination_addresses=["51.116.242.155"]), flow, GROUPS)
+    flow = Flow(
+        category="AppRule",
+        protocol="HTTPS",
+        src_ip="10.3.5.4",
+        dst_ip="51.116.242.155",
+        dst_fqdn="html.duckduckgo.com",
+        dst_port="443",
+    )
+    r = evaluate_rule(
+        app("r", destination_fqdns=["*.microsoft.com"], destination_addresses=["51.116.242.155"]), flow, GROUPS
+    )
     assert next(c for c in r.checks if c.name == "destination").result != MATCH
 
 
 def test_application_rule_with_addresses_is_unknown_not_a_miss():
     """The addresses are compared against the firewall's own resolution of the
     name, which the log does not carry: a name miss cannot rule the rule out."""
-    flow = Flow(category="AppRule", protocol="HTTPS", src_ip="10.3.5.4", dst_ip="51.116.242.155",
-                dst_fqdn="html.duckduckgo.com", dst_port="443")
-    for rule in (app("r", destination_addresses=["51.116.242.155"]),
-                 app("r", destination_fqdns=["*.microsoft.com"], destination_addresses=["51.116.242.155"])):
+    flow = Flow(
+        category="AppRule",
+        protocol="HTTPS",
+        src_ip="10.3.5.4",
+        dst_ip="51.116.242.155",
+        dst_fqdn="html.duckduckgo.com",
+        dst_port="443",
+    )
+    for rule in (
+        app("r", destination_addresses=["51.116.242.155"]),
+        app("r", destination_fqdns=["*.microsoft.com"], destination_addresses=["51.116.242.155"]),
+    ):
         r = evaluate_rule(rule, flow, GROUPS)
         c = next(c for c in r.checks if c.name == "destination")
         assert c.result == UNKNOWN and "51.116.242.155" in c.detail and "resolution" in c.detail
@@ -227,8 +319,14 @@ def test_application_rule_with_addresses_is_unknown_not_a_miss():
 
 def test_application_rule_name_miss_without_addresses_is_a_miss():
     """Without an address list there is nothing left to be uncertain about."""
-    flow = Flow(category="AppRule", protocol="HTTPS", src_ip="10.3.5.4", dst_ip="51.116.242.155",
-                dst_fqdn="html.duckduckgo.com", dst_port="443")
+    flow = Flow(
+        category="AppRule",
+        protocol="HTTPS",
+        src_ip="10.3.5.4",
+        dst_ip="51.116.242.155",
+        dst_fqdn="html.duckduckgo.com",
+        dst_port="443",
+    )
     r = evaluate_rule(app("r", destination_fqdns=["*.microsoft.com"]), flow, GROUPS)
     c = next(c for c in r.checks if c.name == "destination")
     assert (c.result, c.detail) == (MISS, "html.duckduckgo.com not in *.microsoft.com")
@@ -255,13 +353,18 @@ def test_application_flow_through_network_pass_is_unknown_not_a_match():
     from viewer.trace import first_problem
 
     flow = Flow(category="AppRule", protocol="HTTPS", src_ip="10.3.5.4", dst_fqdn="www.bing.com", dst_port="443")
-    r = evaluate_rule(net("r", source_addresses=["*"], destination_addresses=["*"], destination_ports=["443"], protocols=["TCP"]), flow, GROUPS)
+    r = evaluate_rule(
+        net("r", source_addresses=["*"], destination_addresses=["*"], destination_ports=["443"], protocols=["TCP"]),
+        flow,
+        GROUPS,
+    )
     assert r.verdict == UNKNOWN
     problem = first_problem(r)
     assert problem.name == "destination" and problem.result == NA
 
 
 # ── exact lookup ─────────────────────────────────────────────────────────────
+
 
 def test_find_logged_rule_exact_and_missing():
     logged = LoggedMatch(policy="pol", group="rcg-net", collection="net-allow", rule="allow-web", action="Allow")
@@ -274,6 +377,7 @@ def test_find_logged_rule_exact_and_missing():
 
 # ── order and termination ────────────────────────────────────────────────────
 
+
 def test_trace_with_logged_match_stops_and_skips_app_pass():
     logged = LoggedMatch(policy="pol", group="rcg-net", collection="net-allow", rule="allow-web", action="Allow")
     t = build_trace(TCP443, LAB, GROUPS, logged)
@@ -282,12 +386,12 @@ def test_trace_with_logged_match_stops_and_skips_app_pass():
     dnat, network, application = t.passes
     assert dnat.evaluated and dnat.collections == [] and "no collections" in dnat.note
     names = [c.collection.name for c in network.collections]
-    assert names == ["net-deny", "net-allow"]              # RC priority order
-    assert network.collections[0].verdict == MISS           # deny-bad: destination miss
+    assert names == ["net-deny", "net-allow"]  # RC priority order
+    assert network.collections[0].verdict == MISS  # deny-bad: destination miss
     assert network.collections[1].verdict == MATCH
     rules = network.collections[1].rules
     assert [r.rule.name for r in rules] == ["allow-monitor", "allow-web"]  # stops at the logged rule
-    assert rules[0].verdict == UNKNOWN                      # AzureMonitor service tag
+    assert rules[0].verdict == UNKNOWN  # AzureMonitor service tag
     assert rules[1].logged and rules[1].verdict == MATCH
     assert network.stopped_here
     assert not application.evaluated and "already matched" in application.note
@@ -302,7 +406,7 @@ def test_trace_no_rule_matched_reaches_default_deny_and_names_the_near_miss():
     t = build_trace(flow, LAB, GROUPS, None)
     network = t.passes[1]
     allow = network.collections[1]
-    assert allow.verdict == MISS                             # both rules miss on port (8443); a miss beats an unknown
+    assert allow.verdict == MISS  # both rules miss on port (8443); a miss beats an unknown
     monitor = allow.rules[0]
     assert monitor.verdict == MISS
     assert next(c for c in monitor.checks if c.name == "destination").result == UNKNOWN  # service tag, reported anyway
@@ -322,7 +426,7 @@ def test_trace_app_pass_runs_for_https_flow_without_network_match():
     t = build_trace(flow, LAB, GROUPS, logged)
     network = t.passes[1]
     assert network.evaluated and not network.stopped_here
-    assert all(c.evaluated for c in network.collections)   # all network collections were really evaluated
+    assert all(c.evaluated for c in network.collections)  # all network collections were really evaluated
     application = t.passes[2]
     assert application.evaluated and application.stopped_here
     assert application.collections[0].rules[0].logged
@@ -363,13 +467,17 @@ def test_deny_collection_with_a_wildcard_does_not_match_the_apex():
     cols = build_trace(flow, pol, {}, None).passes[2].collections
     assert cols[0].verdict == MISS and cols[1].verdict == MATCH
     # the left-most asterisk without a dot does include the apex
-    wild = policy(rcg("rcg", 100, rc("deny-apps", 100, "Deny", app("deny-contoso", destination_fqdns=["*contoso.com"]))))
+    wild = policy(
+        rcg("rcg", 100, rc("deny-apps", 100, "Deny", app("deny-contoso", destination_fqdns=["*contoso.com"])))
+    )
     assert build_trace(flow, wild, {}, None).passes[2].collections[0].verdict == MATCH
 
 
 def test_trace_parent_policy_groups_come_first_per_pass():
     parent = policy(rcg("base-net", 9000, rc("base-allow", 100, "Allow", net("base-rule"))), name="base")
-    child = policy(rcg("child-net", 100, rc("child-allow", 100, "Allow", net("child-rule"))), name="child", parent=parent)
+    child = policy(
+        rcg("child-net", 100, rc("child-allow", 100, "Allow", net("child-rule"))), name="child", parent=parent
+    )
     logged = LoggedMatch(policy="child", group="child-net", collection="child-allow", rule="child-rule", action="Allow")
     t = build_trace(TCP443, child, GROUPS, logged)
     cols = t.passes[1].collections
@@ -383,8 +491,12 @@ PARENT_ID = "/subscriptions/0/resourceGroups/rg/providers/Microsoft.Network/fire
 
 
 def _child_with_unread_parent():
-    child = policy(rcg("rcg", 100, rc("cn", 100, "Allow", net("r", source_addresses=["10.9.0.0/16"], destination_addresses=["*"]))),
-                   name="child")
+    child = policy(
+        rcg(
+            "rcg", 100, rc("cn", 100, "Allow", net("r", source_addresses=["10.9.0.0/16"], destination_addresses=["*"]))
+        ),
+        name="child",
+    )
     child.base_policy_id = child.parent_unreadable = PARENT_ID
     return child
 
@@ -394,7 +506,7 @@ def test_unreadable_parent_is_reported_and_no_match_is_unknown_not_default_deny(
     assert any("parent-policy" in w and "could not be loaded" in w and "read error" in w for w in t.warnings)
     placeholder = t.passes[1].collections[0]
     assert placeholder.verdict == UNKNOWN and "parent-policy" in placeholder.group.name and not placeholder.rules
-    assert t.passes[1].collections[1].verdict == MISS   # the child's own miss stays a miss
+    assert t.passes[1].collections[1].verdict == MISS  # the child's own miss stays a miss
     assert t.outcome.startswith("unknown:") and "default" not in t.outcome.replace("a default deny is not proven", "")
     assert t.infrastructure is None
 
@@ -424,7 +536,9 @@ def test_trace_without_an_unread_parent_is_unchanged():
 def test_dnat_rule_against_a_named_destination_is_a_destination_miss_not_a_port_question():
     """An application-rule row names its destination; a DNAT rule matches the
     firewall's own public IP, so the miss is the destination, not the port."""
-    flow = Flow(category="AppRule", protocol="HTTPS", src_ip="10.3.11.4", dst_fqdn="www.lonelyplanet.com", dst_port="443")
+    flow = Flow(
+        category="AppRule", protocol="HTTPS", src_ip="10.3.11.4", dst_fqdn="www.lonelyplanet.com", dst_port="443"
+    )
     rule = nat("dnat-to-web", destination_addresses=["72.144.131.50"], destination_ports=["18080"])
     r = evaluate_rule(rule, flow, {})
     checks = {c.name: c for c in r.checks}
@@ -454,13 +568,15 @@ def test_trace_stale_cache_warning_when_logged_rule_missing():
     # the header keeps the firewall's verdict instead of claiming a default deny
     assert t.outcome == "Allow by rcg-net » net-allow » renamed-rule (rule not in loaded policy)"
     assert t.infrastructure is None and t.matched_rule is None
-    assert t.logged is None                                   # evaluated heuristically instead
+    assert t.logged is None  # evaluated heuristically instead
     assert t.matched_rule is None
 
 
 def test_trace_threat_intel_hit_short_circuits_rule_processing():
     """Copilot review: a ThreatIntel row was decided before the rules ran — no default-deny story."""
-    flow = Flow(category="ThreatIntel", protocol="TCP", src_ip="10.3.5.4", dst_ip="1.1.1.1", dst_port="80", action="Deny")
+    flow = Flow(
+        category="ThreatIntel", protocol="TCP", src_ip="10.3.5.4", dst_ip="1.1.1.1", dst_port="80", action="Deny"
+    )
     t = build_trace(flow, LAB, GROUPS, None)
     assert t.threat_intel.startswith("hit — Deny by Threat Intelligence")
     assert all(not p.evaluated and "Threat Intelligence decided" in p.note for p in t.passes)
@@ -472,10 +588,20 @@ def test_trace_threat_intel_hit_short_circuits_rule_processing():
 def test_nearest_rules_prefers_definite_misses_on_score_ties():
     from viewer.trace import nearest_rules
 
-    pol = policy(rcg("g", 100, rc("c", 100, "Allow",
-                                   net("unknown-dst", destination_addresses=["AzureMonitor"], destination_ports=["443"]),
-                                   net("miss-dst", destination_addresses=["203.0.113.0/24"], destination_ports=["443"]))))
-    t = build_trace(TCP443, pol, GROUPS, None)   # both score 3; one is unknown (service tag), one a definite miss
+    pol = policy(
+        rcg(
+            "g",
+            100,
+            rc(
+                "c",
+                100,
+                "Allow",
+                net("unknown-dst", destination_addresses=["AzureMonitor"], destination_ports=["443"]),
+                net("miss-dst", destination_addresses=["203.0.113.0/24"], destination_ports=["443"]),
+            ),
+        )
+    )
+    t = build_trace(TCP443, pol, GROUPS, None)  # both score 3; one is unknown (service tag), one a definite miss
     ranked = nearest_rules(t)
     assert [r.verdict for r in ranked] == [MISS, UNKNOWN]
     assert [r.rule.name for r in ranked] == ["miss-dst", "unknown-dst"]
@@ -488,10 +614,10 @@ def test_ranking_helpers_pick_the_closest_rule_and_its_problem():
     t = build_trace(flow, LAB, GROUPS, None)
     allow = t.passes[1].collections[1]
     monitor, web = allow.rules
-    assert rule_score(web) == 3 and rule_score(monitor) == 2      # web misses only the port
+    assert rule_score(web) == 3 and rule_score(monitor) == 2  # web misses only the port
     assert first_problem(web).name == "port"
-    assert first_problem(monitor).name == "port"                  # a hard miss (port) outranks the unknown destination
-    assert nearest_miss(allow).name == "port"                     # closest rule decides
+    assert first_problem(monitor).name == "port"  # a hard miss (port) outranks the unknown destination
+    assert nearest_miss(allow).name == "port"  # closest rule decides
     ranked = nearest_rules(t)
     assert len(ranked) <= 3
     assert web in ranked and monitor not in ranked[:1]  # deny-bad (3 matches) and web (3) tie above monitor (2)
@@ -515,8 +641,12 @@ V6_SRC = "fd10:2:0:2::10"
 V6_DST = "2606:4700::6810:84e5"
 V6_SPOKES = "fd10:2::/32"
 G_SPOKES6 = "/g/spokes6"
-GROUPS6 = {**GROUPS, G_SPOKES6: IpGroupInfo(id=G_SPOKES6, name="ipgroup-spokes-v6", location="gwc",
-                                            ip_addresses=["10.3.0.0/16", V6_SPOKES])}
+GROUPS6 = {
+    **GROUPS,
+    G_SPOKES6: IpGroupInfo(
+        id=G_SPOKES6, name="ipgroup-spokes-v6", location="gwc", ip_addresses=["10.3.0.0/16", V6_SPOKES]
+    ),
+}
 TCP443_V6 = Flow(category="NetworkRule", protocol="TCP", src_ip=V6_SRC, dst_ip=V6_DST, dst_port="443")
 
 
@@ -525,8 +655,17 @@ def _check(rule_trace, name):
 
 
 def test_ipv6_flow_matches_ipv6_prefixes():
-    r = evaluate_rule(net("r", source_addresses=[V6_SPOKES], destination_addresses=["2606:4700::/32"],
-                          destination_ports=["443"], protocols=["TCP"]), TCP443_V6, GROUPS)
+    r = evaluate_rule(
+        net(
+            "r",
+            source_addresses=[V6_SPOKES],
+            destination_addresses=["2606:4700::/32"],
+            destination_ports=["443"],
+            protocols=["TCP"],
+        ),
+        TCP443_V6,
+        GROUPS,
+    )
     assert r.verdict == MATCH
     assert _check(r, "source").detail == V6_SPOKES
     assert _check(r, "destination").detail == "2606:4700::/32"
@@ -535,26 +674,36 @@ def test_ipv6_flow_matches_ipv6_prefixes():
 def test_ipv6_flow_misses_ipv4_prefixes_and_vice_versa():
     r = evaluate_rule(net("r", source_addresses=["10.3.0.0/16"], destination_addresses=["*"]), TCP443_V6, GROUPS)
     src = _check(r, "source")
-    assert src.result == MISS and src.detail == V6_SRC          # a clean miss, not an error or unknown
+    assert src.result == MISS and src.detail == V6_SRC  # a clean miss, not an error or unknown
     r4 = evaluate_rule(net("r", source_addresses=[V6_SPOKES], destination_addresses=["*"]), TCP443, GROUPS)
     assert _check(r4, "source").result == MISS
 
 
 def test_ipv6_flow_against_mixed_prefix_list_matches_the_v6_entry():
-    r = evaluate_rule(net("r", source_addresses=["10.3.0.0/16", V6_SPOKES], destination_addresses=["*"]), TCP443_V6, GROUPS)
+    r = evaluate_rule(
+        net("r", source_addresses=["10.3.0.0/16", V6_SPOKES], destination_addresses=["*"]), TCP443_V6, GROUPS
+    )
     assert _check(r, "source").result == MATCH and _check(r, "source").detail == V6_SPOKES
 
 
 def test_ipv6_flow_matches_an_ip_group_holding_a_v6_prefix():
     """IP groups cannot hold IPv6 yet in the preview; the code path must still be right when they can."""
-    r = evaluate_rule(net("r", source_ip_groups=[G_SPOKES6], source_addresses=[], destination_addresses=["*"]), TCP443_V6, GROUPS6)
+    r = evaluate_rule(
+        net("r", source_ip_groups=[G_SPOKES6], source_addresses=[], destination_addresses=["*"]), TCP443_V6, GROUPS6
+    )
     assert _check(r, "source").result == MATCH and _check(r, "source").detail == "ipgroup-spokes-v6"
-    r_v4_only = evaluate_rule(net("r", source_ip_groups=[G_SPOKES], source_addresses=[], destination_addresses=["*"]), TCP443_V6, GROUPS6)
+    r_v4_only = evaluate_rule(
+        net("r", source_ip_groups=[G_SPOKES], source_addresses=[], destination_addresses=["*"]), TCP443_V6, GROUPS6
+    )
     assert _check(r_v4_only, "source").result == MISS
 
 
 def test_ipv6_flow_matches_wildcards():
-    r = evaluate_rule(net("r", source_addresses=["*"], destination_addresses=["any"], destination_ports=["*"], protocols=["Any"]), TCP443_V6, GROUPS)
+    r = evaluate_rule(
+        net("r", source_addresses=["*"], destination_addresses=["any"], destination_ports=["*"], protocols=["Any"]),
+        TCP443_V6,
+        GROUPS,
+    )
     assert r.verdict == MATCH
 
 
@@ -590,5 +739,7 @@ def test_garbled_ipv6_source_is_not_applicable_rather_than_a_verdict():
     """What a first-colon split would produce ('fd10' from 'fd10:2:0:2::10:51000'): not an
     address, so the source check must say n/a instead of match or miss."""
     flow = replace(TCP443_V6, src_ip="fd10")
-    c = _check(evaluate_rule(net("r", source_addresses=[V6_SPOKES], destination_addresses=["*"]), flow, GROUPS), "source")
+    c = _check(
+        evaluate_rule(net("r", source_addresses=[V6_SPOKES], destination_addresses=["*"]), flow, GROUPS), "source"
+    )
     assert c.result == NA and c.detail == "no address in log"

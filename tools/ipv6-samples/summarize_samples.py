@@ -4,6 +4,7 @@ categories, the exact endpoint spelling inside ``properties.msg`` (bracketed or 
 
   python3 summarize_samples.py [samples-dir]
 """
+
 import json
 import re
 import sys
@@ -23,11 +24,15 @@ for kind in ("structured", "legacy"):
         records = [json.loads(line) for line in f.read_text(encoding="utf-8").splitlines() if line.strip()]
         print(f"{f.name}: {len(records)} records")
         if kind == "structured":
-            actions = Counter((r.get("properties", {}).get("Action"), r.get("properties", {}).get("Rule")) for r in records)
+            actions = Counter(
+                (r.get("properties", {}).get("Action"), r.get("properties", {}).get("Rule")) for r in records
+            )
             for (action, rule), n in actions.most_common(8):
                 if action:
                     print(f"    {n:4d}  Action={action} Rule={rule}")
-            qt = Counter(r.get("properties", {}).get("QueryType") for r in records if r.get("properties", {}).get("QueryType"))
+            qt = Counter(
+                r.get("properties", {}).get("QueryType") for r in records if r.get("properties", {}).get("QueryType")
+            )
             if qt:
                 print(f"    QueryType: {dict(qt)}")
         else:

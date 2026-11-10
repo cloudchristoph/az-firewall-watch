@@ -1,4 +1,5 @@
 """Structured (AZFW*) log format parsing."""
+
 from __future__ import annotations
 
 import pytest
@@ -14,12 +15,18 @@ RULE_PROPS = {
 
 
 def test_network_rule_with_rule_match(structured_record):
-    row = parse_record(structured_record(
-        "AZFWNetworkRule",
-        Protocol="TCP", SourceIp="10.0.1.4", SourcePort=51000,
-        DestinationIp="10.0.2.5", DestinationPort=443, Action="Allow",
-        **RULE_PROPS,
-    ))
+    row = parse_record(
+        structured_record(
+            "AZFWNetworkRule",
+            Protocol="TCP",
+            SourceIp="10.0.1.4",
+            SourcePort=51000,
+            DestinationIp="10.0.2.5",
+            DestinationPort=443,
+            Action="Allow",
+            **RULE_PROPS,
+        )
+    )
     assert isinstance(row, FirewallDataRow)
     assert row.category == "NetworkRule"
     assert row.protocol == "TCP"
@@ -36,25 +43,37 @@ def test_network_rule_with_rule_match(structured_record):
 
 
 def test_network_rule_without_match_uses_action_reason(structured_record):
-    row = parse_record(structured_record(
-        "AZFWNetworkRule",
-        Protocol="TCP", SourceIp="10.0.1.4", SourcePort=1,
-        DestinationIp="10.0.2.5", DestinationPort=22, Action="Deny",
-        ActionReason="No rule matched. Proceeding with default action.",
-    ))
+    row = parse_record(
+        structured_record(
+            "AZFWNetworkRule",
+            Protocol="TCP",
+            SourceIp="10.0.1.4",
+            SourcePort=1,
+            DestinationIp="10.0.2.5",
+            DestinationPort=22,
+            Action="Deny",
+            ActionReason="No rule matched. Proceeding with default action.",
+        )
+    )
     assert row.action == "Deny"
     assert row.policy == "No rule matched. Proceeding with default action."
     assert row.rule_collection_group == ""
 
 
 def test_application_rule(structured_record):
-    row = parse_record(structured_record(
-        "AZFWApplicationRule",
-        Protocol="HTTPS", SourceIp="10.0.1.4", SourcePort=51001,
-        Fqdn="example.com", DestinationPort=443, Action="Allow",
-        TargetUrl="example.com/index.html",
-        **RULE_PROPS,
-    ))
+    row = parse_record(
+        structured_record(
+            "AZFWApplicationRule",
+            Protocol="HTTPS",
+            SourceIp="10.0.1.4",
+            SourcePort=51001,
+            Fqdn="example.com",
+            DestinationPort=443,
+            Action="Allow",
+            TargetUrl="example.com/index.html",
+            **RULE_PROPS,
+        )
+    )
     assert row.category == "AppRule"
     assert row.protocol == "HTTPS"
     assert row.targetip == "example.com"
@@ -65,13 +84,19 @@ def test_application_rule(structured_record):
 
 
 def test_nat_rule_shows_translated_target_and_dnat_action(structured_record):
-    row = parse_record(structured_record(
-        "AZFWNatRule",
-        Protocol="TCP", SourceIp="1.2.3.4", SourcePort=5000,
-        DestinationIp="20.1.1.1", DestinationPort=3389,
-        TranslatedIp="10.0.3.4", TranslatedPort=3389,
-        **RULE_PROPS,
-    ))
+    row = parse_record(
+        structured_record(
+            "AZFWNatRule",
+            Protocol="TCP",
+            SourceIp="1.2.3.4",
+            SourcePort=5000,
+            DestinationIp="20.1.1.1",
+            DestinationPort=3389,
+            TranslatedIp="10.0.3.4",
+            TranslatedPort=3389,
+            **RULE_PROPS,
+        )
+    )
     assert row.category == "NATRule"
     assert row.action == "DNAT"
     assert (row.targetip, row.targetport) == ("10.0.3.4", "3389")
@@ -80,21 +105,30 @@ def test_nat_rule_shows_translated_target_and_dnat_action(structured_record):
 
 
 def test_nat_rule_without_match_uses_action_reason(structured_record):
-    row = parse_record(structured_record(
-        "AZFWNatRule",
-        Protocol="TCP", SourceIp="1.2.3.4", DestinationIp="20.1.1.1",
-        ActionReason="No rule matched.",
-    ))
+    row = parse_record(
+        structured_record(
+            "AZFWNatRule",
+            Protocol="TCP",
+            SourceIp="1.2.3.4",
+            DestinationIp="20.1.1.1",
+            ActionReason="No rule matched.",
+        )
+    )
     assert row.policy == "No rule matched."
 
 
 def test_dns_query_maps_query_type_and_response_code(structured_record):
-    row = parse_record(structured_record(
-        "AZFWDnsQuery",
-        SourceIp="10.0.1.4", SourcePort=5353,
-        QueryName="example.com", QueryType="AAAA", ResponseCode="NXDOMAIN",
-        ErrorMessage="",
-    ))
+    row = parse_record(
+        structured_record(
+            "AZFWDnsQuery",
+            SourceIp="10.0.1.4",
+            SourcePort=5353,
+            QueryName="example.com",
+            QueryType="AAAA",
+            ResponseCode="NXDOMAIN",
+            ErrorMessage="",
+        )
+    )
     assert row.category == "DnsQuery"
     assert row.protocol == "AAAA"
     assert row.targetip == "example.com"
@@ -103,41 +137,70 @@ def test_dns_query_maps_query_type_and_response_code(structured_record):
 
 
 def test_dns_query_without_response_code_is_a_request(structured_record):
-    row = parse_record(structured_record(
-        "AZFWDnsQuery", SourceIp="10.0.1.4", QueryName="example.com", QueryType="A",
-    ))
+    row = parse_record(
+        structured_record(
+            "AZFWDnsQuery",
+            SourceIp="10.0.1.4",
+            QueryName="example.com",
+            QueryType="A",
+        )
+    )
     assert row.action == "Request"
 
 
 def test_idps_signature_moreinfo_combines_severity_and_signature(structured_record):
-    row = parse_record(structured_record(
-        "AZFWIdpsSignature",
-        Protocol="TCP", SourceIp="10.0.1.4", SourcePort=1,
-        DestinationIp="8.8.8.8", DestinationPort=80, Action="Alert",
-        Severity=1, SignatureId=2024897,
-        Category="Attempted User Privilege Gain", Description="ET TEST",
-    ))
+    row = parse_record(
+        structured_record(
+            "AZFWIdpsSignature",
+            Protocol="TCP",
+            SourceIp="10.0.1.4",
+            SourcePort=1,
+            DestinationIp="8.8.8.8",
+            DestinationPort=80,
+            Action="Alert",
+            Severity=1,
+            SignatureId=2024897,
+            Category="Attempted User Privilege Gain",
+            Description="ET TEST",
+        )
+    )
     assert row.category == "IDPS"
     assert row.action == "Alert"
     assert row.moreinfo == "SEV:1 · 2024897 · Attempted User Privilege Gain · ET TEST"
 
 
 def test_idps_lowercase_action_from_the_firewall_is_capitalised(structured_record):
-    row = parse_record(structured_record(
-        "AZFWIdpsSignature", Protocol="TCP", SourceIp="10.3.7.4", SourcePort=47524,
-        DestinationIp="10.3.6.4", DestinationPort=80, Action="alert", Severity=2, SignatureId=2032081,
-        Category="Potentially Bad Traffic", Description="HaxerMen",
-    ))
+    row = parse_record(
+        structured_record(
+            "AZFWIdpsSignature",
+            Protocol="TCP",
+            SourceIp="10.3.7.4",
+            SourcePort=47524,
+            DestinationIp="10.3.6.4",
+            DestinationPort=80,
+            Action="alert",
+            Severity=2,
+            SignatureId=2032081,
+            Category="Potentially Bad Traffic",
+            Description="HaxerMen",
+        )
+    )
     assert row.action == "Alert"
 
 
 def test_threat_intel(structured_record):
-    row = parse_record(structured_record(
-        "AZFWThreatIntel",
-        Protocol="TCP", SourceIp="10.0.1.4", SourcePort=1,
-        DestinationIp="1.1.1.1", DestinationPort=80, Action="Deny",
-        ThreatDescription="Known malicious IP",
-    ))
+    row = parse_record(
+        structured_record(
+            "AZFWThreatIntel",
+            Protocol="TCP",
+            SourceIp="10.0.1.4",
+            SourcePort=1,
+            DestinationIp="1.1.1.1",
+            DestinationPort=80,
+            Action="Deny",
+            ThreatDescription="Known malicious IP",
+        )
+    )
     assert row.category == "ThreatIntel"
     assert row.action == "Deny"
     assert row.moreinfo == "Known malicious IP"
@@ -145,26 +208,40 @@ def test_threat_intel(structured_record):
 
 def test_threat_intel_http_hit_shows_the_fqdn(structured_record):
     """HTTP/HTTPS indicators arrive with Fqdn set and DestinationIp empty."""
-    row = parse_record(structured_record(
-        "AZFWThreatIntel", Protocol="HTTP", SourceIp="10.3.8.4", SourcePort=56266,
-        DestinationIp="", DestinationPort=80, Fqdn="testmaliciousdomain.eastus.cloudapp.azure.com",
-        Action="alert", ThreatDescription="This is a test indicator for a Microsoft Threat Intelligence test.",
-    ))
+    row = parse_record(
+        structured_record(
+            "AZFWThreatIntel",
+            Protocol="HTTP",
+            SourceIp="10.3.8.4",
+            SourcePort=56266,
+            DestinationIp="",
+            DestinationPort=80,
+            Fqdn="testmaliciousdomain.eastus.cloudapp.azure.com",
+            Action="alert",
+            ThreatDescription="This is a test indicator for a Microsoft Threat Intelligence test.",
+        )
+    )
     assert row.targetip == "testmaliciousdomain.eastus.cloudapp.azure.com"
     assert row.action == "Alert"
 
 
 def test_fqdn_resolve_failure_table_name_is_an_alias(structured_record):
     """Log Analytics names the table AZFWInternalFqdnResolutionFailure; the category is AZFWFqdnResolveFailure."""
-    row = parse_record(structured_record("AZFWInternalFqdnResolutionFailure", Fqdn="nope.invalid", Error="NXDOMAIN", **RULE_PROPS))
+    row = parse_record(
+        structured_record("AZFWInternalFqdnResolutionFailure", Fqdn="nope.invalid", Error="NXDOMAIN", **RULE_PROPS)
+    )
     assert row is not None and row.category == "DnsFailure" and row.action == "ResolveFail"
 
 
 def test_fqdn_resolve_failure_is_dnsfailure_with_resolvefail(structured_record):
-    row = parse_record(structured_record(
-        "AZFWFqdnResolveFailure",
-        Fqdn="nope.invalid", Error="NXDOMAIN", **RULE_PROPS,
-    ))
+    row = parse_record(
+        structured_record(
+            "AZFWFqdnResolveFailure",
+            Fqdn="nope.invalid",
+            Error="NXDOMAIN",
+            **RULE_PROPS,
+        )
+    )
     assert row.category == "DnsFailure"
     assert row.action == "ResolveFail"
     assert row.targetip == "nope.invalid"
@@ -174,36 +251,56 @@ def test_fqdn_resolve_failure_is_dnsfailure_with_resolvefail(structured_record):
 
 
 def test_flow_trace_shows_flag_as_action(structured_record):
-    row = parse_record(structured_record(
-        "AZFWFlowTrace",
-        Protocol="TCP", SourceIp="10.0.1.4", SourcePort=51000,
-        DestinationIp="10.0.2.5", DestinationPort=443,
-        Flag="INVALID", Action="Log", ActionReason="Additional TCP Log",
-    ))
+    row = parse_record(
+        structured_record(
+            "AZFWFlowTrace",
+            Protocol="TCP",
+            SourceIp="10.0.1.4",
+            SourcePort=51000,
+            DestinationIp="10.0.2.5",
+            DestinationPort=443,
+            Flag="INVALID",
+            Action="Log",
+            ActionReason="Additional TCP Log",
+        )
+    )
     assert row.category == "FlowTrace"
     assert row.action == "INVALID"
     assert (row.sourceip, row.srcport, row.targetip, row.targetport) == ("10.0.1.4", "51000", "10.0.2.5", "443")
     assert row.moreinfo == "client → server"  # the boilerplate reason is dropped, direction shown instead
 
 
-@pytest.mark.parametrize("flag, sport, dport, expected", [
-    ("SYN", "50674", "443", "client → server"),
-    ("SYN-ACK", "443", "50674", "server → client"),
-    ("FIN", "50674", "443", "client → server"),      # ephemeral port side is the client
-    ("FIN", "443", "50674", "server → client"),
-    ("RST", "443", "443", ""),                        # cannot tell
-    ("FIN", "-", "443", ""),
-])
+@pytest.mark.parametrize(
+    "flag, sport, dport, expected",
+    [
+        ("SYN", "50674", "443", "client → server"),
+        ("SYN-ACK", "443", "50674", "server → client"),
+        ("FIN", "50674", "443", "client → server"),  # ephemeral port side is the client
+        ("FIN", "443", "50674", "server → client"),
+        ("RST", "443", "443", ""),  # cannot tell
+        ("FIN", "-", "443", ""),
+    ],
+)
 def test_flowtrace_packet_direction(flag, sport, dport, expected):
     from fw_parser import tcp_direction
+
     assert tcp_direction(flag, sport, dport) == expected
 
 
 def test_flowtrace_keeps_a_non_boilerplate_reason(structured_record):
-    row = parse_record(structured_record(
-        "AZFWFlowTrace", Protocol="TCP", SourceIp="10.0.1.4", SourcePort=51000, DestinationIp="10.0.2.5",
-        DestinationPort=443, Flag="RST", Action="Log", ActionReason="Something unusual",
-    ))
+    row = parse_record(
+        structured_record(
+            "AZFWFlowTrace",
+            Protocol="TCP",
+            SourceIp="10.0.1.4",
+            SourcePort=51000,
+            DestinationIp="10.0.2.5",
+            DestinationPort=443,
+            Flag="RST",
+            Action="Log",
+            ActionReason="Something unusual",
+        )
+    )
     assert row.moreinfo == "client → server · Log Something unusual"
     assert row.policy == ""
 
@@ -215,11 +312,18 @@ def test_flow_trace_without_flag(structured_record):
 
 def test_fat_flow_real_record(structured_record):
     """Verbatim lab record: FlowRate is a string with float noise, ports are ints."""
-    row = parse_record(structured_record(
-        "AZFWFatFlow", time="2026-09-06T08:18:44.905695+00:00",
-        Protocol="TCP", SourceIp="146.75.118.114", SourcePort=443,
-        DestinationIp="10.2.0.6", DestinationPort=13590, FlowRate="3.2930000000000001",
-    ))
+    row = parse_record(
+        structured_record(
+            "AZFWFatFlow",
+            time="2026-09-06T08:18:44.905695+00:00",
+            Protocol="TCP",
+            SourceIp="146.75.118.114",
+            SourcePort=443,
+            DestinationIp="10.2.0.6",
+            DestinationPort=13590,
+            FlowRate="3.2930000000000001",
+        )
+    )
     assert row.category == "FatFlow"
     assert row.action == "3.3 Mbps"
     assert (row.sourceip, row.srcport, row.targetip, row.targetport) == ("146.75.118.114", "443", "10.2.0.6", "13590")
@@ -230,7 +334,7 @@ def test_fat_flow_real_record(structured_record):
     "raw, expected",
     [
         (12.3456, "12.3 Mbps"),
-        ("0.311", "0.311 Mbps"),                 # sub-Mbit flows are common → 3 decimals
+        ("0.311", "0.311 Mbps"),  # sub-Mbit flows are common → 3 decimals
         ("0.024", "0.024 Mbps"),
         ("0.0080000000000000002", "0.008 Mbps"),
         ("1", "1.0 Mbps"),
@@ -252,9 +356,15 @@ def test_missing_properties_are_empty_strings_not_none(structured_record):
 
 
 def test_icmp_without_ports_renders_dashes(structured_record):
-    row = parse_record(structured_record(
-        "AZFWNetworkRule", Protocol="ICMP", SourceIp="10.0.1.4", DestinationIp="10.0.2.5", Action="Allow",
-    ))
+    row = parse_record(
+        structured_record(
+            "AZFWNetworkRule",
+            Protocol="ICMP",
+            SourceIp="10.0.1.4",
+            DestinationIp="10.0.2.5",
+            Action="Allow",
+        )
+    )
     assert row.protocol == "ICMP"
     assert (row.srcport, row.targetport) == ("-", "-")
 
@@ -265,9 +375,13 @@ def test_dns_query_name_loses_trailing_dot_like_legacy(structured_record):
 
 
 def test_numeric_properties_are_stringified(structured_record):
-    row = parse_record(structured_record(
-        "AZFWNetworkRule", SourcePort=51000, DestinationPort=443,
-    ))
+    row = parse_record(
+        structured_record(
+            "AZFWNetworkRule",
+            SourcePort=51000,
+            DestinationPort=443,
+        )
+    )
     assert row.srcport == "51000"
     assert row.targetport == "443"
 
@@ -309,31 +423,50 @@ V6_DST = "2606:4700::6810:84e5"
 
 
 def test_network_rule_ipv6(structured_record):
-    row = parse_record(structured_record(
-        "AZFWNetworkRule",
-        Protocol="TCP", SourceIp=V6_SRC, SourcePort=51000,
-        DestinationIp=V6_DST, DestinationPort=443, Action="Allow",
-        **RULE_PROPS,
-    ))
+    row = parse_record(
+        structured_record(
+            "AZFWNetworkRule",
+            Protocol="TCP",
+            SourceIp=V6_SRC,
+            SourcePort=51000,
+            DestinationIp=V6_DST,
+            DestinationPort=443,
+            Action="Allow",
+            **RULE_PROPS,
+        )
+    )
     assert (row.sourceip, row.srcport) == (V6_SRC, "51000")
     assert (row.targetip, row.targetport) == (V6_DST, "443")
 
 
 def test_network_rule_ipv6_default_deny(structured_record):
-    row = parse_record(structured_record(
-        "AZFWNetworkRule",
-        Protocol="TCP", SourceIp=V6_SRC, SourcePort=1, DestinationIp=V6_DST, DestinationPort=22,
-        Action="Deny", ActionReason="No rule matched. Proceeding with default action.",
-    ))
+    row = parse_record(
+        structured_record(
+            "AZFWNetworkRule",
+            Protocol="TCP",
+            SourceIp=V6_SRC,
+            SourcePort=1,
+            DestinationIp=V6_DST,
+            DestinationPort=22,
+            Action="Deny",
+            ActionReason="No rule matched. Proceeding with default action.",
+        )
+    )
     assert row.action == "Deny"
     assert row.sourceip == V6_SRC and row.rule_collection_group == ""
 
 
 def test_dns_query_ipv6_client_aaaa(structured_record):
-    row = parse_record(structured_record(
-        "AZFWDnsQuery", QueryType="AAAA", SourceIp=V6_SRC, SourcePort=5350,
-        QueryName="ifconfig.me.", ResponseCode="NOERROR",
-    ))
+    row = parse_record(
+        structured_record(
+            "AZFWDnsQuery",
+            QueryType="AAAA",
+            SourceIp=V6_SRC,
+            SourcePort=5350,
+            QueryName="ifconfig.me.",
+            ResponseCode="NOERROR",
+        )
+    )
     assert row.category == "DnsQuery"
     assert (row.sourceip, row.srcport) == (V6_SRC, "5350")
     assert row.protocol == "AAAA"
@@ -341,27 +474,49 @@ def test_dns_query_ipv6_client_aaaa(structured_record):
 
 
 def test_flow_trace_ipv6(structured_record):
-    row = parse_record(structured_record(
-        "AZFWFlowTrace", Protocol="TCP", SourceIp=V6_DST, SourcePort=443,
-        DestinationIp=V6_SRC, DestinationPort=51000, Flag="SYN-ACK", Action="Log", ActionReason="Additional TCP Log",
-    ))
+    row = parse_record(
+        structured_record(
+            "AZFWFlowTrace",
+            Protocol="TCP",
+            SourceIp=V6_DST,
+            SourcePort=443,
+            DestinationIp=V6_SRC,
+            DestinationPort=51000,
+            Flag="SYN-ACK",
+            Action="Log",
+            ActionReason="Additional TCP Log",
+        )
+    )
     assert (row.sourceip, row.srcport, row.targetip, row.targetport) == (V6_DST, "443", V6_SRC, "51000")
     assert row.action == "SYN-ACK"
     assert row.moreinfo == "server → client"
 
 
 def test_fat_flow_ipv6(structured_record):
-    row = parse_record(structured_record(
-        "AZFWFatFlow", Protocol="TCP", SourceIp=V6_SRC, SourcePort=51000,
-        DestinationIp=V6_DST, DestinationPort=443, FlowRate="12.5",
-    ))
+    row = parse_record(
+        structured_record(
+            "AZFWFatFlow",
+            Protocol="TCP",
+            SourceIp=V6_SRC,
+            SourcePort=51000,
+            DestinationIp=V6_DST,
+            DestinationPort=443,
+            FlowRate="12.5",
+        )
+    )
     assert (row.sourceip, row.targetip) == (V6_SRC, V6_DST)
     assert row.action == "12.5 Mbps"
 
 
 def test_icmpv6_without_ports_renders_dashes(structured_record):
-    row = parse_record(structured_record(
-        "AZFWNetworkRule", Protocol="ICMP", SourceIp=V6_SRC, DestinationIp="fd10:2:0:1::4", Action="Allow",
-    ))
+    row = parse_record(
+        structured_record(
+            "AZFWNetworkRule",
+            Protocol="ICMP",
+            SourceIp=V6_SRC,
+            DestinationIp="fd10:2:0:1::4",
+            Action="Allow",
+        )
+    )
     assert (row.srcport, row.targetport) == ("-", "-")
     assert row.targetip == "fd10:2:0:1::4"

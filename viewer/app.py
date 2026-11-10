@@ -1,4 +1,5 @@
 """Top-level Textual app for az-firewall-watch."""
+
 from __future__ import annotations
 
 import asyncio
@@ -154,8 +155,14 @@ class FirewallLogApp(App[None]):
     ]
 
     # ── state ──────────────────────────────────────────────────────────────────
-    def __init__(self, *, policy_context: bool = True, policy_context_notice: bool = False,
-                 env_file: Path | None = None, update_check: bool = True) -> None:
+    def __init__(
+        self,
+        *,
+        policy_context: bool = True,
+        policy_context_notice: bool = False,
+        env_file: Path | None = None,
+        update_check: bool = True,
+    ) -> None:
         super().__init__()
         self.theme = "flexoki"
         self._credential: Any | None = None
@@ -221,17 +228,17 @@ class FirewallLogApp(App[None]):
     def _compose_filter_bar() -> ComposeResult:
         with Horizontal(id="filter-bar"):
             yield Label("Filter:")
-            yield Input(placeholder="Source IP",    id="f-src",    classes="filter-input")
-            yield Input(placeholder="Dest / FQDN",  id="f-dst",    classes="filter-input")
-            yield Input(placeholder="Action",       id="f-action", classes="filter-input")
+            yield Input(placeholder="Source IP", id="f-src", classes="filter-input")
+            yield Input(placeholder="Dest / FQDN", id="f-dst", classes="filter-input")
+            yield Input(placeholder="Action", id="f-action", classes="filter-input")
             yield Select(
                 [(label, value) for label, value in CATEGORY_OPTIONS],
                 prompt="All",
                 id="f-cat",
                 allow_blank=True,
             )
-            yield Input(placeholder="Protocol",     id="f-proto",  classes="filter-input")
-            yield Input(placeholder="Port",          id="f-port",   classes="filter-input")
+            yield Input(placeholder="Protocol", id="f-proto", classes="filter-input")
+            yield Input(placeholder="Port", id="f-port", classes="filter-input")
             yield Label("Hide DNS")
             yield Switch(value=True, id="f-hide-dns")
         yield Footer()
@@ -239,9 +246,14 @@ class FirewallLogApp(App[None]):
     def on_mount(self) -> None:
         tbl = self.query_one("#log-table", DataTable)
         tbl.add_columns(
-            "Time (Local)", "Category", "Proto",
-            "Source", "Dest / FQDN", "Port",
-            "Action", "Rule Info",
+            "Time (Local)",
+            "Category",
+            "Proto",
+            "Source",
+            "Dest / FQDN",
+            "Port",
+            "Action",
+            "Rule Info",
         )
         # Initial state: Logs tab is active, filters must be visible, and the
         # table has focus so single-key bindings (f, c, arrows) work at once.
@@ -309,6 +321,7 @@ class FirewallLogApp(App[None]):
             return
         try:
             from setup.services import set_env_value
+
             set_env_value(self._env_file, "POLICY_CONTEXT", "on" if enabled else "off")
         except OSError:
             pass
@@ -371,8 +384,11 @@ class FirewallLogApp(App[None]):
             # so; only report "unavailable" when there is nothing to show.
             if self._mgmt_loaded:
                 status.ctx_state, status.ctx_detail = "loaded", "refresh failed"
-                self.notify("Refresh failed. The previous policy context stays on screen.",
-                            title="Policy context", severity="warning")
+                self.notify(
+                    "Refresh failed. The previous policy context stays on screen.",
+                    title="Policy context",
+                    severity="warning",
+                )
             else:
                 # The Firewall tab carries the exact reason; the two tabs that
                 # would only show placeholders step aside until a load succeeds.
@@ -391,7 +407,8 @@ class FirewallLogApp(App[None]):
         self._known_rules = {
             (g.name, rc.name, r.name)
             for _, g in (snap.policy.all_groups() if snap.policy else [])
-            for rc in g.rule_collections for r in rc.rules
+            for rc in g.rule_collections
+            for r in rc.rules
         }
         if snap.firewall.name and snap.firewall.name.isprintable():
             # ARM knows the real (case-preserved) name; the diagnostics
@@ -441,8 +458,11 @@ class FirewallLogApp(App[None]):
         if not self._known_rules:
             return
         for r in batch:
-            if r.rule_name and r.rule_collection_group and \
-                    (r.rule_collection_group, r.rule_collection, r.rule_name) not in self._known_rules:
+            if (
+                r.rule_name
+                and r.rule_collection_group
+                and (r.rule_collection_group, r.rule_collection, r.rule_name) not in self._known_rules
+            ):
                 self._refresh_policy_context(f"new rule {r.rule_name}")
                 return
 
@@ -464,7 +484,9 @@ class FirewallLogApp(App[None]):
             return
         snap = self._snapshot
         self.query_one("#firewall-view", FirewallView).render_data(
-            self._fw_info, self._policy_info, self._subnet_cidrs,
+            self._fw_info,
+            self._policy_info,
+            self._subnet_cidrs,
             snap.diagnostics if snap else [],
             subnets=snap.subnets if snap else [],
             nat_gateways=snap.nat_gateways if snap else [],
@@ -556,7 +578,7 @@ class FirewallLogApp(App[None]):
             action_text.highlight_regex(f"(?i){re.escape(f['action'])}", style="bold reverse")
         info = row.policy or row.moreinfo
         if single_policy and row.fw_policy and info.startswith(row.fw_policy + "»"):
-            info = info[len(row.fw_policy) + 1:]
+            info = info[len(row.fw_policy) + 1 :]
         return (
             TimeCell(row.time),
             _category_text(row.category),
@@ -719,12 +741,12 @@ class FirewallLogApp(App[None]):
         cat_val = self.query_one("#f-cat", Select).value
         cat = cat_val.lower() if isinstance(cat_val, str) else ""
         return {
-            "src":      self.query_one("#f-src",    Input).value.lower(),
-            "dst":      self.query_one("#f-dst",    Input).value.lower(),
-            "action":   self.query_one("#f-action", Input).value.lower(),
-            "cat":      cat,
-            "proto":    self.query_one("#f-proto",  Input).value.lower(),
-            "port":     self.query_one("#f-port",   Input).value.lower(),
+            "src": self.query_one("#f-src", Input).value.lower(),
+            "dst": self.query_one("#f-dst", Input).value.lower(),
+            "action": self.query_one("#f-action", Input).value.lower(),
+            "cat": cat,
+            "proto": self.query_one("#f-proto", Input).value.lower(),
+            "port": self.query_one("#f-port", Input).value.lower(),
             "hide_dns": self.query_one("#f-hide-dns", Switch).value,
         }
 
@@ -744,13 +766,20 @@ class FirewallLogApp(App[None]):
 
     @staticmethod
     def _matches(row: FirewallDataRow, f: dict) -> bool:
-        if f["hide_dns"] and row.category.lower() == "dnsquery":               return False
-        if f["src"]    and not address_matches(f["src"], row.sourceip):        return False
-        if f["dst"]    and not address_matches(f["dst"], row.targetip):        return False
-        if f["action"] and f["action"] not in row.action.lower():               return False
-        if f["cat"] and not FirewallLogApp._category_matches(f["cat"], row.category):    return False
-        if f["proto"]  and f["proto"]  not in row.protocol.lower():             return False
-        if f["port"]   and f["port"]   not in row.targetport.lower():           return False
+        if f["hide_dns"] and row.category.lower() == "dnsquery":
+            return False
+        if f["src"] and not address_matches(f["src"], row.sourceip):
+            return False
+        if f["dst"] and not address_matches(f["dst"], row.targetip):
+            return False
+        if f["action"] and f["action"] not in row.action.lower():
+            return False
+        if f["cat"] and not FirewallLogApp._category_matches(f["cat"], row.category):
+            return False
+        if f["proto"] and f["proto"] not in row.protocol.lower():
+            return False
+        if f["port"] and f["port"] not in row.targetport.lower():
+            return False
         return True
 
     # ── events ─────────────────────────────────────────────────────────────────
@@ -837,8 +866,10 @@ class FirewallLogApp(App[None]):
             return "Policy trace not available\nIt needs the policy context, which is not loaded yet."
         if self._policy_info is None:
             # Loaded, but without a policy: waiting changes nothing here.
-            return ("Policy trace not available\nThe policy context is loaded, but it carries no policy: "
-                    "the policy could not be read, or the firewall uses classic rules.")
+            return (
+                "Policy trace not available\nThe policy context is loaded, but it carries no policy: "
+                "the policy could not be read, or the firewall uses classic rules."
+            )
         return ""
 
     def _open_detail(self, row: FirewallDataRow) -> None:
@@ -853,11 +884,17 @@ class FirewallLogApp(App[None]):
         if self._policy_context:
             note = self._trace_note(row)
             if not note and self._policy_info is not None:
-                trace = build_trace(self._flow_from_row(row), self._policy_info, self._ip_groups,
-                                    self._logged_from_row(row))
+                trace = build_trace(
+                    self._flow_from_row(row), self._policy_info, self._ip_groups, self._logged_from_row(row)
+                )
         self.push_screen(
-            DetailDialog(row, enrichment=self._compute_enrichment(row), trace=trace, trace_note=note,
-                         cache_age=self._cache_age_label()),
+            DetailDialog(
+                row,
+                enrichment=self._compute_enrichment(row),
+                trace=trace,
+                trace_note=note,
+                cache_age=self._cache_age_label(),
+            ),
             callback=self._on_trace_result,
         )
 
@@ -881,15 +918,20 @@ class FirewallLogApp(App[None]):
             dst_port="" if port == "-" else port,
             action=row.action if row.action != "-" else "",
             explicit_proxy=row.explicit_proxy == "yes",
-            tls_inspected={"yes": True, "no": False}.get(row.tls_inspected),   # "" (no column) stays unknown
+            tls_inspected={"yes": True, "no": False}.get(row.tls_inspected),  # "" (no column) stays unknown
         )
 
     @staticmethod
     def _logged_from_row(row: FirewallDataRow) -> LoggedMatch | None:
         if not (row.rule_collection_group and row.rule_collection and row.rule_name):
             return None
-        return LoggedMatch(policy=row.fw_policy, group=row.rule_collection_group,
-                           collection=row.rule_collection, rule=row.rule_name, action=row.action)
+        return LoggedMatch(
+            policy=row.fw_policy,
+            group=row.rule_collection_group,
+            collection=row.rule_collection,
+            rule=row.rule_name,
+            action=row.action,
+        )
 
     def _compute_enrichment(self, row: FirewallDataRow) -> dict:
         """Build the optional enrichment payload for DetailDialog."""
@@ -924,7 +966,6 @@ class FirewallLogApp(App[None]):
             # criterion, Enter on the rule opens it in the Policy tab, and a rule
             # missing from the loaded policy is the trace's own warning.
         return out
-
 
     # ── actions (key bindings) ─────────────────────────────────────────────────
     def action_toggle_pause(self) -> None:
@@ -974,8 +1015,11 @@ class FirewallLogApp(App[None]):
     def action_refresh_context(self) -> None:
         """Force-refresh the policy context (firewall, policy, IP groups), bypassing the cache."""
         if not self._policy_context:
-            self.notify("Policy context is off. Enable it with POLICY_CONTEXT=on or --policy-context.",
-                        title="Refresh context", severity="warning")
+            self.notify(
+                "Policy context is off. Enable it with POLICY_CONTEXT=on or --policy-context.",
+                title="Refresh context",
+                severity="warning",
+            )
             return
         if self._firewall_id is None:
             self.notify("Nothing to refresh yet: no firewall seen in the logs.", title="Refresh context")

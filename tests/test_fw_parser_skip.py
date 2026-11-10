@@ -1,4 +1,5 @@
 """Records the parser must skip (and count) instead of displaying."""
+
 from __future__ import annotations
 
 import pytest

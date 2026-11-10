@@ -4,6 +4,7 @@
 Three documented states plus the Basic SKU (no scaling) and a defensive
 min > max case that Azure should reject but this viewer must not trust.
 """
+
 from __future__ import annotations
 
 import pytest
@@ -44,6 +45,7 @@ def _fw_payload(autoscale) -> dict:
 
 # ── parsing (fetch_firewall) ────────────────────────────────────────────────
 
+
 async def test_autoscale_both_present():
     fw = await fetch_firewall(FakeArm({FW_ID: _fw_payload({"minCapacity": 5, "maxCapacity": 10})}), FW_ID)
     assert (fw.autoscale_min, fw.autoscale_max) == (5, 10)
@@ -71,9 +73,18 @@ async def test_autoscale_non_dict_value():
 
 # ── rendering (_scaling_rows) ───────────────────────────────────────────────
 
+
 def _fw(sku_tier: str = "Premium", autoscale_min: int = 0, autoscale_max: int = 0) -> FirewallInfo:
-    return FirewallInfo(id="/fw", name="fw", subscription_id="s", resource_group="rg", location="loc",
-                        sku_tier=sku_tier, autoscale_min=autoscale_min, autoscale_max=autoscale_max)
+    return FirewallInfo(
+        id="/fw",
+        name="fw",
+        subscription_id="s",
+        resource_group="rg",
+        location="loc",
+        sku_tier=sku_tier,
+        autoscale_min=autoscale_min,
+        autoscale_max=autoscale_max,
+    )
 
 
 def test_scaling_basic_sku_does_not_scale():
@@ -105,8 +116,10 @@ def test_scaling_with_one_bound_only_shows_the_raw_pair_and_claims_nothing(lo, h
     """0 is also what an absent field parses to: a single bound must not turn
     into "no upper bound" or "from zero"."""
     assert _scaling_rows(_fw(autoscale_min=lo, autoscale_max=hi)) == [
-        _row("Scaling", f"[yellow]autoscaleConfiguration with min {lo} and max {hi}: not understood, "
-             "shape not documented[/]")
+        _row(
+            "Scaling",
+            f"[yellow]autoscaleConfiguration with min {lo} and max {hi}: not understood, shape not documented[/]",
+        )
     ]
 
 
@@ -118,6 +131,7 @@ def test_scaling_min_above_max_is_flagged_not_trusted():
 
 # ── through FirewallView._instance: the row sits between Provisioning and
 #    Resource group ─────────────────────────────────────────────────────────
+
 
 def test_scaling_row_sits_between_provisioning_and_maintenance():
     fw = _fw(autoscale_min=5, autoscale_max=10)

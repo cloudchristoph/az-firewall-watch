@@ -69,7 +69,7 @@ def _dns_rows(policy: FirewallPolicyInfo) -> list[str]:
     note = "Azure lists child inheritance of DNS settings as a known issue, set it on this policy"
     if proxy:
         return [_row("DNS proxy", f"on ({where})", f"servers: {names} · {note}")]
-    return [_row("DNS proxy", f"off ({where})")]
+    return [_row("DNS proxy", f"off ({where})", note)]
 
 
 def _row(label: str, value: str, detail: str = "") -> str:
@@ -331,6 +331,10 @@ def _nat_gateway_rows(fw: FirewallInfo, subnets: list[SubnetInfo], nat_gateways:
     """
     if fw.sku_name == "AZFW_Hub":
         return [_row("NAT gateway", "not supported on a Virtual WAN hub firewall")]
+    if fw.stopped:
+        # No data plane, so the "egress depends on your routes" note would explain
+        # a forced-tunnel design rather than the real reason.
+        return [_row("NAT gateway", "unknown", "the firewall is deallocated")]
     unread = len(fw.subnet_ids) - len(subnets)
     if not subnets and fw.subnet_ids:
         return [_row("NAT gateway", "unknown", "firewall subnet not readable")]
@@ -546,6 +550,9 @@ class FirewallView(Vertical):
             _row("SKU", _v(" · ".join(filter(None, [fw.sku_tier, fw.sku_name])))),
             _row("Zones", _v(", ".join(fw.zones)) if fw.zones else "none (regional)"),
             _row("Provisioning", state),
+            *([_row("State", "[yellow]stopped[/]",
+                    "deallocated: no IP configurations remain, which is how Azure deallocates a "
+                    "firewall; expect no traffic and no new log rows")] if fw.stopped else []),
             *_scaling_rows(fw),
             *_maintenance_rows(fw, maintenance, maintenance_readable),
             *_additional_property_rows(fw),
@@ -575,14 +582,16 @@ class FirewallView(Vertical):
                         height=2 if cfg.public_ip_name else 1)
         if not rows:
             tbl.add_row(escape_rich_markup(", ".join(fw.private_ips)) or "-", "-",
-                        Text("no IP configurations", style="dim"))
+                        Text("deallocated, no IP configurations" if fw.stopped else "no IP configurations",
+                             style="dim"))
         subnet_names = ", ".join(f"{_short(s)}" for s in fw.subnet_ids) or "-"
         note = self.query_one("#fw-network-note", Static)
         note.update("\n".join([
             _row("Subnets", escape_markup(subnet_names)),
             _row("CIDRs", _v(", ".join(subnet_cidrs))),
             # The configuration only: whether a route tunnels anything is not read here.
-            _row("Management", "own subnet and public IP" if fw.management_ip else "none"),
+            _row("Management", "own subnet and public IP" if fw.management_ip
+                 else "none (deallocated)" if fw.stopped else "none"),
             *_nat_gateway_rows(fw, subnets, nat_gateways),
         ]))
 
@@ -735,12 +744,15 @@ _OPTIONAL_CATEGORIES = ("AZFWFlowTrace",)   # see the comment above
 
 def _uncertain_categories(policy: FirewallPolicyInfo | None) -> tuple[str, ...]:
     """Categories whose expectation depends on a setting this policy does not
-    state itself: an inherited DNS proxy (Azure lists child inheritance of DNS
-    settings as a known issue) or a parent we could not read."""
+    state itself: an inherited DNS proxy, on or off (Azure lists child
+    inheritance of DNS settings as a known issue), or a parent we could not
+    read."""
     if policy is None or policy.dns_proxy is not None:
         return ()
-    state = policy.effective_dns()[0]
-    return ("AZFWDnsQuery",) if state is None or state else ()
+    state, _, source = policy.effective_dns()
+    # An inherited "off" is as uncertain as an inherited "on": if the parent's
+    # settings do not reach the child, the child's own default applies.
+    return ("AZFWDnsQuery",) if state is None or source else ()
 
 
 def expected_categories(policy: FirewallPolicyInfo | None, fw: FirewallInfo) -> list[str]:

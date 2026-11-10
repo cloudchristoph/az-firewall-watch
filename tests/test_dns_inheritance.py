@@ -18,6 +18,7 @@ from viewer.views.firewall import (
     VIEWER_CATEGORIES,
     FirewallView,
     _coverage_row,
+    _uncertain_categories,
     connected_event_hub_targets,
     expected_categories,
     logging_targets,
@@ -76,6 +77,7 @@ def test_inherited_on_is_shown_with_its_source_and_the_known_issue():
 def test_inherited_off_is_labelled_inherited():
     text = _dns_text(_chain(None, False))
     assert "off (inherited from parent-policy)" in text
+    assert "known issue" in text and "set it on this policy" in text
 
 
 def test_own_values_read_as_before():
@@ -94,6 +96,14 @@ def test_unreadable_parent_is_unknown_on_the_tab():
 
 # ── Event Hub coverage ─────────────────────────────────────────────────────────
 
+def test_an_inherited_off_is_optional_in_the_coverage_too():
+    child = _chain(None, False)
+    without = [c for c in VIEWER_CATEGORIES if c != "AZFWDnsQuery"]
+    targets = logging_targets([DiagnosticSetting(name="eh", event_hub="ns/hub", categories=without)])
+    line = _coverage_row(connected_event_hub_targets(targets), child, FW)
+    assert "incomplete" not in line and "AZFWDnsQuery absent, not counted" in line
+
+
 def test_inherited_dns_proxy_is_optional_in_the_coverage_not_expected():
     child = _chain(None, True)
     assert "AZFWDnsQuery" not in expected_categories(child, FW)
@@ -107,7 +117,12 @@ def test_the_same_holds_for_an_unknown_state_and_not_for_an_own_value():
     assert "AZFWDnsQuery" not in expected_categories(_chain(None, None, unread="/parent"), FW)
     assert "AZFWDnsQuery" in expected_categories(_chain(True, None), FW)
     assert "AZFWDnsQuery" not in expected_categories(_chain(False, True), FW)
-    assert "AZFWDnsQuery" not in expected_categories(_chain(None, False), FW)
+    assert "AZFWDnsQuery" not in expected_categories(_chain(None, False), FW)   # not expected ...
+    assert _uncertain_categories(_chain(None, False)) == ("AZFWDnsQuery",)       # ... but named, it may not hold
+    assert _uncertain_categories(_chain(None, True)) == ("AZFWDnsQuery",)
+    assert _uncertain_categories(_chain(None, None, unread="/parent")) == ("AZFWDnsQuery",)
+    assert _uncertain_categories(_chain(False, True)) == ()                       # an own value is stated
+    assert _uncertain_categories(_chain(None, None)) == ()                        # nothing anywhere in a read chain
 
 
 # ── parsing and the cache ──────────────────────────────────────────────────────

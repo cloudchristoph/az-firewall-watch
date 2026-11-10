@@ -286,6 +286,20 @@ class FirewallInfo:
     # additionalProperties[ROUTE_SERVER_KEY]: the Route Server auto-learn SNAT needs
     route_server_id: str = ""
 
+    @property
+    def stopped(self) -> bool:
+        """A virtual network firewall without any IP configuration.
+
+        Azure documents that removing all IP configurations deallocates the
+        firewall (management NIC article) and that ``Deallocate()`` removes
+        them (public IP article); ARM keeps ``provisioningState`` ``Succeeded``.
+        Only the virtual network SKU is judged: how a deallocated hub firewall
+        reads in ARM is not documented, so ``AZFW_Hub`` is never reported as
+        stopped. A firewall still being created or updated is not either.
+        """
+        return (self.sku_name == "AZFW_VNet" and not self.ip_configs
+                and self.management_ip is None and self.provisioning_state == "Succeeded")
+
 
 def parse_resource_id(resource_id: str) -> dict[str, str]:
     """Extract sub/RG/name from any ARM resource ID. Case-insensitive."""

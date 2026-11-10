@@ -17,7 +17,9 @@ resource ID from the first log record it receives and fetches from there.
 ### Three extra tabs
 
 - **Firewall**: four blocks about the instance itself.
-  - *Instance*: SKU tier and name, zones, provisioning state, how the firewall
+  - *Instance*: SKU tier and name, zones, provisioning state (a virtual network
+    firewall without any IP configuration is marked `stopped`: Azure deallocates a
+    firewall by removing them, and ARM still reports `Succeeded`), how the firewall
     scales (service default, prescaled range, or fixed capacity with autoscaling
     off), the customer-controlled maintenance window if one is assigned, the
     switches that live in the firewall's property bag (fat flow logging, DNS

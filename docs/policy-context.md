@@ -56,8 +56,10 @@ resource ID from the first log record it receives and fetches from there.
     bug.
 - **Policy**: a tree of rule collection groups → rule collections → rules, ordered
   by priority, with a detail pane showing sources, destinations, ports, protocols,
-  IP groups resolved to their actual addresses and, on application rules, TLS
-  inspection and the HTTP headers the rule inserts. Header names are always shown;
+  IP groups resolved to their actual addresses, on DNAT rules the translated
+  address or FQDN with its port (an FQDN is resolved by the firewall, so it is
+  marked as such) and, on application rules, TLS inspection and the HTTP headers
+  the rule inserts. Header names are always shown;
   the values can carry tokens or tenant ids, so they stay hidden until you press
   `v`, and a refresh hides them again.
 - **IP Groups**: every IP group the policy references, how many rules use it, and

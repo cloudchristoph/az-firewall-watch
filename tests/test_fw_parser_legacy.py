@@ -111,6 +111,32 @@ def test_legacy_nat_rule(legacy_record):
     assert (row.targetip, row.targetport) == ("10.1.1.1", "3389")
 
 
+def test_legacy_nat_rule_keeps_the_public_destination(legacy_record):
+    # The DNAT rule matched the address the client hit, not the translated target;
+    # the structured format carries both and the trace needs the public one.
+    row = parse_record(legacy_record(
+        "AzureFirewallNatRule", "AzureFirewallNatRuleLog",
+        "TCP request from 1.2.3.4:1234 to 5.6.7.8:3389 was DNAT'ed to 10.1.1.1:3390",
+    ))
+    assert (row.nat_dst_ip, row.nat_dst_port) == ("5.6.7.8", "3389")
+    assert (row.targetip, row.targetport) == ("10.1.1.1", "3390")
+
+
+def test_legacy_rows_carry_the_firewall_resource_id(legacy_record):
+    for category, op_name, msg in (
+        ("AzureFirewallNetworkRule", "AzureFirewallNetworkRuleLog",
+         "TCP request from 10.1.1.1:1234 to 10.2.2.2:80. Action: Allow."),
+        ("AzureFirewallApplicationRule", "AzureFirewallApplicationRuleLog",
+         "HTTPS request from 10.1.1.1:55583 to example.com:443. Action: Allow."),
+        ("AzureFirewallNatRule", "AzureFirewallNatRuleLog",
+         "TCP request from 1.2.3.4:1234 to 5.6.7.8:3389 was DNAT'ed to 10.1.1.1:3389"),
+        ("AzureFirewallDnsProxy", "AzureFirewallDnsProxyLog",
+         "DNS Request: 10.2.0.6:5350 - 10407 A IN ifconfig.me. udp 40 false 1232 NOERROR qr,aa,rd,ra 56 0.000324423s"),
+    ):
+        record = legacy_record(category, op_name, msg)
+        assert parse_record(record).resource_id == record["resourceId"]
+
+
 def test_legacy_nat_rule_ipv6_addresses_are_not_truncated(legacy_record):
     row = parse_record(legacy_record(
         "AzureFirewallNatRule", "AzureFirewallNatRuleLog",
@@ -118,6 +144,7 @@ def test_legacy_nat_rule_ipv6_addresses_are_not_truncated(legacy_record):
     ))
     assert (row.sourceip, row.srcport) == ("fd00::1", "1234")
     assert (row.targetip, row.targetport) == ("fd00::3", "3389")
+    assert (row.nat_dst_ip, row.nat_dst_port) == ("fd00::2", "3389")
 
 
 def test_legacy_dns_proxy_is_normalised_to_dnsquery(legacy_record):

@@ -136,7 +136,9 @@ def _parse_record(record: dict) -> FirewallDataRow | None:
         "AzureFirewallNatRule", "AzureFirewallDnsProxy",
     }
     if category in legacy:
-        return _parse_legacy(record, op_name, time)
+        row = _parse_legacy(record, op_name, time)
+        row.resource_id = resource_id
+        return row
 
     return FirewallDataRow(rowid=_next_id(), time=time, category=f"SKIP:Category:{category}")
 
@@ -479,6 +481,7 @@ def _parse_legacy(record: dict, op_name: str, time: str) -> FirewallDataRow:
             # [0]=TCP [1]=request [2]=from [3]=src:port [4]=to [5]=fw:port [6]=was [7]=DNAT'ed [8]=to [9]=translated:port
             words = msg.split(" ")
             src_ip, src_port = _endpoint(words[3])
+            nat_ip, nat_port = _endpoint(words[5])   # what the client hit; the rule matched this
             dst_ip, dst_port = _endpoint(words[9])
             return FirewallDataRow(
                 rowid=_next_id(),
@@ -490,6 +493,8 @@ def _parse_legacy(record: dict, op_name: str, time: str) -> FirewallDataRow:
                 targetip=dst_ip,
                 targetport=dst_port,
                 action="DNAT",
+                nat_dst_ip=nat_ip,
+                nat_dst_port=nat_port,
             )
 
         if op_name == "AzureFirewallApplicationRuleLog":
